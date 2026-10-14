@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,14 +29,16 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
-	require.NoError(t, err)
+	if err != nil {
+		testkit.SkipOrFailf(t, "docker workflow unavailable: %v", err)
+	}
 	require.NotNil(t, workflow)
 
 	t.Cleanup(func() {
 		workflow.Close()
 	})
 
-	ensureBaseImage(t, workflow)
+	ensureWorkloadReady(t, workflow)
 
 	tests := []struct {
 		name           string
@@ -190,7 +193,21 @@ func cleanupDockerContainer(t *testing.T, workflow *container.DockerWorkflow, co
 // containers from local images without pulling.
 func ensureBaseImage(t *testing.T, workflow *container.DockerWorkflow) {
 	t.Helper()
-	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+	if err := workflow.Build(t.Context(), "alpine:3.22.2"); err != nil {
+		testkit.SkipOrFailf(t, "ensure base image: %v", err)
+	}
+}
+
+func ensureWorkloadReady(t *testing.T, workflow *container.DockerWorkflow) {
+	t.Helper()
+	ensureBaseImage(t, workflow)
+	id, _, _, err := workflow.Execute(t.Context(), 5*time.Second, "alpine:3.22.2", []string{"true"}, nil)
+	if err != nil && strings.Contains(err.Error(), "workload network is not ready") {
+		testkit.SkipOrFailf(t, "docker workload network unavailable: %v", err)
+	}
+	if id != "" {
+		cleanupDockerContainer(t, workflow, id)
+	}
 }
 
 func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
@@ -215,7 +232,9 @@ func TestIntegrationDockerWorkflowBuild(t *testing.T) {
 	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
-	require.NoError(t, err)
+	if err != nil {
+		testkit.SkipOrFailf(t, "docker workflow unavailable: %v", err)
+	}
 	require.NotNil(t, workflow)
 
 	t.Cleanup(func() {
@@ -263,7 +282,9 @@ func TestIntegrationDockerWorkflowImageExists(t *testing.T) {
 	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
-	require.NoError(t, err)
+	if err != nil {
+		testkit.SkipOrFailf(t, "docker workflow unavailable: %v", err)
+	}
 	require.NotNil(t, workflow)
 
 	t.Cleanup(func() {
@@ -289,14 +310,16 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	testkit.RequireDocker(t)
 
 	workflow, err := container.NewDockerWorkflow()
-	require.NoError(t, err)
+	if err != nil {
+		testkit.SkipOrFailf(t, "docker workflow unavailable: %v", err)
+	}
 	require.NotNil(t, workflow)
 
 	t.Cleanup(func() {
 		workflow.Close()
 	})
 
-	ensureBaseImage(t, workflow)
+	ensureWorkloadReady(t, workflow)
 
 	t.Run("successful termination", func(t *testing.T) {
 		t.Parallel()

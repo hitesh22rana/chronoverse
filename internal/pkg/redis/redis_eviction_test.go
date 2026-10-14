@@ -22,7 +22,7 @@ func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy s
 
 	ctr, err := tcredis.Run(ctx, "redis:8.2.1-alpine")
 	if err != nil {
-		t.Fatalf("start redis container: %v", err)
+		testkit.SkipOrFailf(t, "start redis container: %v", err)
 	}
 	t.Cleanup(func() {
 		//nolint:errcheck // Best-effort container shutdown during test teardown.

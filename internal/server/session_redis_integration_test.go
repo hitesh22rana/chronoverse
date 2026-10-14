@@ -50,7 +50,7 @@ func newSessionRedisStore(ctx context.Context, t *testing.T) *redispkg.Store {
 
 	ctr, err := redis.Run(startCtx, testRedisImage)
 	if err != nil {
-		t.Fatalf("start redis container: %v", err)
+		testkit.SkipOrFailf(t, "start redis container: %v", err)
 	}
 	//nolint:contextcheck // The incoming ctx is already canceled when cleanups run.
 	t.Cleanup(func() {

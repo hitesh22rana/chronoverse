@@ -271,6 +271,14 @@ func RequireDocker(t *testing.T) {
 	}
 }
 
+// SkipOrFailf fails the test in strict mode and skips it otherwise. Used for
+// environment problems (missing daemon, failed container start) that are not
+// the fault of the code under test.
+func SkipOrFailf(t *testing.T, format string, args ...any) {
+	t.Helper()
+	skipOrFailf(t, format, args...)
+}
+
 // skipOrFailf fails the test in strict mode and skips it otherwise. Used for
 // environment problems (missing daemon, failed container start) that are not
 // the fault of the code under test.

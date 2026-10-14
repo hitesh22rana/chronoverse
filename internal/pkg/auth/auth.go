@@ -433,8 +433,6 @@ func isOnlyTokenExpired(err error) bool {
 //
 // The audience claim may be a string or a string slice; either form is
 // accepted as long as expectedAudience appears in the list.
-//
-//nolint:gocyclo // ValidateToken handles kid-bound bundle lookup and claim validation in one linear flow.
 func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outCtx context.Context, token *jwt.Token, err error) {
 	ctx, span := a.tp.Start(ctx, "Auth.ValidateToken")
 	defer func() {
@@ -458,23 +456,7 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	parsed, perr := jwt.Parse(
 		tokenString,
 		func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
-				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
-			}
-			if a.bundle != nil {
-				if khStr, ok := token.Header["kid"].(string); ok {
-					kidFromHeader = khStr
-				}
-				if kidFromHeader == "" {
-					return nil, status.Error(codes.Unauthenticated, "missing kid")
-				}
-				entry, ok := a.bundle[kidFromHeader]
-				if !ok {
-					return nil, status.Error(codes.Unauthenticated, "untrusted kid")
-				}
-				return entry.PublicKey, nil
-			}
-			return a.publicKey, nil
+			return a.resolveVerificationKey(token, &kidFromHeader)
 		},
 		jwt.WithLeeway(clockSkewLeeway),
 		jwt.WithAudience(expectedAudience),
@@ -491,22 +473,9 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	if !ok {
 		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
 	}
-	issuer, issuerErr := claims.GetIssuer()
-	if issuerErr != nil || !TrustedIssuer(issuer) {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
-	}
-	if kidFromHeader != "" {
-		if entry, found := a.bundle[kidFromHeader]; found && entry.Iss != issuer {
-			return ctx, nil, status.Error(codes.Unauthenticated, "kid issuer mismatch")
-		}
-	}
-	roleVal, ok := claims[jwtRoleClaim].(string)
-	if !ok || roleVal == "" {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token missing role claim")
-	}
-	subVal, ok := claims[jwtSubjectClaim].(string)
-	if !ok || subVal == "" {
-		return ctx, nil, status.Error(codes.Unauthenticated, "token missing subject claim")
+	roleVal, subVal, claimErr := validateClaims(claims, a.bundle, kidFromHeader)
+	if claimErr != nil {
+		return ctx, nil, claimErr
 	}
 	if expired {
 		return ctx, nil, status.Error(codes.DeadlineExceeded, "token is expired")
@@ -515,6 +484,47 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	outCtx = WithRole(outCtx, roleVal)
 	outCtx = WithSubject(outCtx, subVal)
 	return outCtx, parsed, nil
+}
+
+func (a *Auth) resolveVerificationKey(token *jwt.Token, kidFromHeader *string) (any, error) {
+	if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
+		return nil, status.Error(codes.Unauthenticated, "invalid signing method")
+	}
+	if a.bundle != nil {
+		if khStr, ok := token.Header["kid"].(string); ok {
+			*kidFromHeader = khStr
+		}
+		if *kidFromHeader == "" {
+			return nil, status.Error(codes.Unauthenticated, "missing kid")
+		}
+		entry, ok := a.bundle[*kidFromHeader]
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "untrusted kid")
+		}
+		return entry.PublicKey, nil
+	}
+	return a.publicKey, nil
+}
+
+func validateClaims(claims jwt.MapClaims, bundle map[string]*bundleEntry, kidFromHeader string) (role string, sub string, err error) {
+	issuer, issuerErr := claims.GetIssuer()
+	if issuerErr != nil || !TrustedIssuer(issuer) {
+		return "", "", status.Error(codes.Unauthenticated, "token has untrusted issuer")
+	}
+	if kidFromHeader != "" {
+		if entry, found := bundle[kidFromHeader]; found && entry.Iss != issuer {
+			return "", "", status.Error(codes.Unauthenticated, "kid issuer mismatch")
+		}
+	}
+	roleVal, ok := claims[jwtRoleClaim].(string)
+	if !ok || roleVal == "" {
+		return "", "", status.Error(codes.Unauthenticated, "token missing role claim")
+	}
+	subVal, ok := claims[jwtSubjectClaim].(string)
+	if !ok || subVal == "" {
+		return "", "", status.Error(codes.Unauthenticated, "token missing subject claim")
+	}
+	return roleVal, subVal, nil
 }
 
 // Gateway JWTs are per-service, never broad. New services need an entry here.

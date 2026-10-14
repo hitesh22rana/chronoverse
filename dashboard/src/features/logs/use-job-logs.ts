@@ -42,6 +42,61 @@ type DownloadLogsOptions = {
 const kindsWithLogs = ['CONTAINER']
 const statusesWithLogs = ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']
 
+const emptyQueryResult = {
+    data: undefined,
+    isLoading: false,
+    error: null,
+    fetchNextPage: () => Promise.resolve(),
+    isFetchingNextPage: false,
+    hasNextPage: false,
+}
+
+function getJobLogCapabilities(
+    workflow: { kind?: string; log_retention?: boolean } | undefined,
+    jobStatus: string,
+    workflowId: string,
+    jobId: string,
+) {
+    const isRunning = jobStatus === "RUNNING"
+    const hasLogs = statusesWithLogs.includes(jobStatus)
+    const workflowKind = workflow?.kind || ""
+    const supportsLogs = kindsWithLogs.includes(workflowKind)
+    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
+    const isRetentionDisabled = supportsLogs && !workflow?.log_retention
+    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
+    const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
+
+    return {
+        isRunning,
+        hasLogs,
+        workflowKind,
+        isLogsUnsupportedForKind,
+        isRetentionDisabled,
+        shouldFetch,
+        canFetch,
+    }
+}
+
+async function downloadLogsFile(url: string, searchParams: string, filename: string, format: DownloadLogsFormat) {
+    const params = new URLSearchParams(searchParams)
+    params.set("format", format)
+
+    const response = await fetchApi(
+        withQuery(url, params),
+        "failed to download logs",
+    )
+
+    const blob = await response.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = objectUrl
+    a.download = getDownloadFilename(filename, format)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(objectUrl)
+}
+
 export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
     const { searchQuery, streamFilter, updateSearchQuery, applyStreamFilter, getSearchQueryParams } = useLogFilters()
@@ -53,37 +108,19 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     const logsDownloadURL = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
     const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
-    const isRunning = jobStatus === "RUNNING"
-    const hasLogs = statusesWithLogs.includes(jobStatus)
-    const workflowKind = workflow?.kind || ""
-    const supportsLogs = kindsWithLogs.includes(workflowKind)
-    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
-    const isRetentionDisabled = supportsLogs && !workflow.log_retention
-    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
-
-    const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
+    const {
+        isRunning,
+        hasLogs,
+        workflowKind,
+        isLogsUnsupportedForKind,
+        isRetentionDisabled,
+        shouldFetch,
+        canFetch,
+    } = getJobLogCapabilities(workflow, jobStatus, workflowId, jobId)
 
     const downloadLogsMutation = useMutation({
-        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
-            const params = new URLSearchParams(getSearchQueryParams)
-            params.set("format", format)
-
-            const response = await fetchApi(
-                withQuery(logsDownloadURL, params),
-                "failed to download logs",
-            )
-
-            const blob = await response.blob()
-            const objectUrl = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.href = objectUrl
-            a.download = getDownloadFilename(filename, format)
-            document.body.appendChild(a)
-            a.click()
-            a.remove()
-            URL.revokeObjectURL(objectUrl)
-
-        },
+        mutationFn: ({ filename, format }: DownloadLogsOptions) =>
+            downloadLogsFile(logsDownloadURL, getSearchQueryParams, filename, format),
         onSuccess: () => {
             toast.success("Logs downloaded successfully")
         },
@@ -137,14 +174,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
 
     const isSearching = shouldFetch && Boolean(getSearchQueryParams)
-    const query = hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : {
-        data: undefined,
-        isLoading: false,
-        error: null,
-        fetchNextPage: () => Promise.resolve(),
-        isFetchingNextPage: false,
-        hasNextPage: false,
-    }
+    const query = hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : emptyQueryResult
     const logs = logsFromPages(query.data?.pages)
 
     return {

@@ -4,8 +4,10 @@ package heartbeat
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -121,6 +123,74 @@ func TestHeartbeatTransportStopsAddressFallbackAfterCancellation(t *testing.T) {
 	}
 	if len(transport.proxyTransports) != 1 {
 		t.Fatalf("attempted %d destinations after cancellation", len(transport.proxyTransports))
+	}
+}
+
+func TestHeartbeatTransportFallsBackToNextValidatedAddress(t *testing.T) {
+	targets := make(chan string, 2)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		targets <- req.Host
+		if req.Host == "8.8.8.8:80" {
+			http.Error(w, "destination unavailable", http.StatusBadGateway)
+			return
+		}
+		if req.Host != "1.1.1.1:80" {
+			t.Errorf("unexpected CONNECT target %s", req.Host)
+			http.Error(w, "unexpected destination", http.StatusBadGateway)
+			return
+		}
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("proxy response writer does not support hijacking")
+			return
+		}
+		conn, buffered, err := hijacker.Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		if deadlineErr := conn.SetDeadline(time.Now().Add(2 * fixtureTimeout)); deadlineErr != nil {
+			t.Error(deadlineErr)
+			return
+		}
+		if _, writeErr := io.WriteString(conn, connectEstablished); writeErr != nil {
+			t.Error(writeErr)
+			return
+		}
+		request, err := http.ReadRequest(buffered.Reader)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer request.Body.Close()
+		if request.Host != "heartbeat.example.test" {
+			t.Errorf("tunneled Host = %s", request.Host)
+		}
+		if _, err := io.WriteString(conn, "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(WithTargetResolver(func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("1.1.1.1")}}, nil
+	}), WithProxyResolver(func(*url.URL) (*url.URL, error) { return proxyURL, nil }))
+	if err := h.Execute(t.Context(), fixtureTimeout, "http://heartbeat.example.test", http.StatusNoContent, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"8.8.8.8:80", "1.1.1.1:80"} {
+		select {
+		case got := <-targets:
+			if got != want {
+				t.Fatalf("CONNECT target = %s, want %s", got, want)
+			}
+		default:
+			t.Fatalf("missing CONNECT to %s", want)
+		}
 	}
 }
 

@@ -225,6 +225,18 @@ func pinnedTargetAddress(targetURL *url.URL, address net.IPAddr) (string, error)
 	return net.JoinHostPort(ipHost, port), nil
 }
 
+// socks5Dialer builds the SOCKS dialer. Indirected because the pinned x/net
+// returns a nil error and a ContextDialer for every input, which would leave
+// the two guards below unreachable; tests inject a constructor that fails.
+var socks5Dialer = xproxy.SOCKS5
+
+// dialProxyConn opens the plain-HTTP proxy socket. Indirected for the same
+// reason: a TCP connection cannot fail SetDeadline or a mid-flight write, and
+// dialHTTPProxyTunnel must be seen handling both.
+var dialProxyConn = func(ctx context.Context, dialer *net.Dialer, network, address string) (net.Conn, error) {
+	return dialer.DialContext(ctx, network, address)
+}
+
 func proxyTunnelDialContext(
 	proxyURL *url.URL,
 	targetAddress string,
@@ -245,7 +257,7 @@ func proxyTunnelDialContext(
 			password, _ := proxyURL.User.Password()
 			auth = &xproxy.Auth{User: proxyURL.User.Username(), Password: password}
 		}
-		socksDialer, err := xproxy.SOCKS5("tcp", proxyAddress, auth, dialer)
+		socksDialer, err := socks5Dialer("tcp", proxyAddress, auth, dialer)
 		if err != nil {
 			return nil, fmt.Errorf("configure SOCKS proxy: %w", err)
 		}
@@ -305,7 +317,7 @@ func dialHTTPProxyTunnel(
 		}
 		conn, err = tlsDialer.DialContext(handshakeCtx, network, proxyAddress)
 	} else {
-		conn, err = dialer.DialContext(ctx, network, proxyAddress)
+		conn, err = dialProxyConn(ctx, dialer, network, proxyAddress)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("dial proxy %s: %w", proxyURL.Redacted(), err)
@@ -373,6 +385,14 @@ func (c *bufferedConn) Read(p []byte) (int, error) {
 	return c.reader.Read(p)
 }
 
+// lookupIPAddr resolves through net.DefaultResolver, read at call time so the
+// controlled-DNS tests still redirect it. Indirected because net.Resolver
+// reports an empty successful answer as "no such host", which would leave the
+// empty-answer guard in resolveEndpointHost unreachable.
+var lookupIPAddr = func(ctx context.Context, host string) ([]net.IPAddr, error) {
+	return net.DefaultResolver.LookupIPAddr(ctx, host)
+}
+
 // resolveEndpointHost applies the egress policy to every address the host
 // currently resolves to and returns that exact validated result for optional
 // proxy pinning. IP-literal hosts skip resolution. Resolution failures are
@@ -387,7 +407,7 @@ func resolveEndpointHost(ctx context.Context, host string) ([]net.IPAddr, error)
 		}
 		return []net.IPAddr{{IP: ip}}, nil
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	addrs, err := lookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err
 	}

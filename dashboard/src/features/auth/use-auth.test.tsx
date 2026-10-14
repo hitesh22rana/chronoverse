@@ -47,6 +47,8 @@ function mount() {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false, gcTime: Infinity } } })
     clients.push(client)
     client.setQueryData(queryKeys.user, user)
+    // Catch cleanup that removes the user but leaves other account data cached.
+    client.setQueryData(queryKeys.workflows.list("", "", "", "", "", ""), { workflows: [] })
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
     return { ...renderHook(() => useAuth(), { wrapper }), client }
 }

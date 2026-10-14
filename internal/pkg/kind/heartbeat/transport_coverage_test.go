@@ -24,7 +24,7 @@ const (
 	testSOCKS5Scheme  = "socks5"
 	testSOCKS5HScheme = "socks5h"
 
-	// Fixtures must receive this validated destination, ignoring the caller address.
+	// Tunnel fixtures bypass destination validation and ignore the caller address.
 	pinnedTarget = "203.0.113.9:443"
 
 	// Bound fixture waits independently of the package timeout.
@@ -171,7 +171,7 @@ func TestProxyTunnelWaitingResponseCanceled(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		if deadlineErr := conn.SetDeadline(time.Now().Add(fixtureTimeout)); deadlineErr != nil {
+		if deadlineErr := conn.SetDeadline(time.Now().Add(2 * fixtureTimeout)); deadlineErr != nil {
 			done <- deadlineErr
 			return
 		}

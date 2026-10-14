@@ -106,23 +106,38 @@ func TestHeartbeatTransportRejectsInvalidResolutionAndProxy(t *testing.T) {
 }
 
 func TestHeartbeatTransportStopsAddressFallbackAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), fixtureTimeout)
+	defer cancel()
+	requests := make(chan *http.Request, 2)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests <- req
+		cancel()
+		http.Error(w, "request canceled", http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := New(WithTargetResolver(func(context.Context, string) ([]net.IPAddr, error) {
 		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("1.1.1.1")}}, nil
-	}), WithProxyResolver(func(*url.URL) (*url.URL, error) { return &url.URL{Scheme: "http", Host: "127.0.0.1:1"}, nil }))
+	}), WithProxyResolver(func(*url.URL) (*url.URL, error) { return proxyURL, nil }))
 	transport := newHeartbeatTransport(h, time.Second)
 	defer transport.CloseIdleConnections()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
 	response, err := transport.RoundTrip(req)
+	proxy.Close()
 	if response != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("response=%v error=%v", response, err)
 	}
-	if len(transport.proxyTransports) != 1 {
-		t.Fatalf("attempted %d destinations after cancellation", len(transport.proxyTransports))
+	if len(requests) != 1 {
+		t.Fatalf("proxy received %d requests, want only the first CONNECT", len(requests))
+	}
+	if received := <-requests; received.Method != http.MethodConnect || received.Host != "8.8.8.8:80" {
+		t.Fatalf("proxy received %s %s, want CONNECT 8.8.8.8:80", received.Method, received.Host)
 	}
 }
 

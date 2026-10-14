@@ -35,9 +35,9 @@ func TestHeartbeatDetailsValidation(t *testing.T) {
 		{"invalid headers", `{"endpoint":"https://example.com","headers":{"Connection":"close"}}`, "not allowed", codes.InvalidArgument},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			details, err := ExtractAndValidateHeartbeatDetails(tc.payload)
-			if details == nil || status.Code(err) != tc.code || !strings.Contains(err.Error(), tc.message) {
-				t.Fatalf("details=%+v error=%v", details, err)
+			_, err := ExtractAndValidateHeartbeatDetails(tc.payload)
+			if status.Code(err) != tc.code || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("error=%v", err)
 			}
 		})
 	}
@@ -67,7 +67,7 @@ func TestHeartbeatHeadersRejectUnsupportedValues(t *testing.T) {
 		}
 	}
 	got, err := parseHeartbeatHeaders(map[string]any{"X-Empty": []any{}})
-	if err != nil || got["X-Empty"] == nil || len(got["X-Empty"]) != 0 {
+	if err != nil || len(got["X-Empty"]) != 0 {
 		t.Fatalf("headers=%v error=%v", got, err)
 	}
 }

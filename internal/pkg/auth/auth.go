@@ -506,7 +506,7 @@ func (a *Auth) resolveVerificationKey(token *jwt.Token, kidFromHeader *string) (
 	return a.publicKey, nil
 }
 
-func validateClaims(claims jwt.MapClaims, bundle map[string]*bundleEntry, kidFromHeader string) (role string, sub string, err error) {
+func validateClaims(claims jwt.MapClaims, bundle map[string]*bundleEntry, kidFromHeader string) (role, sub string, err error) {
 	issuer, issuerErr := claims.GetIssuer()
 	if issuerErr != nil || !TrustedIssuer(issuer) {
 		return "", "", status.Error(codes.Unauthenticated, "token has untrusted issuer")

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/dns/dnsmessage"
@@ -383,26 +384,41 @@ func assertResolvedEndpoint(t *testing.T, host string, want []string) {
 }
 
 func TestProxyTunnelSOCKSPinsTarget(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name, scheme  string
+		authenticated bool
+	}{
+		{name: testSOCKS5Scheme, scheme: testSOCKS5Scheme},
+		{name: testSOCKS5HScheme, scheme: testSOCKS5HScheme},
+		{name: "authenticated socks5", scheme: testSOCKS5Scheme, authenticated: true},
+		{name: "authenticated socks5h", scheme: testSOCKS5HScheme, authenticated: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			done := make(chan error, 1)
+			go func() { done <- serveSOCKSTunnel(listener, tc.authenticated) }()
+			proxyURL := &url.URL{Scheme: tc.scheme, Host: listener.Addr().String()}
+			if tc.authenticated {
+				proxyURL.User = url.UserPassword("user", "secret")
+			}
+			dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
+			defer cancel()
+			conn, err := dial(ctx, "tcp", "attacker.example:80")
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.Close()
+			awaitTransportFixture(t, done)
+		})
 	}
-	defer listener.Close()
-	done := make(chan error, 1)
-	go func() { done <- serveSOCKSTunnel(listener) }()
-	proxyURL := &url.URL{Scheme: testSOCKS5HScheme, Host: listener.Addr().String()}
-	dial, err := proxyTunnelDialContext(proxyURL, pinnedTarget, &net.Dialer{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
-	defer cancel()
-	conn, err := dial(ctx, "tcp", "attacker.example:80")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn.Close()
-	awaitTransportFixture(t, done)
 }
 
 // serveStalledSOCKSTunnel completes authentication and the CONNECT request,
@@ -412,7 +428,7 @@ func TestProxyTunnelSOCKSPinsTarget(t *testing.T) {
 // dialer. release lets the test drop the socket so this goroutine cannot
 // outlive it.
 func serveStalledSOCKSTunnel(listener net.Listener, negotiated chan<- struct{}, release <-chan struct{}) error {
-	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout)
+	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout, false)
 	if err != nil {
 		return err
 	}
@@ -569,16 +585,87 @@ func TestDialHTTPProxyTunnelSocketFailures(t *testing.T) {
 	})
 }
 
+func TestProxyTunnelClearsHandshakeDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		socket, proxy := net.Pipe()
+		defer socket.Close()
+		defer proxy.Close()
+		useFakeProxyConn(t, dialProxyConn, socket)
+		ctx, cancel := context.WithTimeout(context.Background(), fixtureTimeout)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { done <- serveCONNECTEcho(proxy, ctx.Done()) }()
+		proxyURL := &url.URL{Scheme: httpScheme, Host: "proxy.example:3128"}
+		conn, err := dialHTTPProxyTunnel(ctx, "tcp", proxyURL, proxyURL.Host, pinnedTarget, &net.Dialer{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		// The returned tunnel must remain readable and writable past its handshake deadline.
+		<-ctx.Done()
+		synctest.Wait()
+		if _, err := io.WriteString(conn, "ping"); err != nil {
+			t.Fatalf("write after handshake deadline: %v", err)
+		}
+		payload := make([]byte, 4)
+		if _, err := io.ReadFull(conn, payload); err != nil || string(payload) != "pong" {
+			t.Fatalf("read after handshake deadline: payload=%q error=%v", payload, err)
+		}
+		awaitTransportFixture(t, done)
+	})
+}
+
+func serveCONNECTEcho(conn net.Conn, handshakeDone <-chan struct{}) error {
+	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(2 * fixtureTimeout)); err != nil {
+		return err
+	}
+	if _, err := http.ReadRequest(bufio.NewReader(conn)); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(conn, connectEstablished); err != nil {
+		return err
+	}
+	<-handshakeDone
+	payload := make([]byte, 4)
+	if _, err := io.ReadFull(conn, payload); err != nil {
+		return err
+	}
+	if string(payload) != "ping" {
+		return errors.New("unexpected tunnel payload")
+	}
+	_, err := io.WriteString(conn, "pong")
+	return err
+}
+
 // net.Resolver reports an answer with no records as "no such host", so the
 // empty-answer guard in resolveEndpointHost only sees a resolver that returns
 // none without complaining.
-func TestResolveEndpointHostRejectsEmptyAnswer(t *testing.T) {
+func TestResolveEndpointHostRejectsUnsafeAnswers(t *testing.T) {
 	original := lookupIPAddr
 	t.Cleanup(func() { lookupIPAddr = original })
-	lookupIPAddr = func(context.Context, string) ([]net.IPAddr, error) { return nil, nil }
-	addresses, err := resolveEndpointHost(context.Background(), "empty.test")
-	if !errors.Is(err, ErrDisallowedTarget) || len(addresses) != 0 {
-		t.Fatalf("addresses = %v, error = %v", addresses, err)
+	for _, tc := range []struct {
+		name string
+		ips  []string
+	}{
+		{name: "empty"},
+		{name: "private first", ips: []string{"127.0.0.1", "8.8.8.8"}},
+		{name: "private last", ips: []string{"8.8.8.8", "1.1.1.1", "127.0.0.1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// net.Resolver sorts answers, so inject the order this guard must inspect.
+			lookupIPAddr = func(context.Context, string) ([]net.IPAddr, error) {
+				var addresses []net.IPAddr
+				for _, ip := range tc.ips {
+					addresses = append(addresses, net.IPAddr{IP: net.ParseIP(ip)})
+				}
+				return addresses, nil
+			}
+			addresses, err := resolveEndpointHost(context.Background(), "unsafe.test")
+			if !errors.Is(err, ErrDisallowedTarget) || len(addresses) != 0 {
+				t.Fatalf("addresses = %v, error = %v", addresses, err)
+			}
+		})
 	}
 }
 
@@ -739,8 +826,8 @@ func TestHTTPSProxyRequiresTrustedCertificate(t *testing.T) {
 	}
 }
 
-func serveSOCKSTunnel(listener net.Listener) error {
-	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout)
+func serveSOCKSTunnel(listener net.Listener, authenticated bool) error {
+	conn, err := acceptSOCKS5Handshake(listener, 2*fixtureTimeout, authenticated)
 	if err != nil {
 		return err
 	}
@@ -752,7 +839,7 @@ func serveSOCKSTunnel(listener net.Listener) error {
 // acceptSOCKS5Handshake accepts one client, completes method negotiation, and
 // reads the CONNECT request, failing unless the client asked for pinnedTarget
 // rather than the address it handed to the dialer.
-func acceptSOCKS5Handshake(listener net.Listener, timeout time.Duration) (net.Conn, error) {
+func acceptSOCKS5Handshake(listener net.Listener, timeout time.Duration, authenticated bool) (net.Conn, error) {
 	conn, err := listener.Accept()
 	if err != nil {
 		return nil, err
@@ -764,15 +851,40 @@ func acceptSOCKS5Handshake(listener net.Listener, timeout time.Duration) (net.Co
 	if deadlineErr := conn.SetDeadline(time.Now().Add(timeout)); deadlineErr != nil {
 		return fail(deadlineErr)
 	}
-	greeting := make([]byte, 3)
+	greeting := make([]byte, 2)
 	if _, err = io.ReadFull(conn, greeting); err != nil {
 		return fail(err)
 	}
-	if greeting[0] != 5 || greeting[1] != 1 || greeting[2] != 0 {
+	if greeting[0] != 5 {
 		return fail(errors.New("unexpected SOCKS greeting"))
 	}
-	if _, err = conn.Write([]byte{5, 0}); err != nil {
+	methods := make([]byte, int(greeting[1]))
+	if _, err = io.ReadFull(conn, methods); err != nil {
 		return fail(err)
+	}
+	method := byte(0)
+	if authenticated {
+		method = 2
+	}
+	if !bytes.Contains(methods, []byte{method}) {
+		return fail(errors.New("required SOCKS authentication method was not offered"))
+	}
+	if _, err = conn.Write([]byte{5, method}); err != nil {
+		return fail(err)
+	}
+	if authenticated {
+		// RFC 1929: version, username length/bytes, password length/bytes.
+		want := []byte{1, 4, 'u', 's', 'e', 'r', 6, 's', 'e', 'c', 'r', 'e', 't'}
+		credentials := make([]byte, len(want))
+		if _, err = io.ReadFull(conn, credentials); err != nil {
+			return fail(err)
+		}
+		if !bytes.Equal(credentials, want) {
+			return fail(errors.New("incorrect SOCKS credentials"))
+		}
+		if _, err = conn.Write([]byte{1, 0}); err != nil {
+			return fail(err)
+		}
 	}
 	command := make([]byte, len(socks5PinnedCommand))
 	if _, err = io.ReadFull(conn, command); err != nil {

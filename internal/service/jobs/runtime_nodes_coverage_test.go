@@ -73,3 +73,48 @@ func TestListReadyRuntimeNodes(t *testing.T) {
 		})
 	}
 }
+
+func TestGetReadyRuntimeNode(t *testing.T) {
+	type contextKey struct{}
+	for _, tc := range []struct {
+		name string
+		node *jobsmodel.RuntimeNode
+		err  error
+	}{
+		{name: "selected endpoint", node: &jobsmodel.RuntimeNode{RuntimeNodeID: "winner", RuntimeEndpoint: "tcp://winner:2375"}},
+		{name: "no healthy node", err: status.Error(codes.Unavailable, "no healthy runtime node is available")},
+		{name: "storage failure", err: status.Error(codes.Internal, "storage unavailable")},
+		{name: "cancellation", err: status.Error(codes.Canceled, "caller canceled")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			repo := jobsmock.NewMockRepository(ctrl)
+			svc := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+			ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), contextKey{}, "single-runtime-selection"), time.Minute)
+			defer cancel()
+			if status.Code(tc.err) == codes.Canceled {
+				cancel()
+			}
+			repo.EXPECT().GetReadyRuntimeNode(gomock.Any()).DoAndReturn(func(got context.Context) (*jobsmodel.RuntimeNode, error) {
+				require.Equal(t, ctx.Err(), got.Err())
+				require.Equal(t, ctx.Done(), got.Done())
+				require.Equal(t, "single-runtime-selection", got.Value(contextKey{}))
+				wantDeadline, wantOK := ctx.Deadline()
+				gotDeadline, gotOK := got.Deadline()
+				require.Equal(t, wantOK, gotOK)
+				require.Equal(t, wantDeadline, gotDeadline)
+				return tc.node, tc.err
+			})
+			res, err := svc.GetReadyRuntimeNode(ctx, &jobspb.GetReadyRuntimeNodeRequest{})
+			if tc.err != nil {
+				require.Same(t, tc.err, err)
+				require.Nil(t, res)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			require.Equal(t, "winner", res.GetRuntimeNodeId())
+			require.Equal(t, "tcp://winner:2375", res.GetRuntimeEndpoint())
+		})
+	}
+}

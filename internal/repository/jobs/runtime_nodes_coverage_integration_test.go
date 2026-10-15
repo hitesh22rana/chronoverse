@@ -105,6 +105,27 @@ func TestIntegrationListReadyRuntimeNodesFiltersAndOrders(t *testing.T) {
 	if len(nodes) != 3 || nodes[0].RuntimeNodeID != "tie-a" || nodes[1].RuntimeNodeID != "tie-b" || nodes[2].RuntimeNodeID != "busy" {
 		t.Fatalf("short TTL nodes=%+v", nodes)
 	}
+	assertRuntimeSelectionOrder(t, repo, want)
+}
+
+func assertRuntimeSelectionOrder(t *testing.T, repo *Repository, want []*jobsmodel.RuntimeNode) {
+	t.Helper()
+	ctx := context.Background()
+	// Selecting and removing each winner proves LIMIT1 uses the same full ordering.
+	repo.cfg.RuntimeHeartbeatTTL = time.Minute
+	for _, expected := range want {
+		node, selectErr := repo.GetReadyRuntimeNode(ctx)
+		if selectErr != nil || node == nil || *node != *expected {
+			t.Fatalf("selected node=%+v error=%v, want %+v", node, selectErr, expected)
+		}
+		if _, updateErr := repo.pg.Exec(ctx, `UPDATE runtime_nodes SET status = 'DRAINING' WHERE id = $1`, expected.RuntimeNodeID); updateErr != nil {
+			t.Fatal(updateErr)
+		}
+	}
+	node, selectErr := repo.GetReadyRuntimeNode(ctx)
+	if node != nil || status.Code(selectErr) != codes.Unavailable || status.Convert(selectErr).Message() != "no healthy runtime node is available" {
+		t.Fatalf("exhausted selection node=%+v error=%v; want Unavailable", node, selectErr)
+	}
 }
 
 func TestIntegrationListReadyRuntimeNodesEmptyAndContextErrors(t *testing.T) {
@@ -112,6 +133,10 @@ func TestIntegrationListReadyRuntimeNodesEmptyAndContextErrors(t *testing.T) {
 	nodes, err := repo.ListReadyRuntimeNodes(context.Background())
 	if err != nil || len(nodes) != 0 {
 		t.Fatalf("empty nodes=%v error=%v", nodes, err)
+	}
+	node, selectErr := repo.GetReadyRuntimeNode(context.Background())
+	if node != nil || status.Code(selectErr) != codes.Unavailable {
+		t.Fatalf("empty selection node=%v error=%v; want Unavailable", node, selectErr)
 	}
 	for _, tc := range []struct {
 		name string
@@ -129,6 +154,10 @@ func TestIntegrationListReadyRuntimeNodesEmptyAndContextErrors(t *testing.T) {
 			nodes, err := repo.ListReadyRuntimeNodes(ctx)
 			if nodes != nil || status.Code(err) != tc.code {
 				t.Fatalf("nodes=%v error=%v, want %v", nodes, err, tc.code)
+			}
+			node, selectErr := repo.GetReadyRuntimeNode(ctx)
+			if node != nil || status.Code(selectErr) != tc.code {
+				t.Fatalf("selected node=%v error=%v; want %v", node, selectErr, tc.code)
 			}
 		})
 	}
@@ -152,6 +181,10 @@ func TestIntegrationListReadyRuntimeNodesStorageFailures(t *testing.T) {
 			nodes, err := repo.ListReadyRuntimeNodes(context.Background())
 			if nodes != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "list ready runtime nodes") {
 				t.Fatalf("nodes=%v error=%v, want contextual Internal", nodes, err)
+			}
+			node, selectErr := repo.GetReadyRuntimeNode(context.Background())
+			if node != nil || status.Code(selectErr) != codes.Internal || !strings.Contains(status.Convert(selectErr).Message(), "get ready runtime node") {
+				t.Fatalf("selection node=%v error=%v; want contextual Internal", node, selectErr)
 			}
 		})
 	}

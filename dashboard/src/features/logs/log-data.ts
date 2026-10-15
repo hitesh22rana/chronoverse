@@ -70,7 +70,7 @@ export const mergeLiveLogs = (existingLogs: JobLog[], newLogs: JobLog[]): JobLog
 
 export const logsFromPages = (pages?: JobLogsResponse[]): JobLog[] =>
     pages?.length
-        ? sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page?.logs || [])))
+        ? sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page.logs)))
         : []
 
 export const getDownloadFilename = (filename: string, format: DownloadLogsFormat) => {

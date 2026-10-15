@@ -3,10 +3,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -19,11 +21,13 @@ import (
 
 type sessionUsersClient struct {
 	userspb.UsersServiceClient
-	header   metadata.MD
-	err      error
-	calls    int
-	register *userspb.RegisterUserRequest
-	login    *userspb.LoginUserRequest
+	header         metadata.MD
+	err            error
+	calls          int
+	captureContext func(context.Context)
+	contextError   bool
+	register       *userspb.RegisterUserRequest
+	login          *userspb.LoginUserRequest
 }
 
 func (c *sessionUsersClient) reply(options []grpc.CallOption) {
@@ -35,14 +39,26 @@ func (c *sessionUsersClient) reply(options []grpc.CallOption) {
 	}
 }
 
-func (c *sessionUsersClient) RegisterUser(_ context.Context, request *userspb.RegisterUserRequest, options ...grpc.CallOption) (*userspb.RegisterUserResponse, error) {
+func (c *sessionUsersClient) RegisterUser(ctx context.Context, request *userspb.RegisterUserRequest, options ...grpc.CallOption) (*userspb.RegisterUserResponse, error) {
 	c.reply(options)
+	if c.captureContext != nil {
+		c.captureContext(ctx)
+	}
+	if c.contextError && ctx.Err() != nil {
+		c.err = status.FromContextError(ctx.Err()).Err()
+	}
 	c.register = request
 	return &userspb.RegisterUserResponse{UserId: testSessionUserID}, c.err
 }
 
-func (c *sessionUsersClient) LoginUser(_ context.Context, request *userspb.LoginUserRequest, options ...grpc.CallOption) (*userspb.LoginUserResponse, error) {
+func (c *sessionUsersClient) LoginUser(ctx context.Context, request *userspb.LoginUserRequest, options ...grpc.CallOption) (*userspb.LoginUserResponse, error) {
 	c.reply(options)
+	if c.captureContext != nil {
+		c.captureContext(ctx)
+	}
+	if c.contextError && ctx.Err() != nil {
+		c.err = status.FromContextError(ctx.Err()).Err()
+	}
 	c.login = request
 	return &userspb.LoginUserResponse{UserId: testSessionUserID}, c.err
 }
@@ -204,6 +220,59 @@ func TestAuthSessionRejectsUninitializedEncryption(t *testing.T) {
 			invokeAuthSession(server, register, response, authSessionRequest(register, `{"email":"alice@example.com","password":"secret"}`, testJSONContentType))
 			assertAuthSessionError(t, response, http.StatusInternalServerError, "failed to encrypt session\n")
 			assertAuthSessionRPC(t, client, register)
+		})
+	}
+}
+
+func TestAuthSessionPropagatesRequestContext(t *testing.T) {
+	type requestContextKey struct{}
+	for _, register := range []bool{false, true} {
+		name := "login"
+		if register {
+			name = "register"
+		}
+		t.Run(name, func(t *testing.T) {
+			for _, state := range []string{"active deadline", "canceled", "expired deadline"} {
+				t.Run(state, func(t *testing.T) {
+					deadline := time.Now().Add(time.Hour)
+					if state == "expired deadline" {
+						deadline = time.Now().Add(-time.Hour)
+					}
+					ctx, cancel := context.WithDeadline(context.WithValue(t.Context(), requestContextKey{}, "request-marker"), deadline)
+					defer cancel()
+					if state == "canceled" {
+						cancel()
+					}
+					var rpcContext context.Context
+					client := &sessionUsersClient{
+						err:            status.Error(codes.Unavailable, "service unavailable"),
+						contextError:   state != "active deadline",
+						captureContext: func(got context.Context) { rpcContext = got },
+					}
+					request := authSessionRequest(register, `{"email":"alice@example.com","password":"secret"}`, testJSONContentType).WithContext(ctx)
+					response := httptest.NewRecorder()
+					invokeAuthSession(&Server{usersClient: client}, register, response, request)
+					assertAuthSessionRPC(t, client, register)
+					if rpcContext == nil || rpcContext.Value(requestContextKey{}) != "request-marker" || !errors.Is(rpcContext.Err(), ctx.Err()) {
+						t.Fatalf("RPC context lost request values or cancellation: %v", rpcContext)
+					}
+					if got, ok := rpcContext.Deadline(); !ok || !got.Equal(deadline) {
+						t.Fatalf("RPC deadline = %v, %v; want %v", got, ok, deadline)
+					}
+					wantStatus := http.StatusServiceUnavailable
+					if state == "canceled" {
+						wantStatus = http.StatusRequestTimeout
+					}
+					if state == "expired deadline" {
+						wantStatus = http.StatusGatewayTimeout
+					}
+					message := "failed to login user\n"
+					if register {
+						message = "failed to register user\n"
+					}
+					assertAuthSessionError(t, response, wantStatus, message)
+				})
+			}
 		})
 	}
 }

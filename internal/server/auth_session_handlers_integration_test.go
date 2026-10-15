@@ -7,7 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/metadata"
+
+	redispkg "github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
 func TestIntegrationAuthSessionLifecycle(t *testing.T) {
@@ -19,11 +22,11 @@ func TestIntegrationAuthSessionLifecycle(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			for _, secure := range []bool{false, true} {
-				scheme := "http"
+				cookieConfig := "insecure cookie"
 				if secure {
-					scheme = "https"
+					cookieConfig = "secure cookie"
 				}
-				t.Run(scheme, func(t *testing.T) {
+				t.Run(cookieConfig, func(t *testing.T) {
 					client := &sessionUsersClient{header: metadata.Pairs("authorization", "Bearer private.jwt.token")}
 					server := &Server{
 						usersClient: client, crypto: newTestCrypto(t), rdb: store,
@@ -49,6 +52,7 @@ func TestIntegrationAuthSessionLifecycle(t *testing.T) {
 					if _, err = store.Get(t.Context(), session.Value, &userID); err != nil || userID != testSessionUserID {
 						t.Fatalf("stored identity = %q, %v", userID, err)
 					}
+					assertAuthSessionTTL(t, store, session.Value, server.validationCfg.SessionExpiry)
 					assertAuthSessionCSRF(t, csrf.Value, session.Value)
 					if err = store.Delete(t.Context(), session.Value); err != nil {
 						t.Fatal(err)
@@ -110,5 +114,20 @@ func assertAuthSessionCSRF(t *testing.T, csrf, session string) {
 	}
 	if err := verifyCSRFToken(csrf, session+"other", testCSRFSecret, 15*time.Minute); err == nil {
 		t.Fatal("CSRF token accepted for another session")
+	}
+}
+
+func assertAuthSessionTTL(t *testing.T, store *redispkg.Store, session string, expiry time.Duration) {
+	t.Helper()
+	var ttl *redis.DurationCmd
+	if err := store.Pipeline(t.Context(), func(pipe redis.Pipeliner) error {
+		ttl = pipe.PTTL(t.Context(), session)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	remaining, err := ttl.Result()
+	if err != nil || remaining <= expiry-time.Minute || remaining > expiry {
+		t.Fatalf("stored session TTL = %v, %v; want within one minute of %v", remaining, err, expiry)
 	}
 }

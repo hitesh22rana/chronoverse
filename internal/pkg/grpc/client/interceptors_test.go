@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -130,32 +131,32 @@ func interceptorInvocation(t *testing.T, kind string, cb *breaker.Breaker, strea
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	conn := new(grpc.ClientConn)
-	option := grpc.WaitForReady(true)
+	options := []grpc.CallOption{grpc.WaitForReady(true), grpc.MaxCallRecvMsgSize(1024)}
 	req, reply := new(int), new(int)
 	desc := &grpc.StreamDesc{ServerStreams: true}
 	if kind == "unary" {
 		invoker := func(gotCtx context.Context, method string, gotReq, gotReply any, gotConn *grpc.ClientConn, opts ...grpc.CallOption) error {
 			*calls++
-			if gotCtx != ctx || method != "/service/method" || gotReq != req || gotReply != reply || gotConn != conn || len(opts) != 1 || opts[0] != option {
+			if gotCtx != ctx || method != "/service/method" || gotReq != req || gotReply != reply || gotConn != conn || !slices.Equal(opts, options) {
 				t.Fatal("unary invocation arguments changed")
 			}
 			return rpcErr
 		}
 		interceptor := circuitBreakerUnaryInterceptor(cb)
 		return func() (grpc.ClientStream, error) {
-			return nil, interceptor(ctx, "/service/method", req, reply, conn, invoker, option)
+			return nil, interceptor(ctx, "/service/method", req, reply, conn, invoker, options...)
 		}
 	}
 	streamer := func(gotCtx context.Context, gotDesc *grpc.StreamDesc, gotConn *grpc.ClientConn, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		*calls++
-		if gotCtx != ctx || gotDesc != desc || gotConn != conn || method != "/service/method" || len(opts) != 1 || opts[0] != option {
+		if gotCtx != ctx || gotDesc != desc || gotConn != conn || method != "/service/method" || !slices.Equal(opts, options) {
 			t.Fatal("stream invocation arguments changed")
 		}
 		return stream, rpcErr
 	}
 	interceptor := circuitBreakerStreamInterceptor(cb)
 	return func() (grpc.ClientStream, error) {
-		return interceptor(ctx, desc, conn, "/service/method", streamer, option)
+		return interceptor(ctx, desc, conn, "/service/method", streamer, options...)
 	}
 }
 

@@ -3,6 +3,7 @@ package jobs_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ import (
 )
 
 func TestListReadyRuntimeNodes(t *testing.T) {
+	type contextKey struct{}
 	for _, tc := range []struct {
 		name  string
 		nodes []*jobsmodel.RuntimeNode
@@ -36,7 +38,7 @@ func TestListReadyRuntimeNodes(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := jobsmock.NewMockRepository(ctrl)
 			svc := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), contextKey{}, "runtime-selection"), time.Minute)
 			defer cancel()
 			if status.Code(tc.err) == codes.Canceled {
 				cancel()
@@ -44,6 +46,11 @@ func TestListReadyRuntimeNodes(t *testing.T) {
 			repo.EXPECT().ListReadyRuntimeNodes(gomock.Any()).DoAndReturn(func(got context.Context) ([]*jobsmodel.RuntimeNode, error) {
 				require.Equal(t, ctx.Err(), got.Err())
 				require.Equal(t, ctx.Done(), got.Done())
+				require.Equal(t, "runtime-selection", got.Value(contextKey{}))
+				wantDeadline, wantOK := ctx.Deadline()
+				gotDeadline, gotOK := got.Deadline()
+				require.Equal(t, wantOK, gotOK)
+				require.Equal(t, wantDeadline, gotDeadline)
 				return tc.nodes, tc.err
 			})
 			res, err := svc.ListReadyRuntimeNodes(ctx, &jobspb.ListReadyRuntimeNodesRequest{})

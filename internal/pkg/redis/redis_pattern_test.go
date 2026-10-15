@@ -3,6 +3,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -47,6 +48,12 @@ func TestIntegrationDeleteByPattern(t *testing.T) {
 
 	t.Run("preserved keys retain store contracts", func(t *testing.T) {
 		checkPreservedKeyContracts(ctx, t, admin, store)
+	})
+	t.Run("conditional writes preserve first value and TTL", func(t *testing.T) {
+		checkConditionalWriteContracts(ctx, t, admin, store)
+	})
+	t.Run("pipeline execution and rejection", func(t *testing.T) {
+		checkPipelineContracts(ctx, t, admin, store)
 	})
 	t.Run("log channel preserves messages", func(t *testing.T) {
 		checkPatternLogChannel(ctx, t, store)
@@ -247,10 +254,98 @@ func TestStoreOperationsAfterClose(t *testing.T) {
 			t.Fatalf("Delete = %v; want Internal with closed client", err)
 		}
 	})
+	t.Run("exists", func(t *testing.T) {
+		exists, err := store.Exists(t.Context(), "closed")
+		if exists || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
+			t.Fatalf("Exists = %v, %v", exists, err)
+		}
+	})
+	t.Run("conditional write", func(t *testing.T) {
+		created, err := store.SetNX(t.Context(), "closed", "value", time.Hour)
+		if created || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
+			t.Fatalf("SetNX = %v, %v", created, err)
+		}
+	})
 	t.Run("publish", func(t *testing.T) {
 		err := store.Publish(t.Context(), "closed", "message")
 		if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
 			t.Fatalf("Publish = %v; want Internal with closed client", err)
 		}
 	})
+}
+
+func checkConditionalWriteContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
+	t.Helper()
+	const key = "conditional:first-writer"
+	assertStoreExists(ctx, t, store, key, false)
+	if created, err := store.SetNX(ctx, key, "first", time.Hour); err != nil || !created {
+		t.Fatalf("first SetNX = %v, %v", created, err)
+	}
+	assertStoreExists(ctx, t, store, key, true)
+	if created, err := store.SetNX(ctx, key, "replacement", time.Minute); err != nil || created {
+		t.Fatalf("contended SetNX = %v, %v", created, err)
+	}
+	var value string
+	if _, err := store.Get(ctx, key, &value); err != nil || value != "first" {
+		t.Fatalf("first writer value = %q, %v", value, err)
+	}
+	if ttl, err := admin.PTTL(ctx, key).Result(); err != nil || ttl <= 59*time.Minute || ttl > time.Hour {
+		t.Fatalf("first writer TTL = %v, %v", ttl, err)
+	}
+	if deleted, err := store.DeleteByPattern(ctx, "conditional:*"); err != nil || deleted != 1 {
+		t.Fatalf("conditional cleanup = %d, %v", deleted, err)
+	}
+	assertStoreExists(ctx, t, store, key, false)
+}
+
+func checkPipelineContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
+	t.Helper()
+	const key = "pipeline:contract"
+	var read *goredis.StringCmd
+	if err := store.Pipeline(ctx, func(pipe goredis.Pipeliner) error {
+		pipe.Set(ctx, key, "first", time.Hour)
+		read = pipe.Get(ctx, key)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if value, err := read.Result(); err != nil || value != "first" {
+		t.Fatalf("ordered pipeline read = %q, %v", value, err)
+	}
+	rejected := errors.New("reject queued write")
+	err := store.Pipeline(ctx, func(pipe goredis.Pipeliner) error {
+		pipe.Set(ctx, key, "rejected", time.Hour)
+		return rejected
+	})
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), rejected.Error()) {
+		t.Fatalf("callback rejection = %v", err)
+	}
+	if value, getErr := admin.Get(ctx, key).Result(); getErr != nil || value != "first" {
+		t.Fatalf("rejected callback changed key: %q, %v", value, getErr)
+	}
+	err = store.Pipeline(ctx, func(pipe goredis.Pipeliner) error {
+		pipe.LPush(ctx, key, "wrong type")
+		return nil
+	})
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "WRONGTYPE") {
+		t.Fatalf("pipeline command failure = %v", err)
+	}
+	if value, getErr := admin.Get(ctx, key).Result(); getErr != nil || value != "first" {
+		t.Fatalf("failed command changed key: %q, %v", value, getErr)
+	}
+}
+
+func TestSetNXRejectsUnserializableValue(t *testing.T) {
+	store := &Store{}
+	created, err := store.SetNX(t.Context(), "unserializable", make(chan int), time.Hour)
+	if created || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to marshal value") {
+		t.Fatalf("SetNX unsupported JSON = %v, %v", created, err)
+	}
+}
+
+func assertStoreExists(ctx context.Context, t *testing.T, store *Store, key string, want bool) {
+	t.Helper()
+	if exists, err := store.Exists(ctx, key); err != nil || exists != want {
+		t.Fatalf("Exists(%q) = %v, %v; want %v", key, exists, err, want)
+	}
 }

@@ -370,10 +370,7 @@ func TestIntegrationGetCSRFTokenReplacesStaleCookie(t *testing.T) {
 	}
 
 	t.Run("valid cookie is reused", func(t *testing.T) {
-		valid, err := generateCSRFToken(session, testCSRFSecret)
-		if err != nil {
-			t.Fatalf("generate csrf token: %v", err)
-		}
+		valid := generateCSRFToken(session, testCSRFSecret)
 		req := withSession()
 		req.AddCookie(secureTestCookie(csrfCookieName, valid))
 
@@ -393,10 +390,7 @@ func TestIntegrationGetCSRFTokenReplacesStaleCookie(t *testing.T) {
 
 	t.Run("expired cookie is replaced", func(t *testing.T) {
 		staleStamp := strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10)
-		staleHMAC, err := generateHMAC(session+staleStamp, testCSRFSecret)
-		if err != nil {
-			t.Fatalf("generate hmac: %v", err)
-		}
+		staleHMAC := generateHMAC(session+staleStamp, testCSRFSecret)
 		req := withSession()
 		req.AddCookie(secureTestCookie(csrfCookieName, staleHMAC+delimiter+staleStamp))
 
@@ -420,10 +414,7 @@ func TestIntegrationGetCSRFTokenReplacesStaleCookie(t *testing.T) {
 	})
 
 	t.Run("foreign cookie is replaced", func(t *testing.T) {
-		foreign, err := generateCSRFToken("another-session", testCSRFSecret)
-		if err != nil {
-			t.Fatalf("generate csrf token: %v", err)
-		}
+		foreign := generateCSRFToken("another-session", testCSRFSecret)
 		req := withSession()
 		req.AddCookie(secureTestCookie(csrfCookieName, foreign))
 

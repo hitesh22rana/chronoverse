@@ -17,15 +17,12 @@ const (
 )
 
 // generateCSRFToken generates a CSRF token from the given session.
-func generateCSRFToken(session, secret string) (string, error) {
+func generateCSRFToken(session, secret string) string {
 	timeStamp := strconv.FormatInt(time.Now().Unix(), 10)
 	data := session + timeStamp
-	sha, err := generateHMAC(data, secret)
-	if err != nil {
-		return "", err
-	}
+	sha := generateHMAC(data, secret)
 
-	return sha + delimiter + timeStamp, nil
+	return sha + delimiter + timeStamp
 }
 
 // verifyCSRFToken verifies the given CSRF token against the session.
@@ -43,10 +40,7 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 	}
 
 	data := session + timeStamp
-	expectedSHA, err := generateHMAC(data, secret)
-	if err != nil {
-		return err
-	}
+	expectedSHA := generateHMAC(data, secret)
 
 	if !hmac.Equal([]byte(sha), []byte(expectedSHA)) {
 		return status.Error(codes.InvalidArgument, "invalid csrf token")
@@ -59,11 +53,10 @@ func verifyCSRFToken(csrfToken, session, secret string, maxAge time.Duration) er
 	return nil
 }
 
-func generateHMAC(data, secret string) (string, error) {
+func generateHMAC(data, secret string) string {
 	h := hmac.New(sha256.New, []byte(secret))
-	if _, err := h.Write([]byte(data)); err != nil {
-		return "", status.Errorf(codes.Internal, "failed to write data to hmac: %v", err)
-	}
+	// hash.Hash.Write never returns an error.
+	_, _ = h.Write([]byte(data))
 
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil))
 }

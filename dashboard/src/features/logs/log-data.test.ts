@@ -71,12 +71,14 @@ describe("log data", () => {
     it("retains the newest duplicate and does not mutate either source", () => {
         const old = { ...log(3), timestamp: "2026-07-20T00:00:00Z", message: "old" }
         const newest = { ...old, timestamp: "2026-07-20T00:00:01Z", message: "new" }
-        const existing = Object.freeze([old])
-        const incoming = Object.freeze([newest, old])
-        expect(mergeLiveLogs([...existing], [...incoming])).toEqual([newest])
+        const existing = [old, log(1)]
+        const incoming = [newest, log(5), old]
+        Object.freeze(existing)
+        Object.freeze(incoming)
+        expect(mergeLiveLogs(existing, incoming)).toEqual([log(5), newest, log(1)])
         expect(mergeLiveLogs([newest], [old])).toEqual([newest])
-        expect(existing).toEqual([old])
-        expect(incoming).toEqual([newest, old])
+        expect(existing).toEqual([old, log(1)])
+        expect(incoming).toEqual([newest, log(5), old])
     })
 
     it("deduplicates missing identities by the complete fallback key", () => {

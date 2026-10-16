@@ -49,10 +49,10 @@ func TestIsCircuitBreakerError(t *testing.T) {
 	}
 	for code := codes.OK; code <= codes.Unauthenticated; code++ {
 		err := status.Error(code, "RPC failure")
-		tests = append(tests,
-			testCase{code.String(), err, counted[code]},
-			testCase{"wrapped " + code.String(), fmt.Errorf("RPC: %w", err), counted[code]},
-		)
+		tests = append(tests, testCase{code.String(), err, counted[code]})
+		if err != nil {
+			tests = append(tests, testCase{"wrapped " + code.String(), fmt.Errorf("RPC: %w", err), counted[code]})
+		}
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

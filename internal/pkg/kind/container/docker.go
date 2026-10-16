@@ -1021,7 +1021,7 @@ func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*Stat
 		}
 		return nil, status.Errorf(codes.Aborted, "failed to inspect container %s: %v", containerID, err)
 	}
-	if data.State == nil {
+	if data.ContainerJSONBase == nil || data.State == nil {
 		return nil, status.Errorf(codes.Aborted, "container %s has no state", containerID)
 	}
 

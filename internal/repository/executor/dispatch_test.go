@@ -114,7 +114,7 @@ func TestExecutorProcessRecordRejectsBeforeClaim(t *testing.T) {
 				record.Value = []byte("{")
 				wantCode = codes.InvalidArgument
 			case "invalid attempt":
-				record.Value = []byte(`{"DispatchAttempt":0}`)
+				record.Value = []byte(`{"DispatchAttempt":0,"ScheduledAt":"2024-01-01T00:00:00Z"}`)
 				wantCode = codes.InvalidArgument
 			case "invalid timestamp":
 				record.Value = []byte(`{"DispatchAttempt":1,"ScheduledAt":"yesterday"}`)
@@ -329,6 +329,7 @@ func TestExecutorActivatedHandoffSurvivesRecordCancellation(t *testing.T) {
 			select {
 			case <-release:
 			case <-ctx.Done():
+				t.Errorf("renewal returned on the test deadline before release: %v", ctx.Err())
 				return nil, ctx.Err()
 			}
 			if runCtx.Err() != nil {

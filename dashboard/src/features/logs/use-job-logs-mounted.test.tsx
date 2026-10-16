@@ -249,6 +249,33 @@ afterEach(() => {
     vi.unstubAllGlobals()
 })
 
+it.each([
+    ["retained", "", undefined],
+    ["retained", "", null],
+    ["search", "q=timeout", undefined],
+    ["search", "q=timeout", null],
+] as const)("normalizes an empty %s response (query=%s, logs=%s)", async (_kind, search, logs) => {
+    mocks.search = search
+    mocks.fetchApiJson.mockImplementation(async (url: string) => {
+        if (url.includes("/logs")) {
+            return { id: "j1", workflow_id: "w1", ...(logs === null ? { logs } : {}) }
+        }
+        return workflow
+    })
+
+    renderJobLogs("COMPLETED")
+
+    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalledWith(
+        `/workflows/w1/jobs/j1/logs${search ? `/search?${search}` : ""}`,
+        "failed to fetch job logs",
+        { cache: "no-store" },
+    ))
+    await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
+    expect(screen.getByTestId("error").textContent).toBe("none")
+    expect(screen.queryAllByRole("listitem")).toEqual([])
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+})
+
 it("renders live stream messages merged with retained logs", async () => {
     renderJobLogs("RUNNING")
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3))

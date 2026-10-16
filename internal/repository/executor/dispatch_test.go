@@ -139,6 +139,29 @@ func TestExecutorProcessRecordRejectsBeforeClaim(t *testing.T) {
 	}
 }
 
+func TestExecutorProcessRecordFailsClosedWhenPlaceholderVanishes(t *testing.T) {
+	t.Parallel()
+	repo, record := dispatchRepository(t)
+	commandID := idempotency.ClaimCommandID(repo.processID, "job-1", 3)
+	repo.svc.Jobs = &dispatchJobsClient{claim: func(context.Context, *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error) {
+		// Simulate the claiming placeholder being resolved while ClaimJob is in
+		// flight, so this caller survives the claim without ownership to activate.
+		entry, owner, err := repo.handoffs.getOrReserve(commandID, &jobspb.ClaimJobRequest{})
+		if err != nil || owner {
+			t.Errorf("placeholder lookup = owner %t, err %v", owner, err)
+		}
+		repo.handoffs.resolveRemoved(entry, nil)
+		return &jobspb.ClaimJobResponse{Claimed: true, Id: "job-1", WorkflowId: "workflow-1", LeaseToken: "lease-1"}, nil
+	}}
+	err := repo.processRecord(t.Context(), record)
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("processRecord error = %v, want Internal", err)
+	}
+	if len(repo.slots) != 0 || repo.handoffs.size() != 0 {
+		t.Fatalf("failed activation leaked slots=%d handoffs=%d", len(repo.slots), repo.handoffs.size())
+	}
+}
+
 func TestExecutorDuplicateRecordWaitsForClaimOwner(t *testing.T) {
 	t.Parallel()
 	repo, record := dispatchRepository(t)

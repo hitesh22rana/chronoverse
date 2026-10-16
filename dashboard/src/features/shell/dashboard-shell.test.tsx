@@ -20,7 +20,10 @@ vi.mock("react", async (importOriginal) => ({
 vi.mock("@/features/notifications/use-notifications", () => ({
     useNotifications: (options?: unknown) => {
         state.useNotifications(options)
-        return { notifications: state.notifications, isLoading: false, markAsRead: vi.fn(), refetch: vi.fn() }
+        return {
+            notifications: state.notifications, isLoading: false, markAsRead: vi.fn(), refetch: vi.fn(),
+            fetchNextPage: vi.fn(), isFetchingNextPage: false, hasNextPage: false,
+        }
     },
 }))
 vi.mock("@/features/users/use-users", () => ({ useUsers: () => ({
@@ -32,11 +35,16 @@ vi.mock("@/features/auth/use-auth", () => ({ useAuth: () => ({ logout: vi.fn(), 
 beforeEach(() => { vi.clearAllMocks(); state.notifications = [] })
 afterEach(cleanup)
 
-it.each([0, 1, 9, 10])("shows the notification badge threshold for %i notifications", (count) => {
+it.each([
+    [0, "Notifications"],
+    [1, "1Notifications"],
+    [9, "9Notifications"],
+    [10, "9+Notifications"],
+] as const)("shows the notification badge text for %i notifications", (count, expected) => {
     state.notifications = Array.from({ length: count }, (_, index) => ({ id: String(index) }))
     render(<Header onNotificationsClick={vi.fn()} onProfileClick={vi.fn()} />)
     const button = screen.getByRole("button", { name: /Notifications/ })
-    expect(button.textContent).toBe(count ? `${count > 9 ? "9+" : count}Notifications` : "Notifications")
+    expect(button.textContent).toBe(expected)
     expect(state.useNotifications).toHaveBeenCalledWith({ poll: true })
     expect(screen.getByRole("link", { name: "Chronoverse" }).getAttribute("href")).toBe("/")
 })

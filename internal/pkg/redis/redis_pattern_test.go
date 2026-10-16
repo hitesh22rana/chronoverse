@@ -105,6 +105,8 @@ func assertPatternFailure(ctx context.Context, t *testing.T, store *Store, cause
 	}
 }
 
+// requirePatternDocker mirrors testkit.RequireDocker: testkit imports this
+// package, so an in-package test file cannot import it without a cycle.
 func requirePatternDocker(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
@@ -171,7 +173,8 @@ func checkPatternPages(ctx context.Context, t *testing.T, admin *goredis.Client,
 
 func checkPreservedKeyContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
 	t.Helper()
-	const key = "cache:tenant-b:contract"
+	// Own namespace: the pagination fixture asserts exact cache:tenant-b:* counts.
+	const key = "preserved:contract"
 	if err := store.Set(ctx, key, "preserved", time.Hour); err != nil {
 		t.Fatal(err)
 	}

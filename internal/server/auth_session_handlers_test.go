@@ -24,6 +24,7 @@ type sessionUsersClient struct {
 	header         metadata.MD
 	err            error
 	calls          int
+	headerOptions  int
 	captureContext func(context.Context)
 	contextError   bool
 	register       *userspb.RegisterUserRequest
@@ -34,6 +35,7 @@ func (c *sessionUsersClient) reply(options []grpc.CallOption) {
 	c.calls++
 	for _, option := range options {
 		if header, ok := option.(grpc.HeaderCallOption); ok {
+			c.headerOptions++
 			*header.HeaderAddr = c.header.Copy()
 		}
 	}
@@ -160,6 +162,9 @@ func TestAuthSessionRPCFailures(t *testing.T) {
 					client := &sessionUsersClient{err: status.Error(test.code, "backend validation detail")}
 					response := httptest.NewRecorder()
 					invokeAuthSession(&Server{usersClient: client}, register, response, authSessionRequest(register, `{"email":"alice@example.com","password":"secret"}`, testJSONContentType))
+					// Registration forwards InvalidArgument detail (weak password,
+					// bad input) so signup errors stay actionable; login answers
+					// one fixed message for every backend failure.
 					message := "failed to login user\n"
 					if register {
 						message = "failed to register user\n"
@@ -179,6 +184,11 @@ func assertAuthSessionRPC(t *testing.T, client *sessionUsersClient, register boo
 	t.Helper()
 	if client.calls != 1 {
 		t.Fatalf("RPC calls = %d, want 1", client.calls)
+	}
+	// The handlers must request the auth token from the response headers; a
+	// missing option would otherwise fail later as a misleading 412.
+	if client.headerOptions != 1 {
+		t.Fatalf("RPC header options = %d, want 1", client.headerOptions)
 	}
 	if register {
 		if client.register.GetEmail() != "alice@example.com" || client.register.GetPassword() != "secret" || client.register.GetIdempotencyKey() != "registration-key" {

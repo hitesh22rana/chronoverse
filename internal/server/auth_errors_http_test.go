@@ -225,25 +225,13 @@ func TestVerifySessionMiddlewareRejectsUnusableToken(t *testing.T) {
 func TestVerifyCSRFMiddlewareRejectsMalformedTokens(t *testing.T) {
 	const session = "session-value"
 
-	validToken, err := generateCSRFToken(session, testCSRFSecret)
-	if err != nil {
-		t.Fatalf("generate csrf token: %v", err)
-	}
-	foreignToken, err := generateCSRFToken(session, "a-different-secret-0123456789")
-	if err != nil {
-		t.Fatalf("generate foreign csrf token: %v", err)
-	}
-	otherSessionToken, err := generateCSRFToken("other-session", testCSRFSecret)
-	if err != nil {
-		t.Fatalf("generate other-session csrf token: %v", err)
-	}
+	validToken := generateCSRFToken(session, testCSRFSecret)
+	foreignToken := generateCSRFToken(session, "a-different-secret-0123456789")
+	otherSessionToken := generateCSRFToken("other-session", testCSRFSecret)
 	// Deterministic expiry: a timestamp two hours in the past, outside the
 	// one-hour CSRFExpiry used below. No sleeping involved.
 	staleStamp := strconv.FormatInt(time.Now().Add(-2*time.Hour).Unix(), 10)
-	staleHMAC, err := generateHMAC(session+staleStamp, testCSRFSecret)
-	if err != nil {
-		t.Fatalf("generate hmac: %v", err)
-	}
+	staleHMAC := generateHMAC(session+staleStamp, testCSRFSecret)
 
 	tests := []struct {
 		name       string
@@ -344,10 +332,7 @@ func TestVerifyCSRFRejectionMessages(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	token, err := generateCSRFToken("session-value", testCSRFSecret)
-	if err != nil {
-		t.Fatalf("generate csrf token: %v", err)
-	}
+	token := generateCSRFToken("session-value", testCSRFSecret)
 
 	tests := []struct {
 		name     string

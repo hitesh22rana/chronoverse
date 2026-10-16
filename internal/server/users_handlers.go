@@ -65,11 +65,7 @@ func (s *Server) handleRegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
-	if err != nil {
-		handleError(w, err, "failed to generate CSRF token")
-		return
-	}
+	csrfToken := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
 
 	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
 	setCookie(w, sessionCookieName, session, s.hostConfig.CookieDomain, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
@@ -116,11 +112,7 @@ func (s *Server) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
-	if err != nil {
-		handleError(w, err, "failed to generate CSRF token")
-		return
-	}
+	csrfToken := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
 
 	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
 	setCookie(w, sessionCookieName, session, s.hostConfig.CookieDomain, s.hostConfig.Secure, true, s.validationCfg.SessionExpiry, s.hostConfig.SameSite)
@@ -175,11 +167,7 @@ func (s *Server) handleGetCSRFToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	csrfToken, err := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
-	if err != nil {
-		handleError(w, err, "failed to generate CSRF token")
-		return
-	}
+	csrfToken := generateCSRFToken(session, s.validationCfg.CSRFHMACSecret)
 
 	setCookie(w, csrfCookieName, csrfToken, s.hostConfig.CookieDomain, s.hostConfig.Secure, false, s.validationCfg.CSRFExpiry, s.hostConfig.SameSite)
 

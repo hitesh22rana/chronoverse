@@ -11,16 +11,22 @@ import (
 	"time"
 )
 
+func TestGenerateHMAC(t *testing.T) {
+	t.Parallel()
+	// RFC 4231, test case 2.
+	const want = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+	if got := generateHMAC("what do ya want for nothing?", "Jefe"); got != want {
+		t.Fatalf("HMAC = %q; want %q", got, want)
+	}
+}
+
 func TestVerifyCSRFToken(t *testing.T) {
 	const (
 		session = "session-token"
 		hmacKey = "test-hmac-key"
 	)
 
-	token, err := generateCSRFToken(session, hmacKey)
-	if err != nil {
-		t.Fatalf("generateCSRFToken() error = %v", err)
-	}
+	token := generateCSRFToken(session, hmacKey)
 
 	parts := strings.Split(token, delimiter)
 	tamperedToken := strings.Repeat("0", len(parts[0])) + delimiter + parts[1]
@@ -73,10 +79,7 @@ func TestHandleGetCSRFTokenReusesValidCookie(t *testing.T) {
 		hostConfig:    &HostConfig{Host: "api.example.com", Secure: true, SameSite: http.SameSiteNoneMode},
 	}
 
-	token, err := generateCSRFToken("sess", "test-secret-0123456789abcdef")
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := generateCSRFToken("sess", "test-secret-0123456789abcdef")
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/csrf", http.NoBody)
 	req = req.WithContext(context.WithValue(req.Context(), sessionKey{}, "sess"))

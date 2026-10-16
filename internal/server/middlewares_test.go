@@ -173,10 +173,7 @@ func TestVerifyCSRFMiddlewareRequiresHeader(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	token, err := generateCSRFToken("sess", "test-secret-0123456789abcdef")
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := generateCSRFToken("sess", "test-secret-0123456789abcdef")
 	newReq := func(header string) *http.Request {
 		req := httptest.NewRequest(http.MethodPost, "/workflows", http.NoBody)
 		req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode})

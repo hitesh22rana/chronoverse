@@ -215,7 +215,9 @@ func startBlockedClaimer(ctx context.Context, t *testing.T, repo *Repository, re
 }
 
 // registerWaiter parks a duplicate in authorization while holding its slot, then
-// releases it and settles once its slot release proves it registered as a waiter.
+// releases it and settles once its slot release proves it captured the owner's
+// entry as a non-owner. The captured entry keeps the owner's result and
+// completion signal, so a later wait() still observes the resolution.
 func registerWaiter(ctx context.Context, t *testing.T, repo *Repository, record *kgo.Record) (<-chan error, context.CancelFunc) {
 	t.Helper()
 	gate := make(chan struct{})
@@ -237,7 +239,8 @@ func TestExecutorDuplicateRecordWaitsForClaimOwner(t *testing.T) {
 	defer cancel()
 	owner := startBlockedClaimer(ctx, t, repo, record)
 	// The duplicate parks in authorization while holding its slot, so its slot
-	// release proves it registered as a handoff waiter before the owner resolves.
+	// release proves it captured the owner's handoff entry as a non-owner before
+	// the owner resolves.
 	waiterDone, cancelWaiter := registerWaiter(ctx, t, repo, record)
 	defer cancelWaiter()
 	close(owner.release)
@@ -269,8 +272,8 @@ func TestExecutorDuplicateWaiterObservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	owner := startBlockedClaimer(ctx, t, repo, record)
-	// Cancel only after the waiter settled in the handoff, so the waiter branch
-	// observes cancellation instead of exiting during slot acquisition.
+	// Cancel only after the waiter captured the owner's entry, so the waiter
+	// branch observes cancellation instead of exiting during slot acquisition.
 	waiterDone, cancelWaiter := registerWaiter(ctx, t, repo, record)
 	cancelWaiter()
 	select {

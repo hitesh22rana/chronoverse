@@ -183,7 +183,8 @@ function useLogViewerActions(model: any) {
     ) => {
         const target = event.target
         const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
-        const wasPointerDrag = Boolean(rowPointerGestureRef.current?.didDrag)
+        // Keyboard activation has detail 0 and must ignore a previous pointer drag.
+        const wasPointerDrag = event.detail > 0 && Boolean(rowPointerGestureRef.current?.didDrag)
         rowPointerGestureRef.current = null
 
         if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {

@@ -149,7 +149,7 @@ const isSelected = (lineNumber: number) => row(lineNumber).getAttribute("data-se
 const fragment = () => window.location.hash
 const clickLine = async (lineNumber: number, shiftKey = false) => {
     await act(async () => {
-        fireEvent.click(rowButton(lineNumber), { shiftKey })
+        fireEvent.click(rowButton(lineNumber), { shiftKey, detail: 1 })
     })
 }
 /**
@@ -597,7 +597,8 @@ it("selects and extends a range from row clicks while ignoring drags and line me
     await act(async () => {
         fireEvent.pointerDown(dragButton, { clientX: 10, clientY: 10, button: 0 })
         fireEvent.pointerMove(dragButton, { clientX: 60, clientY: 40 })
-        fireEvent.click(dragButton)
+        fireEvent.pointerUp(dragButton, { clientX: 60, clientY: 40, button: 0 })
+        fireEvent.click(dragButton, { detail: 1 })
     })
     expect(fragment()).toBe("#L2-L6")
 
@@ -689,33 +690,22 @@ it("selects a line after a press that is not the primary button", async () => {
     expect(isSelected(3)).toBe(true)
 })
 
-it("arms the drag tracker on a non-primary press, and a click that brings no pointer of its own inherits that gesture", async () => {
+it.each(["{Enter}", " "])("selects a line with %j after a completed right-button drag", async (key) => {
+    const user = userEvent.setup()
     renderViewer()
     await loadedLines(20)
+    const button = rowButton(5)
 
-    // The gesture tracker is armed by any press, not only a primary one: what the
-    // primary button gates is clearing the reader's text selection, not the
-    // tracking. `pointerup` clears nothing either, so a right-drag across a line
-    // leaves that row marked as dragged.
     await act(async () => {
-        fireEvent.pointerDown(rowButton(5), { clientX: 12, clientY: 40, button: 2 })
-        fireEvent.pointerMove(rowButton(5), { clientX: 40, clientY: 60 })
+        fireEvent.pointerDown(button, { clientX: 12, clientY: 40, button: 2, buttons: 2 })
+        fireEvent.pointerMove(button, { clientX: 40, clientY: 60, button: 2, buttons: 2 })
+        fireEvent.pointerUp(button, { clientX: 40, clientY: 60, button: 2, buttons: 0 })
+        button.focus()
     })
 
-    // A mouse click always arrives with its own pointerdown first, and that
-    // re-arms the tracker as `didDrag: false`, so a reader's next click is not
-    // swallowed. `clickLine` sends the click on its own, which is what
-    // activating the row from the keyboard does, so here the handler is handed
-    // the stale gesture and has to reject the selection.
-    await clickLine(5)
-    expect(fragment()).toBe("")
-    expect(isSelected(5)).toBe(false)
-
-    // The rejected click on row 5 cleared the viewer-wide gesture, so the next
-    // click can select row 6 without needing a new pointer press.
-    await clickLine(6)
-    expect(fragment()).toBe("#L6")
-    expect(isSelected(6)).toBe(true)
+    await user.keyboard(key)
+    expect(fragment()).toBe("#L5")
+    expect(isSelected(5)).toBe(true)
 })
 
 it("drops the selection and applies the debounced query when the search box changes", async () => {

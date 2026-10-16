@@ -33,6 +33,7 @@ describe("log data", () => {
 
     it.each([
         [{ event_id: "snake:8", eventId: "camel:9", sequence_num: "0", sequenceNum: 9 }, "snake:8", 0],
+        [{ sequence_num: 0, sequenceNum: 9, event_id: "job:8" }, "job:8", 0],
         [{ eventId: "job:segment:12" }, "job:segment:12", 12],
         [{ event_id: "", eventId: "job:4" }, "job:4", 4],
         [{ event_id: "not-a-sequence" }, "not-a-sequence", 0],
@@ -73,6 +74,7 @@ describe("log data", () => {
         const newest = { ...old, timestamp: "2026-07-20T00:00:01Z", message: "new" }
         const existing = [old, log(1)]
         const incoming = [newest, log(5), old]
+        for (const entry of [...existing, ...incoming]) Object.freeze(entry)
         Object.freeze(existing)
         Object.freeze(incoming)
         expect(mergeLiveLogs(existing, incoming)).toEqual([log(5), newest, log(1)])
@@ -85,7 +87,12 @@ describe("log data", () => {
         const first = { ...log(3), event_id: undefined, message: "a" }
         const second = { ...first, message: "b" }
         const otherTime = { ...first, timestamp: "2026-07-21T00:00:00Z" }
-        expect(mergeLiveLogs([otherTime, second], [first, { ...first }])).toEqual([first, second, otherTime])
+        const otherStream = { ...first, stream: "stderr" as const }
+        const otherSequence = { ...first, sequence_num: 4 }
+        expect(mergeLiveLogs(
+            [otherTime, second, otherSequence],
+            [first, { ...first }, otherStream],
+        )).toEqual([otherSequence, otherStream, first, second, otherTime])
     })
 
     it("prefers the highest sequence when duplicate event identities disagree", () => {

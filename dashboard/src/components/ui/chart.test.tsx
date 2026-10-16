@@ -92,13 +92,13 @@ afterEach(() => {
 it("writes a colour variable per series under both theme selectors", () => {
     const { container } = render(<ChartStyle id="chart-jobs" config={seriesConfig} />)
 
-    const css = container.querySelector("style")?.innerHTML ?? ""
-    expect(css).toContain("[data-chart=chart-jobs]")
-    expect(css).toContain(".dark [data-chart=chart-jobs]")
-    expect(css).toContain("--color-total_jobs: var(--chart-2)")
-    // A themed series resolves per theme instead of falling back to one colour.
-    expect(css).toContain("--color-total_joblogs: #111111")
-    expect(css).toContain("--color-total_joblogs: #eeeeee")
+    const rules = Array.from(container.querySelector("style")!.sheet!.cssRules) as CSSStyleRule[]
+    const light = rules.find((rule) => rule.selectorText === "[data-chart=chart-jobs]")
+    const dark = rules.find((rule) => rule.selectorText === ".dark [data-chart=chart-jobs]")
+    expect(light?.style.getPropertyValue("--color-total_jobs")).toBe("var(--chart-2)")
+    expect(dark?.style.getPropertyValue("--color-total_jobs")).toBe("var(--chart-2)")
+    expect(light?.style.getPropertyValue("--color-total_joblogs")).toBe("#111111")
+    expect(dark?.style.getPropertyValue("--color-total_joblogs")).toBe("#eeeeee")
 })
 
 it("generates its own chart id when none is given", () => {

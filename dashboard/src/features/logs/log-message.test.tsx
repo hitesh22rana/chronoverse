@@ -137,11 +137,10 @@ describe("log message rendering", () => {
         expect(arrayContainer.textContent).toBe(arrays)
         expect(marks(arrayContainer)).toEqual([])
 
-        // Nested objects keep their text: the fallback regex only indents its one shallow match.
+        // Depth-limited objects also keep every byte of their original text.
         const objects = `${'{"a":'.repeat(20000)}1${"}".repeat(20000)}`
         const objectContainer = renderMessage(objects, token, true)
-        expect(objectContainer.textContent?.startsWith('{"a":{"a":{"a":')).toBe(true)
-        expect(objectContainer.textContent?.length).toBeLessThan(objects.length * 2)
+        expect(objectContainer.textContent).toBe(objects)
         expect(marks(objectContainer)).toEqual([])
     })
 

@@ -68,9 +68,10 @@ export const normalizeJobLog = (log: JobLogWire, highlightToken?: string): JobLo
 export const mergeLiveLogs = (existingLogs: JobLog[], newLogs: JobLog[]): JobLog[] =>
     sortLogsDesc(uniqueLogsByKey([...existingLogs, ...newLogs]))
 
+// Callers pass pages normalized by the query layer (use-job-logs); raw wire pages may omit logs.
 export const logsFromPages = (pages?: JobLogsResponse[]): JobLog[] =>
     pages?.length
-        ? sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page?.logs || [])))
+        ? sortLogsDesc(uniqueLogsByKey(pages.flatMap((page) => page.logs)))
         : []
 
 export const getDownloadFilename = (filename: string, format: DownloadLogsFormat) => {

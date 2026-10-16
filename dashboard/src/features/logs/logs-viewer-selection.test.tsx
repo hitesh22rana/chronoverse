@@ -711,10 +711,8 @@ it("arms the drag tracker on a non-primary press, and a click that brings no poi
     expect(fragment()).toBe("")
     expect(isSelected(5)).toBe(false)
 
-    // A click on any other row is unaffected, because `rowPointerGestureRef` is a
-    // single viewer-wide ref that every row click nulls: the click on row 6 clears
-    // the stale gesture before it decides anything. So the swallow is not a latch
-    // that disables the viewer, it only costs the row the gesture was armed on.
+    // The rejected click on row 5 cleared the viewer-wide gesture, so the next
+    // click can select row 6 without needing a new pointer press.
     await clickLine(6)
     expect(fragment()).toBe("#L6")
     expect(isSelected(6)).toBe(true)

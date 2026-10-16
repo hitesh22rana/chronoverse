@@ -45,6 +45,8 @@ func runtimeSelectionRepository(t *testing.T) *Repository {
 		t.Fatal(err)
 	}
 	t.Cleanup(pg.Close)
+	// Hand-rolled minimal schema instead of the migrations: the fault cases below
+	// drop or replace this table, which the migrated foreign keys would resist.
 	if _, err := pg.Exec(ctx, `CREATE TABLE runtime_nodes (
  id TEXT PRIMARY KEY, docker_endpoint TEXT NOT NULL, status TEXT NOT NULL,
  last_heartbeat_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
@@ -63,9 +65,9 @@ func TestIntegrationListReadyRuntimeNodesFiltersAndOrders(t *testing.T) {
 		jobs, age int
 	}{
 		{"busy", "READY", 9, 1},
-		{"tie-b", "READY", 0, 5},
-		{"older", "READY", 0, 15},
-		{"tie-a", "READY", 0, 5},
+		{"tie-b", "READY", 0, 2},
+		{"older", "READY", 0, 20},
+		{"tie-a", "READY", 0, 2},
 		{"stale", "READY", 0, 120},
 		{"draining", "DRAINING", 0, 1},
 		{"unhealthy", "UNHEALTHY", 0, 1},
@@ -76,11 +78,12 @@ func TestIntegrationListReadyRuntimeNodesFiltersAndOrders(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Set tied/ordered heartbeats relative to one database instant, safely within the TTL.
+	// Set tied/ordered heartbeats relative to one database instant. Ages leave
+	// multiple seconds of slack on both sides of the 10s and 1m TTL boundaries.
 	if _, err := repo.pg.Exec(ctx, `UPDATE runtime_nodes SET last_heartbeat_at =
   (now() AT TIME ZONE 'utc') - CASE id WHEN 'stale' THEN interval '120 seconds'
-  WHEN 'older' THEN interval '15 seconds' WHEN 'tie-a' THEN interval '5 seconds'
-  WHEN 'tie-b' THEN interval '5 seconds' ELSE interval '1 second' END`); err != nil {
+  WHEN 'older' THEN interval '20 seconds' WHEN 'tie-a' THEN interval '2 seconds'
+  WHEN 'tie-b' THEN interval '2 seconds' ELSE interval '1 second' END`); err != nil {
 		t.Fatal(err)
 	}
 	nodes, err := repo.ListReadyRuntimeNodes(ctx)

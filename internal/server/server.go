@@ -226,6 +226,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
+				w.Header().Set("Allow", "GET, PUT")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
@@ -256,6 +257,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
+				w.Header().Set("Allow", "GET, POST")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
@@ -306,6 +308,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
+				w.Header().Set("Allow", "GET, PUT, PATCH, DELETE")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
@@ -415,6 +418,9 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 						),
 					),
 				).ServeHTTP(w, r)
+			default:
+				w.Header().Set("Allow", "GET, PUT")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
 	)

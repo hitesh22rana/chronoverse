@@ -142,6 +142,7 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != allowedMethod {
+			w.Header().Set("Allow", allowedMethod)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}

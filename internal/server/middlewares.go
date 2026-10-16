@@ -138,11 +138,17 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 }
 
 // withAllowedMethodMiddleware is a middleware that only allows specific HTTP methods.
+// HEAD is served by GET routes; net/http strips the response body.
 // It also limits the request body size for [POST, PUT, PATCH] methods.
 func (s *Server) withAllowedMethodMiddleware(allowedMethod string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != allowedMethod {
-			w.Header().Set("Allow", allowedMethod)
+		allowed := r.Method == allowedMethod || (allowedMethod == http.MethodGet && r.Method == http.MethodHead)
+		if !allowed {
+			allow := allowedMethod
+			if allowedMethod == http.MethodGet {
+				allow = http.MethodGet + ", " + http.MethodHead
+			}
+			w.Header().Set("Allow", allow)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}

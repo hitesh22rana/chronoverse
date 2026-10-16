@@ -205,7 +205,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/users",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
-			case http.MethodGet:
+			case http.MethodGet, http.MethodHead:
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
@@ -226,7 +226,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
-				w.Header().Set("Allow", "GET, PUT")
+				w.Header().Set("Allow", "GET, HEAD, PUT")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
@@ -236,7 +236,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/workflows",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
-			case http.MethodGet:
+			case http.MethodGet, http.MethodHead:
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
@@ -257,7 +257,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
-				w.Header().Set("Allow", "GET, POST")
+				w.Header().Set("Allow", "GET, HEAD, POST")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		})
@@ -265,7 +265,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/workflows/{workflow_id}",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
-			case http.MethodGet:
+			case http.MethodGet, http.MethodHead:
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
@@ -308,7 +308,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
-				w.Header().Set("Allow", "GET, PUT, PATCH, DELETE")
+				w.Header().Set("Allow", "GET, HEAD, PUT, PATCH, DELETE")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},
@@ -398,7 +398,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 		"/notifications",
 		func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
-			case http.MethodGet:
+			case http.MethodGet, http.MethodHead:
 				s.withAllowedMethodMiddleware(
 					http.MethodGet,
 					s.withVerifySessionMiddleware(
@@ -419,7 +419,7 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 					),
 				).ServeHTTP(w, r)
 			default:
-				w.Header().Set("Allow", "GET, PUT")
+				w.Header().Set("Allow", "GET, HEAD, PUT")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
 		},

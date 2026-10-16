@@ -19,20 +19,20 @@ func TestRouteMethodAndAuthenticationContracts(t *testing.T) {
 		{"/auth/login", "POST", true},
 		{"/auth/logout", "POST", false},
 		{"/auth/validate", "POST", false},
-		{"/auth/csrf", "GET", false},
-		{"/users", "GET, PUT", false},
-		{"/workflows", "GET, POST", false},
-		{"/workflows/workflow-1", "GET, PUT, PATCH, DELETE", false},
-		{"/workflows/workflow-1/jobs", "GET", false},
+		{"/auth/csrf", "GET, HEAD", false},
+		{"/users", "GET, HEAD, PUT", false},
+		{"/workflows", "GET, HEAD, POST", false},
+		{"/workflows/workflow-1", "GET, HEAD, PUT, PATCH, DELETE", false},
+		{"/workflows/workflow-1/jobs", "GET, HEAD", false},
 		{"/workflows/workflow-1/jobs/schedule", "POST", false},
-		{"/workflows/workflow-1/jobs/job-1", "GET", false},
-		{"/workflows/workflow-1/jobs/job-1/logs", "GET", false},
-		{"/workflows/workflow-1/jobs/job-1/logs/search", "GET", false},
-		{"/workflows/workflow-1/jobs/job-1/logs/raw", "GET", false},
-		{"/workflows/workflow-1/jobs/job-1/events", "GET", false},
-		{"/notifications", "GET, PUT", false},
-		{"/analytics", "GET", false},
-		{"/analytics/workflow-1", "GET", false},
+		{"/workflows/workflow-1/jobs/job-1", "GET, HEAD", false},
+		{"/workflows/workflow-1/jobs/job-1/logs", "GET, HEAD", false},
+		{"/workflows/workflow-1/jobs/job-1/logs/search", "GET, HEAD", false},
+		{"/workflows/workflow-1/jobs/job-1/logs/raw", "GET, HEAD", false},
+		{"/workflows/workflow-1/jobs/job-1/events", "GET, HEAD", false},
+		{"/notifications", "GET, HEAD, PUT", false},
+		{"/analytics", "GET, HEAD", false},
+		{"/analytics/workflow-1", "GET, HEAD", false},
 	}
 	// Nil dependencies ensure every rejection happens before authentication services or RPCs.
 	s := &Server{validationCfg: &ValidationConfig{RequestBodyLimit: 16}}
@@ -58,7 +58,7 @@ func TestRouteMethodAndAuthenticationContracts(t *testing.T) {
 						switch {
 						case route.public:
 							wantStatus, wantBody = http.StatusBadRequest, "invalid request body\n"
-						case method == http.MethodGet:
+						case method == http.MethodGet || method == http.MethodHead:
 							wantStatus, wantBody = http.StatusUnauthorized, "session not found\n"
 						default:
 							wantStatus, wantBody = http.StatusBadRequest, "csrf token not found\n"
@@ -105,5 +105,37 @@ func TestAllowedMethodBodyLimit(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestAllowedMethodServesHeadAsGet pins the HEAD contract: GET routes answer
+// HEAD and advertise it in Allow, other routes reject it with their method set.
+func TestAllowedMethodServesHeadAsGet(t *testing.T) {
+	s := &Server{validationCfg: &ValidationConfig{RequestBodyLimit: 4}}
+	calls := 0
+	getRoute := s.withAllowedMethodMiddleware(http.MethodGet, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	response := httptest.NewRecorder()
+	getRoute.ServeHTTP(response, httptest.NewRequest(http.MethodHead, "/", http.NoBody))
+	if calls != 1 || response.Code != http.StatusAccepted {
+		t.Fatalf("HEAD on GET route: calls=%d status=%d", calls, response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	getRoute.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", http.NoBody))
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("POST on GET route: status=%d Allow=%q", response.Code, response.Header().Get("Allow"))
+	}
+
+	postRoute := s.withAllowedMethodMiddleware(http.MethodPost, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	response = httptest.NewRecorder()
+	postRoute.ServeHTTP(response, httptest.NewRequest(http.MethodHead, "/", http.NoBody))
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("HEAD on POST route: status=%d Allow=%q", response.Code, response.Header().Get("Allow"))
 	}
 }

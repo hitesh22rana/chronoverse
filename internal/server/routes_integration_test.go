@@ -95,22 +95,20 @@ func TestIntegrationNotificationRoutesForwardAuthenticatedRequests(t *testing.T)
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	for _, test := range []struct {
-		name, method, body, csrf string
-		status                   int
+		name, method, body, csrfCookie, csrfHeader string
+		status                                     int
 	}{
-		{"read", http.MethodGet, "", "", http.StatusOK},
-		{"write missing csrf", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, "", http.StatusBadRequest},
-		{"write mismatched csrf", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, "wrong", http.StatusForbidden},
-		{"write", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, csrf, http.StatusNoContent},
+		{"read", http.MethodGet, "", "", "", http.StatusOK},
+		{"write missing csrf", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, "", "", http.StatusBadRequest},
+		{"write invalid csrf cookie", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, "wrong", "wrong", http.StatusBadRequest},
+		{"write mismatched csrf header", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, csrf, "wrong", http.StatusForbidden},
+		{"write", http.MethodPut, `{"ids":["notification-1","notification-2"]}`, csrf, csrf, http.StatusNoContent},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, "/notifications?cursor=next-page", strings.NewReader(test.body))
 			request.Header.Set("Content-Type", "application/json")
 			request.AddCookie(secureTestCookie(sessionCookieName, session))
-			if test.csrf != "" {
-				request.AddCookie(secureTestCookie(csrfCookieName, csrf))
-				request.Header.Set(csrfHeaderName, test.csrf)
-			}
+			addCSRFValues(request, test.csrfCookie, test.csrfHeader)
 			listsBefore, updatesBefore := client.lists, client.updates
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, request)
@@ -139,5 +137,16 @@ func TestIntegrationNotificationRoutesForwardAuthenticatedRequests(t *testing.T)
 
 	if client.lists != 1 || client.updates != 1 {
 		t.Fatalf("RPC calls lists=%d updates=%d", client.lists, client.updates)
+	}
+}
+
+// addCSRFValues sends the CSRF token through the cookie and header channels
+// exactly as given, so a case can be missing, invalid, or mismatched.
+func addCSRFValues(r *http.Request, cookie, header string) {
+	if cookie != "" {
+		r.AddCookie(secureTestCookie(csrfCookieName, cookie))
+	}
+	if header != "" {
+		r.Header.Set(csrfHeaderName, header)
 	}
 }

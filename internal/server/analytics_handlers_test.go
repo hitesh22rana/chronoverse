@@ -19,6 +19,7 @@ type fakeAnalyticsServiceClient struct {
 	analyticspb.AnalyticsServiceClient
 
 	getWorkflowAnalyticsError error
+	userCall                  func(context.Context, *analyticspb.GetUserAnalyticsRequest) (*analyticspb.GetUserAnalyticsResponse, error)
 }
 
 func (f *fakeAnalyticsServiceClient) GetWorkflowAnalytics(
@@ -29,6 +30,67 @@ func (f *fakeAnalyticsServiceClient) GetWorkflowAnalytics(
 	}
 
 	return &analyticspb.GetWorkflowAnalyticsResponse{WorkflowId: req.GetWorkflowId()}, nil
+}
+
+func (f *fakeAnalyticsServiceClient) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUserAnalyticsRequest, _ ...grpc.CallOption) (*analyticspb.GetUserAnalyticsResponse, error) {
+	return f.userCall(ctx, req)
+}
+
+func TestHandleGetUserAnalyticsContracts(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name          string
+		authenticated bool
+		rpcErr        error
+		wantStatus    int
+	}{
+		{"missing identity", false, nil, http.StatusBadRequest},
+		{"success", true, nil, http.StatusOK},
+		{"backend unavailable", true, status.Error(codes.Unavailable, "backend failed"), http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			s := &Server{analyticsClient: &fakeAnalyticsServiceClient{userCall: func(_ context.Context, req *analyticspb.GetUserAnalyticsRequest) (*analyticspb.GetUserAnalyticsResponse, error) {
+				calls++
+				if !tc.authenticated || req.GetUserId() != "user-42" {
+					t.Fatalf("unexpected RPC identity=%q", req.GetUserId())
+				}
+				return &analyticspb.GetUserAnalyticsResponse{TotalWorkflows: 7}, tc.rpcErr
+			}}}
+			request := httptest.NewRequest(http.MethodGet, "/analytics", http.NoBody)
+			if tc.authenticated {
+				request = request.WithContext(context.WithValue(t.Context(), userIDKey{}, "user-42"))
+			}
+			response := httptest.NewRecorder()
+			s.handleGetUserAnalytics(response, request)
+			if response.Code != tc.wantStatus {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+			wantCalls := 0
+			if tc.authenticated {
+				wantCalls = 1
+			}
+			if calls != wantCalls {
+				t.Fatalf("calls=%d want=%d", calls, wantCalls)
+			}
+			switch tc.wantStatus {
+			case http.StatusOK:
+				want := `{"total_workflows":7,"total_jobs":0,"total_joblogs":0,"total_job_execution_duration":0,"workflow_kinds":[],"top_workflows":[]}` + "\n"
+				if response.Body.String() != want || response.Header().Get("Content-Type") != testJSONContentType {
+					t.Fatalf("response headers=%v body=%q", response.Header(), response.Body.String())
+				}
+			case http.StatusBadRequest:
+				if response.Body.String() != "user ID not found\n" {
+					t.Fatalf("body=%q", response.Body.String())
+				}
+			case http.StatusServiceUnavailable:
+				if response.Body.String() != "failed to get user analytics\n" {
+					t.Fatalf("body=%q", response.Body.String())
+				}
+			}
+		})
+	}
 }
 
 // TestHandleGetWorkflowAnalyticsRejectsMissingWorkflowID pins the guard: an

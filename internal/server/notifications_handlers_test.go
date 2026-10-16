@@ -61,21 +61,24 @@ func TestHandleListNotificationsMapsRPCError(t *testing.T) {
 	}
 }
 
-// TestHandleMarkNotificationsReadRejectsInvalidBody pins the decode guard: a
-// non-JSON body never reaches the notifications backend.
 func TestHandleMarkNotificationsReadRejectsInvalidBody(t *testing.T) {
 	t.Parallel()
-
-	s := &Server{notificationsClient: &fakeNotificationsServiceClient{}}
-
-	request := httptest.NewRequest(http.MethodPut, "/notifications", strings.NewReader(`{"ids":["notification-1"]}`)).
-		WithContext(context.WithValue(t.Context(), userIDKey{}, "user-42"))
-
-	response := httptest.NewRecorder()
-	s.handleMarkNotificationsRead(response, request)
-
-	if response.Code != http.StatusBadRequest || response.Body.String() != "invalid request body\n" {
-		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	for _, tc := range []struct{ name, body, contentType string }{
+		{"missing content type", `{"ids":["notification-1"]}`, ""},
+		{"malformed JSON", `{"ids":[`, testJSONContentType},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// A nil backend makes any call past the decode guard fail the test.
+			s := &Server{}
+			request := httptest.NewRequest(http.MethodPut, "/notifications", strings.NewReader(tc.body)).WithContext(context.WithValue(t.Context(), userIDKey{}, "user-42"))
+			request.Header.Set("Content-Type", tc.contentType)
+			response := httptest.NewRecorder()
+			s.handleMarkNotificationsRead(response, request)
+			if response.Code != http.StatusBadRequest || response.Body.String() != "invalid request body\n" {
+				t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 
@@ -89,7 +92,7 @@ func TestHandleMarkNotificationsReadMapsRPCError(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPut, "/notifications", strings.NewReader(`{"ids":["notification-1"]}`)).
 		WithContext(context.WithValue(t.Context(), userIDKey{}, "user-42"))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", testJSONContentType)
 
 	response := httptest.NewRecorder()
 	s.handleMarkNotificationsRead(response, request)

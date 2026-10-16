@@ -23,22 +23,25 @@ func (e timeoutError) Temporary() bool { return false }
 
 func TestIsCircuitBreakerError(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
+	type testCase struct {
 		name string
 		err  error
 		want bool
-	}{
-		{"success", nil, false},
-		{"ordinary", errors.New("ordinary failure"), false},
-		{"canceled", context.Canceled, true},
-		{"wrapped canceled", fmt.Errorf("call: %w", context.Canceled), true},
-		{"deadline", context.DeadlineExceeded, true},
-		{"wrapped deadline", fmt.Errorf("call: %w", context.DeadlineExceeded), true},
-		{"network timeout", timeoutError{true}, true},
-		{"wrapped network timeout", fmt.Errorf("dial: %w", timeoutError{true}), true},
-		{"network non-timeout", timeoutError{false}, false},
-		{"wrapped network non-timeout", &net.OpError{Op: "dial", Net: "tcp", Err: timeoutError{false}}, false},
 	}
+	codeCount := int(codes.Unauthenticated) - int(codes.OK) + 1
+	tests := make([]testCase, 0, 10+2*codeCount)
+	tests = append(tests,
+		testCase{"success", nil, false},
+		testCase{"ordinary", errors.New("ordinary failure"), false},
+		testCase{"canceled", context.Canceled, true},
+		testCase{"wrapped canceled", fmt.Errorf("call: %w", context.Canceled), true},
+		testCase{"deadline", context.DeadlineExceeded, true},
+		testCase{"wrapped deadline", fmt.Errorf("call: %w", context.DeadlineExceeded), true},
+		testCase{"network timeout", timeoutError{true}, true},
+		testCase{"wrapped network timeout", fmt.Errorf("dial: %w", timeoutError{true}), true},
+		testCase{"network non-timeout", timeoutError{false}, false},
+		testCase{"wrapped network non-timeout", &net.OpError{Op: "dial", Net: "tcp", Err: timeoutError{false}}, false},
+	)
 	counted := map[codes.Code]bool{
 		codes.Canceled: true, codes.DeadlineExceeded: true, codes.ResourceExhausted: true,
 		codes.Aborted: true, codes.Unimplemented: true, codes.Internal: true,
@@ -46,18 +49,10 @@ func TestIsCircuitBreakerError(t *testing.T) {
 	}
 	for code := codes.OK; code <= codes.Unauthenticated; code++ {
 		err := status.Error(code, "RPC failure")
-		tests = append(tests, struct {
-			name string
-			err  error
-			want bool
-		}{code.String(), err, counted[code]})
-		if err != nil {
-			tests = append(tests, struct {
-				name string
-				err  error
-				want bool
-			}{"wrapped " + code.String(), fmt.Errorf("RPC: %w", err), counted[code]})
-		}
+		tests = append(tests,
+			testCase{code.String(), err, counted[code]},
+			testCase{"wrapped " + code.String(), fmt.Errorf("RPC: %w", err), counted[code]},
+		)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

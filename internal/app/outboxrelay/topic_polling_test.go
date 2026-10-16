@@ -214,19 +214,17 @@ func assertPollingTick(t *testing.T, calls []pollingCall, expected []string, tic
 func assertPollingLogs(t *testing.T, logs *observer.ObservedLogs, expected []string) {
 	t.Helper()
 
-	// Error, empty and positive batches each leave the loop alive for the next tick.
-	if got := logs.FilterMessage("failed to publish outbox events").Len(); got != len(expected) {
-		t.Fatalf("error logs=%d", got)
-	}
-	published := logs.FilterMessage("published outbox events").All()
-	if len(published) != len(expected) {
-		t.Fatalf("positive logs=%d", len(published))
-	}
-	for i := range published {
-		fields := published[i].ContextMap()
-		topic, ok := fields["topic"].(string)
-		if !ok || !slices.Contains(expected, topic) || fields["total"] != int64(2) {
-			t.Fatalf("published fields=%v", fields)
+	for _, topic := range expected {
+		failed := logs.FilterMessage("failed to publish outbox events").FilterField(zap.String("topic", topic)).All()
+		if len(failed) != 1 || failed[0].ContextMap()["error"] != "publish unavailable" {
+			t.Fatalf("%s error logs=%v", topic, failed)
 		}
+		published := logs.FilterMessage("published outbox events").FilterField(zap.String("topic", topic)).All()
+		if len(published) != 1 || published[0].ContextMap()["total"] != int64(2) {
+			t.Fatalf("%s positive logs=%v", topic, published)
+		}
+	}
+	if logs.FilterMessage("failed to publish outbox events").Len() != len(expected) || logs.FilterMessage("published outbox events").Len() != len(expected) {
+		t.Fatalf("unexpected topic logs: %v", logs.All())
 	}
 }

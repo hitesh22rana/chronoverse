@@ -2,15 +2,35 @@ package client_test
 
 import (
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
+	"google.golang.org/grpc/status"
 
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 )
+
+func TestNewClient_RejectsMalformedHost(t *testing.T) {
+	t.Parallel()
+	conn, err := grpcclient.NewClient(
+		&grpcclient.ServiceConfig{Host: "users%zz", Port: 50051, TLS: &grpcclient.TLSConfig{}},
+		nil,
+		nil,
+	)
+	if conn != nil {
+		defer conn.Close()
+		t.Fatal("malformed host returned a connection")
+	}
+	message := status.Convert(err).Message()
+	if status.Code(err) != codes.Internal || !strings.Contains(message, "failed to connect to gRPC server:") || !strings.Contains(message, "invalid URL escape") {
+		t.Fatalf("NewClient() error = %v; want Internal with dial context and URL parse cause", err)
+	}
+}
 
 func TestNewClient_NormalizesDialTarget(t *testing.T) {
 	t.Parallel()

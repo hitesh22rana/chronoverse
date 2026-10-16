@@ -61,7 +61,8 @@ func circuitBreakerStreamInterceptor(cb *breaker.Breaker) grpc.StreamClientInter
 }
 
 // isCircuitBreakerError reports whether err should count against the circuit.
-// Only internal, deadline/timeout, and network-timeout failures count.
+// Deadline/cancellation, network-timeout, and the gRPC codes in the switch
+// below count; application-level errors do not.
 func isCircuitBreakerError(err error) bool {
 	if err == nil {
 		return false

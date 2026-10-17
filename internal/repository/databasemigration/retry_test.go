@@ -50,9 +50,9 @@ func TestWithRetryBackoffAndOutcomes(t *testing.T) {
 		offsets []time.Duration
 	}{
 		{"first success", []error{nil}, nil, []time.Duration{0}},
-		{"retry success", []error{transient, transient, nil}, nil, []time.Duration{0, time.Second, 3 * time.Second}},
+		{"retry success", []error{transient, transient, nil}, nil, []time.Duration{0, time.Second, 4 * time.Second}},
 		// MaxRetries counts total attempts, so four failures produce four calls.
-		{"exhausted", []error{transient, last}, last, []time.Duration{0, time.Second, 3 * time.Second, 5 * time.Second}},
+		{"exhausted", []error{transient, last}, last, []time.Duration{0, time.Second, 4 * time.Second, 9 * time.Second}},
 		{"permanent", []error{permanent}, permanent, []time.Duration{0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,7 +65,7 @@ func TestWithRetryBackoffAndOutcomes(t *testing.T) {
 					offsets = append(offsets, time.Since(start))
 					return tc.results[index]
 				}
-				cfg := RetryConfig{MaxRetries: 4, InitialDelay: time.Second, MaxDelay: 2 * time.Second, BackoffFactor: 3}
+				cfg := RetryConfig{MaxRetries: 4, InitialDelay: time.Second, MaxDelay: 5 * time.Second, BackoffFactor: 3}
 				err := (&Repository{}).withRetry(t.Context(), "postgres", cfg, operation)
 				if !errors.Is(err, tc.wantErr) || !slices.Equal(offsets, tc.offsets) {
 					t.Fatalf("retry error=%v offsets=%v; want %v, %v", err, offsets, tc.wantErr, tc.offsets)

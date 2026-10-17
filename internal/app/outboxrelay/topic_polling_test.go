@@ -25,9 +25,10 @@ type pollingCall struct {
 }
 
 type pollingService struct {
-	mu    sync.Mutex
-	calls []pollingCall
-	block bool
+	mu      sync.Mutex
+	calls   []pollingCall
+	block   bool
+	release <-chan struct{}
 }
 
 func (s *pollingService) PublishTopic(ctx context.Context, topic string, _ *zap.Logger) (int, error) {
@@ -46,6 +47,9 @@ func (s *pollingService) PublishTopic(ctx context.Context, topic string, _ *zap.
 		s.mu.Lock()
 		s.calls[position].err = ctx.Err()
 		s.mu.Unlock()
+		if s.release != nil && errors.Is(ctx.Err(), context.Canceled) {
+			<-s.release
+		}
 		return 0, ctx.Err()
 	}
 	switch index % 3 {
@@ -141,7 +145,13 @@ func TestRunTopicDeadlineAndShutdown(t *testing.T) {
 		const timeout = 2 * time.Second
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		svc := &pollingService{block: true}
+		release := make(chan struct{})
+		defer func() {
+			if release != nil {
+				close(release)
+			}
+		}()
+		svc := &pollingService{block: true, release: release}
 		app := New(ctx, &Config{JobsEnabled: true, PollInterval: interval, ContextTimeout: timeout}, svc)
 		done := make(chan error, 1)
 		go func() { done <- app.Run(ctx) }()
@@ -170,6 +180,14 @@ func TestRunTopicDeadlineAndShutdown(t *testing.T) {
 		if !errors.Is(calls[1].err, context.Canceled) {
 			t.Fatalf("in-flight shutdown error=%v", calls[1].err)
 		}
+		select {
+		case err := <-done:
+			t.Fatalf("Run returned before publisher completed: %v", err)
+		default:
+		}
+		close(release)
+		release = nil
+		synctest.Wait()
 		select {
 		case err := <-done:
 			if err != nil {

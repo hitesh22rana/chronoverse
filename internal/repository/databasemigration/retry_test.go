@@ -20,6 +20,7 @@ func TestDatabaseErrorRetryClassification(t *testing.T) {
 		{"nil", nil, false},
 		{"reset", errors.New("read: connection reset by peer"), true},
 		{"wrapped network", fmt.Errorf("migrate: %w", errors.New("NETWORK IS UNREACHABLE")), true},
+		// Retryable patterns are matched before "tls", so this stays retryable.
 		{"TLS timeout", errors.New("TLS handshake timeout"), true},
 		{"broken pipe", errors.New("write: broken pipe"), true},
 		{"certificate", errors.New("x509: certificate has expired"), false},
@@ -50,6 +51,7 @@ func TestWithRetryBackoffAndOutcomes(t *testing.T) {
 	}{
 		{"first success", []error{nil}, nil, []time.Duration{0}},
 		{"retry success", []error{transient, transient, nil}, nil, []time.Duration{0, time.Second, 3 * time.Second}},
+		// MaxRetries counts total attempts, so four failures produce four calls.
 		{"exhausted", []error{transient, last}, last, []time.Duration{0, time.Second, 3 * time.Second, 5 * time.Second}},
 		{"permanent", []error{permanent}, permanent, []time.Duration{0}},
 	} {
@@ -84,13 +86,16 @@ func TestWithRetryInterruptsBackoff(t *testing.T) {
 			t.Parallel()
 			synctest.Test(t, func(t *testing.T) {
 				const interruptAfter = 250 * time.Millisecond
-				ctx, cancel := context.WithCancel(t.Context())
+				var (
+					ctx    context.Context
+					cancel context.CancelFunc
+				)
 				want := context.Canceled
 				if deadline {
-					cancel()
 					ctx, cancel = context.WithTimeout(t.Context(), interruptAfter)
 					want = context.DeadlineExceeded
 				} else {
+					ctx, cancel = context.WithCancel(t.Context())
 					go func() {
 						time.Sleep(interruptAfter)
 						cancel()

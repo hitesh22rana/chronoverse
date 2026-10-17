@@ -52,7 +52,7 @@ func TestWithRetryBackoffAndOutcomes(t *testing.T) {
 		{"first success", []error{nil}, nil, []time.Duration{0}},
 		{"retry success", []error{transient, transient, nil}, nil, []time.Duration{0, time.Second, 4 * time.Second}},
 		// MaxRetries counts total attempts, so four failures produce four calls.
-		{"exhausted", []error{transient, last}, last, []time.Duration{0, time.Second, 4 * time.Second, 9 * time.Second}},
+		{"exhausted", []error{transient, transient, transient, last}, last, []time.Duration{0, time.Second, 4 * time.Second, 9 * time.Second}},
 		{"permanent", []error{permanent}, permanent, []time.Duration{0}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -69,6 +69,9 @@ func TestWithRetryBackoffAndOutcomes(t *testing.T) {
 				err := (&Repository{}).withRetry(t.Context(), "postgres", cfg, operation)
 				if !errors.Is(err, tc.wantErr) || !slices.Equal(offsets, tc.offsets) {
 					t.Fatalf("retry error=%v offsets=%v; want %v, %v", err, offsets, tc.wantErr, tc.offsets)
+				}
+				if elapsed, want := time.Since(start), tc.offsets[len(tc.offsets)-1]; elapsed != want {
+					t.Fatalf("retry elapsed=%v; want %v", elapsed, want)
 				}
 			})
 		})

@@ -50,6 +50,15 @@ func TestResolveHistoricalFailureClassification(t *testing.T) {
 			wantMessage:  "Failure reason unavailable",
 		},
 		{
+			// The container timeout text alone is not a time limit; the gRPC deadline code must confirm it.
+			name:         "timeout text without deadline code is unavailable",
+			failureKind:  "USER",
+			errorCode:    "Aborted",
+			errorMessage: "container execution timed out: context deadline exceeded",
+			wantCode:     terminalreason.FailureReasonUnavailable,
+			wantMessage:  "Failure reason unavailable",
+		},
+		{
 			name:         "non zero exit text mixed case",
 			failureKind:  "USER",
 			errorCode:    "Aborted",

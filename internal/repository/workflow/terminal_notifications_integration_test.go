@@ -76,9 +76,10 @@ type durableTerminalFixture struct {
 	workflowID    string
 }
 
-// TestMain provisions the shared PostgreSQL container the durable terminal
-// replay tests need. The pure orchestration unit tests in this package never
-// touch it because testkit starts services lazily on first use.
+// TestMain provisions the shared containers the durable terminal replay tests
+// (PostgreSQL) and the workflow delete log cleanup tests (Redis, ClickHouse,
+// Meilisearch) need. The pure orchestration unit tests in this package never
+// touch them because testkit starts services lazily on first use.
 func TestMain(m *testing.M) {
 	durableTerminalRunSuite(m)
 }
@@ -86,15 +87,9 @@ func TestMain(m *testing.M) {
 // durableTerminalRunSuite keeps the testkit bootstrap in a prefixed helper so
 // the only package-level name this file introduces is TestMain itself.
 func durableTerminalRunSuite(m *testing.M) {
-	testkit.Run(m, testkit.WithPostgres())
+	testkit.Run(m, testkit.WithPostgres(), testkit.WithClickHouse(), testkit.WithRedis(), testkit.WithMeilisearch())
 }
 
-// TestIntegrationTerminalFailureReplayKeepsDurableEffects proves a redelivered
-// JOB_FAILED event is a no-op on durable state. The threshold failure publishes
-// two independent effects - the job failure and the workflow termination - under
-// two different deterministic identities, so neither can absorb the other. The
-// replay must leave the exact notification rows, the terminal-effect ledger, the
-// failure counter and the single termination publish intent byte-identical.
 func TestIntegrationTerminalFailureReplayKeepsDurableEffects(t *testing.T) {
 	fixture := durableTerminalSeed(t, 2)
 	ctx := t.Context()
@@ -149,10 +144,6 @@ func TestIntegrationTerminalFailureReplayKeepsDurableEffects(t *testing.T) {
 	}
 }
 
-// TestIntegrationTerminalCompletionReplayKeepsNewerFailureCount proves a
-// redelivered JOB_COMPLETED event cannot rewind state. The completion reset
-// already happened, so a later failure is a new fact the replay must not erase,
-// and the completion notification must not be published a second time.
 func TestIntegrationTerminalCompletionReplayKeepsNewerFailureCount(t *testing.T) {
 	fixture := durableTerminalSeed(t, 2)
 	ctx := t.Context()
@@ -196,14 +187,6 @@ func TestIntegrationTerminalCompletionReplayKeepsNewerFailureCount(t *testing.T)
 	}
 }
 
-// TestIntegrationTerminalFailureReplayAfterPartialPublicationPersistsRemainingAlert
-// proves the AlreadyExists tolerance in sendNotification cannot swallow a distinct
-// effect that a mid-handler failure left unpublished. The first run commits the
-// failure counter, the terminal-effect ledger and the termination publish intent
-// plus the job notification, then loses the notification RPC before the alert is
-// stored. The replay of the same threshold event carries a drifted display name,
-// so the already-stored job notification conflicts with the rebuilt payload and
-// must be left untouched, while the missing alert must still be published - once.
 func TestIntegrationTerminalFailureReplayAfterPartialPublicationPersistsRemainingAlert(t *testing.T) {
 	fixture := durableTerminalSeed(t, 1)
 	ctx := t.Context()
@@ -285,12 +268,6 @@ func TestIntegrationTerminalFailureReplayAfterPartialPublicationPersistsRemainin
 	durableTerminalAssertCounter(ctx, t, fixture, 1)
 }
 
-// TestIntegrationTerminalReplayAfterTerminationAndDeletionWritesNothing proves
-// terminal events cannot resurrect a workflow that has already left service. A
-// failure the terminated workflow never acknowledged is still reported under that
-// job's own identity, because the job really did fail, but it must not advance
-// the failure counter or publish a second termination. After deletion the same
-// event must not recreate any durable row.
 func TestIntegrationTerminalReplayAfterTerminationAndDeletionWritesNothing(t *testing.T) {
 	fixture := durableTerminalSeed(t, 1)
 	ctx := t.Context()

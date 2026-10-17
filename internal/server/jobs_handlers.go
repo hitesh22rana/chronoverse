@@ -616,6 +616,13 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// A HEAD probe sees the stream headers and stops there: opening the stream
+	// would hold it until the client disconnects, with no body to receive.
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	stream, err := s.jobsClient.StreamJobLogs(ctx, &jobspb.StreamJobLogsRequest{
 		Id:         jobID,
 		WorkflowId: workflowID,

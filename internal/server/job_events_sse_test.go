@@ -159,6 +159,31 @@ func newSSERequest(t *testing.T, userID string) *http.Request {
 	return req.WithContext(context.WithValue(req.Context(), userIDKey{}, userID))
 }
 
+// TestHandleJobEventsHeadAnswersWithoutOpeningStream proves a HEAD probe is
+// answered from the response headers alone: StreamJobLogs must not be called,
+// because net/http suppresses the body and the stream would stay open until
+// the client disconnects.
+func TestHandleJobEventsHeadAnswersWithoutOpeningStream(t *testing.T) {
+	t.Parallel()
+
+	client := &sseJobsClient{stream: newScriptedLogStream()}
+	s := &Server{jobsClient: client}
+
+	request := newSSERequest(t, "user-1")
+	request.Method = http.MethodHead
+
+	response := httptest.NewRecorder()
+	s.handleJobEvents(response, request)
+
+	if client.calls != 0 {
+		t.Fatalf("StreamJobLogs calls = %d, want 0 for HEAD", client.calls)
+	}
+	if response.Code != http.StatusOK || response.Body.Len() != 0 {
+		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+	assertSSEHeaders(t, response)
+}
+
 // assertSSEHeaders pins the streaming response headers every SSE client needs
 // and asserts the response is never gzip encoded.
 func assertSSEHeaders(t *testing.T, res *httptest.ResponseRecorder) {

@@ -61,6 +61,9 @@ func TestHandleListNotificationsMapsRPCError(t *testing.T) {
 	}
 }
 
+// TestHandleMarkNotificationsReadRejectsInvalidBody pins the decode guard: a
+// body without a JSON content type or with malformed JSON never reaches the
+// notifications backend.
 func TestHandleMarkNotificationsReadRejectsInvalidBody(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ name, body, contentType string }{

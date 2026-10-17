@@ -46,6 +46,31 @@ func TestWrappedErrorContract(t *testing.T) {
 	}
 }
 
+func TestWrappedErrorTraversalContract(t *testing.T) {
+	cause := errors.New("infrastructure unavailable")
+	wrapped := terminalreason.Wrap(terminalreason.SystemError, cause)
+
+	if !errors.Is(wrapped, cause) {
+		t.Fatal("wrapped cause is not discoverable")
+	}
+	//nolint:errorlint // Exact identity of the unwrapped cause is the contract under test.
+	if got := errors.Unwrap(wrapped); got != cause {
+		t.Fatalf("Unwrap() = %v; want %v", got, cause)
+	}
+	if errors.Is(wrapped, errors.New("unrelated failure")) {
+		t.Fatal("wrapper matched an unrelated target")
+	}
+	if errors.Is(wrapped, context.Canceled) || errors.Is(wrapped, context.DeadlineExceeded) {
+		t.Fatal("plain cause matched a context target")
+	}
+	if code, ok := terminalreason.FromError(errors.New("plain failure")); ok || code != "" {
+		t.Fatalf("FromError() = %q, %v; want empty, false", code, ok)
+	}
+	if got := terminalreason.Wrap(terminalreason.SystemError, nil); got != nil {
+		t.Fatalf("Wrap(nil) = %v; want nil", got)
+	}
+}
+
 func TestWrappedGRPCContextIdentity(t *testing.T) {
 	err := terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Error(codes.DeadlineExceeded, "configured timeout"))
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -54,6 +79,13 @@ func TestWrappedGRPCContextIdentity(t *testing.T) {
 	err = terminalreason.Wrap(terminalreason.SystemError, status.Error(codes.Canceled, "worker canceled"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("canceled gRPC status does not preserve context identity")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("canceled gRPC status matched deadline identity")
+	}
+	err = terminalreason.Wrap(terminalreason.ImagePullFailed, status.Error(codes.NotFound, "image missing"))
+	if got := status.Code(err); got != codes.NotFound {
+		t.Fatalf("status.Code() = %v; want %v", got, codes.NotFound)
 	}
 }
 
@@ -65,5 +97,26 @@ func TestResolveFallbacks(t *testing.T) {
 	code, message, ok = terminalreason.Resolve("CANCELED", "", "", "", "")
 	if !ok || code != terminalreason.CancellationReasonUnavailable || message != "Cancellation reason unavailable" {
 		t.Fatalf("Resolve cancellation fallback = %q, %q, %v", code, message, ok)
+	}
+	code, message, ok = terminalreason.Resolve("COMPLETED", terminalreason.NonZeroExit.String(), "USER", "", "")
+	if ok || code != "" || message != "" {
+		t.Fatalf("Resolve non-terminal = %q, %q, %v; want empty, empty, false", code, message, ok)
+	}
+}
+
+func TestResolveCancellationReasons(t *testing.T) {
+	for _, tc := range []struct {
+		code    terminalreason.Code
+		message string
+	}{
+		{terminalreason.WorkflowTerminated, "Canceled because the workflow was terminated"},
+		{terminalreason.WorkflowUpdated, "Canceled because the workflow was updated"},
+	} {
+		t.Run(tc.code.String(), func(t *testing.T) {
+			code, message, ok := terminalreason.Resolve("CANCELED", tc.code.String(), "", "", "")
+			if !ok || code != tc.code || message != tc.message {
+				t.Fatalf("Resolve() = %q, %q, %v; want %q, %q, true", code, message, ok, tc.code, tc.message)
+			}
+		})
 	}
 }

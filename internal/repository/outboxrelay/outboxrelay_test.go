@@ -2,6 +2,8 @@
 package outboxrelay
 
 import (
+	"encoding/hex"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,21 +43,43 @@ func TestPostgresInterval(t *testing.T) {
 func TestClaimTokenIncludesWorkerAndIsUnique(t *testing.T) {
 	t.Parallel()
 
-	first, err := newClaimToken("worker-a")
-	if err != nil {
-		t.Fatalf("newClaimToken() returned error: %v", err)
-	}
+	const workerID = "worker-a"
 
-	second, err := newClaimToken("worker-a")
-	if err != nil {
-		t.Fatalf("newClaimToken() returned error: %v", err)
-	}
+	notBefore := time.Now().Add(-time.Minute).UnixNano()
+	notAfter := time.Now().Add(time.Minute).UnixNano()
 
-	if !strings.HasPrefix(first, "worker-a:") {
-		t.Fatalf("newClaimToken() = %q, want worker prefix", first)
-	}
-	if first == second {
-		t.Fatalf("newClaimToken() returned duplicate token %q", first)
+	seen := make(map[string]struct{}, 64)
+	entropySeen := make(map[string]struct{}, 64)
+	for range 64 {
+		token := newClaimToken(workerID)
+
+		parts := strings.SplitN(token, ":", 3)
+		if len(parts) != 3 || parts[0] != workerID {
+			t.Fatalf("newClaimToken() = %q, want %s:<unixnano>:<random>", token, workerID)
+		}
+
+		createdAt, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			t.Fatalf("claim token timestamp %q is not an int64: %v", parts[1], err)
+		}
+		if createdAt < notBefore || createdAt > notAfter {
+			t.Fatalf("claim token timestamp %d is not current, want between %d and %d", createdAt, notBefore, notAfter)
+		}
+
+		random, err := hex.DecodeString(parts[2])
+		if err != nil || len(random) != 16 {
+			t.Fatalf("claim token random part %q is not 16 hex-encoded bytes: %v", parts[2], err)
+		}
+
+		if _, ok := entropySeen[parts[2]]; ok {
+			t.Fatalf("newClaimToken() repeated random suffix %q; entropy must vary per token", parts[2])
+		}
+		entropySeen[parts[2]] = struct{}{}
+
+		if _, ok := seen[token]; ok {
+			t.Fatalf("newClaimToken() returned duplicate token %q", token)
+		}
+		seen[token] = struct{}{}
 	}
 }
 

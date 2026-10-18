@@ -108,10 +108,7 @@ func (r *Repository) publishEvent(ctx context.Context, event *Event, logger *zap
 }
 
 func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) {
-	claimToken, err := newClaimToken(r.cfg.WorkerID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create outbox claim token: %v", err)
-	}
+	claimToken := newClaimToken(r.cfg.WorkerID)
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -251,11 +248,11 @@ func postgresInterval(duration time.Duration) string {
 	return fmt.Sprintf("%d milliseconds", duration.Milliseconds())
 }
 
-func newClaimToken(workerID string) (string, error) {
+// newClaimToken returns a unique claim token for workerID. crypto/rand.Read
+// never fails: it fills the buffer or terminates the process on entropy loss.
+func newClaimToken(workerID string) string {
 	var token [16]byte
-	if _, err := rand.Read(token[:]); err != nil {
-		return "", err
-	}
+	rand.Read(token[:])
 
-	return fmt.Sprintf("%s:%d:%s", workerID, time.Now().UnixNano(), hex.EncodeToString(token[:])), nil
+	return fmt.Sprintf("%s:%d:%s", workerID, time.Now().UnixNano(), hex.EncodeToString(token[:]))
 }

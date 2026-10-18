@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -74,12 +75,12 @@ func insertPendingEvent(ctx context.Context, t *testing.T, pg *postgres.Postgres
 
 // outboxRowState is the persisted state the failure paths must produce.
 type outboxRowState struct {
-	Status          string
-	Attempts        int
-	LockedAtNull    bool
-	LockedByNull    bool
-	PublishedAtNull bool
-	NextInSeconds   float64
+	Status           string
+	Attempts         int
+	LockedAtNull     bool
+	LockedByNull     bool
+	PublishedAtNull  bool
+	ScheduledSeconds float64
 }
 
 func fetchOutboxState(ctx context.Context, t *testing.T, pg *postgres.Postgres, id string) outboxRowState {
@@ -92,7 +93,7 @@ func fetchOutboxState(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 		       locked_at IS NULL,
 		       locked_by IS NULL,
 		       published_at IS NULL,
-		       EXTRACT(EPOCH FROM (next_attempt_at - (now() AT TIME ZONE 'utc')))::float8
+		       EXTRACT(EPOCH FROM (next_attempt_at - updated_at))::float8
 		FROM outbox_events
 		WHERE id = $1`, id).Scan(
 		&state.Status,
@@ -100,7 +101,7 @@ func fetchOutboxState(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 		&state.LockedAtNull,
 		&state.LockedByNull,
 		&state.PublishedAtNull,
-		&state.NextInSeconds,
+		&state.ScheduledSeconds,
 	); err != nil {
 		t.Fatalf("fetch outbox state: %v", err)
 	}
@@ -108,13 +109,15 @@ func fetchOutboxState(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 	return state
 }
 
-func assertNextAttemptWithin(t *testing.T, seconds float64, want, tolerance time.Duration) {
+// assertScheduledBackoff checks the persisted next_attempt_at - updated_at
+// distance. Both columns come from the same SQL now() inside markFailed, so
+// the configured backoff is asserted without depending on query latency.
+func assertScheduledBackoff(t *testing.T, scheduledSeconds float64, want time.Duration) {
 	t.Helper()
 
-	minSeconds := want.Seconds() - tolerance.Seconds()
-	maxSeconds := want.Seconds() + tolerance.Seconds()
-	if seconds < minSeconds || seconds > maxSeconds {
-		t.Fatalf("next_attempt_at is %.1fs away, want %s +/- %s", seconds, want, tolerance)
+	const toleranceSeconds = 0.001
+	if diff := scheduledSeconds - want.Seconds(); diff < -toleranceSeconds || diff > toleranceSeconds {
+		t.Fatalf("scheduled backoff is %.6fs, want %s", scheduledSeconds, want)
 	}
 }
 
@@ -155,7 +158,7 @@ func TestIntegrationPublishFailureMarksFailedAndPreservesAttempts(t *testing.T) 
 	if !state.PublishedAtNull {
 		t.Fatal("published_at is set for a failed event, want NULL")
 	}
-	assertNextAttemptWithin(t, state.NextInSeconds, 10*time.Minute, 30*time.Second)
+	assertScheduledBackoff(t, state.ScheduledSeconds, 10*time.Minute)
 
 	// Open the retry window: a second failing publish claims the released row,
 	// increments attempts once more and keeps it FAILED below the maximum.
@@ -221,7 +224,7 @@ func TestIntegrationPublishFailureMarksDeadAtMaxAttemptsWithDefaultBackoff(t *te
 	if !state.PublishedAtNull {
 		t.Fatal("published_at is set for a dead event, want NULL")
 	}
-	assertNextAttemptWithin(t, state.NextInSeconds, 5*time.Second, 5*time.Second)
+	assertScheduledBackoff(t, state.ScheduledSeconds, 5*time.Second)
 
 	claimed, err = repo.PublishTopic(ctx, topic, zap.NewNop())
 	if err != nil {
@@ -474,6 +477,155 @@ func installDeferredClaimCommitFailureTrigger(ctx context.Context, t *testing.T,
 			t.Logf("drop deferred claim commit failure trigger: %v", err)
 		}
 	})
+}
+
+// installClaimUpdateFailureTrigger makes the claim UPDATE of one event key fail
+// inside PostgreSQL after the statement starts. pgx stores execution errors in
+// the returned rows, so the repository only observes this failure while
+// iterating the claim result, not from the Query call itself.
+func installClaimUpdateFailureTrigger(ctx context.Context, t *testing.T, pg *postgres.Postgres, eventKey string) {
+	t.Helper()
+
+	const functionName = "test_outbox_claim_update_failure"
+	const triggerName = "test_outbox_claim_update_failure_trigger"
+
+	ddl := fmt.Sprintf(`
+		CREATE FUNCTION %s() RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION 'test-induced outbox claim update failure';
+		END;
+		$$ LANGUAGE plpgsql;
+		CREATE TRIGGER %s
+		BEFORE UPDATE ON outbox_events
+		FOR EACH ROW
+		WHEN (NEW.event_key = %s AND NEW.status = 'PROCESSING')
+		EXECUTE FUNCTION %s();`, functionName, triggerName, sqlTestLiteral(eventKey), functionName)
+	if _, err := pg.Exec(ctx, ddl); err != nil {
+		t.Fatalf("install claim update failure trigger: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if _, err := pg.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON outbox_events; DROP FUNCTION IF EXISTS %s();`, triggerName, functionName)); err != nil {
+			t.Logf("drop claim update failure trigger: %v", err)
+		}
+	})
+}
+
+func TestIntegrationClaimUpdateFailureSurfacesInternal(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	topic := "test-claim-update-error-" + t.Name()
+	eventKey := topic + "-1"
+
+	repo := New(&Config{
+		BatchSize:       10,
+		MaxAttempts:     5,
+		RetryBackoff:    time.Minute,
+		ProcessingLease: time.Minute,
+		WorkerID:        "claim-update-error-worker",
+	}, pg, failingKafkaClient(t))
+
+	installClaimUpdateFailureTrigger(ctx, t, pg, eventKey)
+
+	id := insertPendingEvent(ctx, t, pg, topic, "wf-claim-update-error", eventKey)
+
+	claimed, err := repo.PublishTopic(ctx, topic, zap.NewNop())
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("PublishTopic with failing claim update = %v, want Internal", err)
+	}
+	if claimed != 0 {
+		t.Fatalf("PublishTopic claimed %d events, want 0", claimed)
+	}
+
+	state := fetchOutboxState(ctx, t, pg, id)
+	if state.Status != statusPending || state.Attempts != 0 {
+		t.Fatalf("state after failed claim = %q/%d, want PENDING/0", state.Status, state.Attempts)
+	}
+	if !state.LockedAtNull || !state.LockedByNull {
+		t.Fatal("failed claim left locks behind")
+	}
+	if !state.PublishedAtNull {
+		t.Fatal("failed claim published the event")
+	}
+}
+
+// TestIntegrationClaimQueryFailureSurfacesInternal simulates a schema outage:
+// outbox_events is temporarily renamed and a fresh pool with an empty prepared
+// statement cache makes claim.Query fail during preparation, before iteration.
+func TestIntegrationClaimQueryFailureSurfacesInternal(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	topic := "test-claim-query-error-" + t.Name()
+
+	id := insertPendingEvent(ctx, t, pg, topic, "wf-claim-query-error", topic+"-1")
+
+	const hiddenTable = "outbox_events_claim_query_failure"
+	if _, err := pg.Exec(ctx, `SET lock_timeout = '10s'; ALTER TABLE outbox_events RENAME TO `+hiddenTable+`;`); err != nil {
+		t.Fatalf("hide outbox_events: %v", err)
+	}
+	restored := false
+	restore := func() {
+		if restored {
+			return
+		}
+		if _, err := pg.Exec(context.Background(), `SET lock_timeout = '10s'; ALTER TABLE IF EXISTS `+hiddenTable+` RENAME TO outbox_events;`); err != nil {
+			t.Fatalf("restore outbox_events: %v", err)
+		}
+		restored = true
+	}
+	defer restore()
+
+	dsnConfig, err := pgx.ParseConfig(testkit.PostgresDSN(t))
+	if err != nil {
+		t.Fatalf("parse postgres DSN: %v", err)
+	}
+	isolated, err := postgres.New(ctx, &postgres.Config{
+		Host:        dsnConfig.Host,
+		Port:        int(dsnConfig.Port),
+		User:        dsnConfig.User,
+		Password:    dsnConfig.Password,
+		Database:    dsnConfig.Database,
+		MaxConns:    2,
+		DialTimeout: 5 * time.Second,
+		TLSConfig:   &postgres.TLSConfig{Enabled: false},
+	})
+	if err != nil {
+		t.Fatalf("create isolated postgres pool: %v", err)
+	}
+	defer isolated.Close()
+
+	repo := New(&Config{
+		BatchSize:       10,
+		MaxAttempts:     5,
+		RetryBackoff:    time.Minute,
+		ProcessingLease: time.Minute,
+		WorkerID:        "claim-query-error-worker",
+	}, isolated, failingKafkaClient(t))
+
+	claimed, err := repo.PublishTopic(ctx, topic, zap.NewNop())
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("PublishTopic with missing outbox relation = %v, want Internal", err)
+	}
+	if message := status.Convert(err).Message(); !strings.HasPrefix(message, "failed to claim outbox events") {
+		t.Fatalf("error message = %q, want prefix %q", message, "failed to claim outbox events")
+	}
+	if claimed != 0 {
+		t.Fatalf("PublishTopic claimed %d events, want 0", claimed)
+	}
+
+	isolated.Close()
+	restore()
+
+	state := fetchOutboxState(ctx, t, pg, id)
+	if state.Status != statusPending || state.Attempts != 0 {
+		t.Fatalf("state after failed claim query = %q/%d, want PENDING/0", state.Status, state.Attempts)
+	}
+	if !state.LockedAtNull || !state.LockedByNull {
+		t.Fatal("failed claim query left locks behind")
+	}
+	if !state.PublishedAtNull {
+		t.Fatal("failed claim query published the event")
+	}
 }
 
 func TestIntegrationPublishFailureMarkFailureDatabaseErrorSurfacesInternal(t *testing.T) {

@@ -42,6 +42,34 @@ func failingKafkaClient(t *testing.T) *kgo.Client {
 	return client
 }
 
+// isolatedPostgres returns a fresh pool with an empty prepared statement
+// cache. Temporary schema swaps cannot be exercised through the shared pool,
+// whose connections may still hold plans bound to the previous relation.
+func isolatedPostgres(t *testing.T) *postgres.Postgres {
+	t.Helper()
+
+	dsnConfig, err := pgx.ParseConfig(testkit.PostgresDSN(t))
+	if err != nil {
+		t.Fatalf("parse postgres DSN: %v", err)
+	}
+	isolated, err := postgres.New(context.Background(), &postgres.Config{
+		Host:        dsnConfig.Host,
+		Port:        int(dsnConfig.Port),
+		User:        dsnConfig.User,
+		Password:    dsnConfig.Password,
+		Database:    dsnConfig.Database,
+		MaxConns:    2,
+		DialTimeout: 5 * time.Second,
+		TLSConfig:   &postgres.TLSConfig{Enabled: false},
+	})
+	if err != nil {
+		t.Fatalf("create isolated postgres pool: %v", err)
+	}
+	t.Cleanup(isolated.Close)
+
+	return isolated
+}
+
 // insertPendingEvent stores a PENDING outbox event through the production
 // insert helper and returns its generated id.
 func insertPendingEvent(ctx context.Context, t *testing.T, pg *postgres.Postgres, topic, kafkaKey, eventKey string) string {
@@ -575,24 +603,7 @@ func TestIntegrationClaimQueryFailureSurfacesInternal(t *testing.T) {
 	}
 	defer restore()
 
-	dsnConfig, err := pgx.ParseConfig(testkit.PostgresDSN(t))
-	if err != nil {
-		t.Fatalf("parse postgres DSN: %v", err)
-	}
-	isolated, err := postgres.New(ctx, &postgres.Config{
-		Host:        dsnConfig.Host,
-		Port:        int(dsnConfig.Port),
-		User:        dsnConfig.User,
-		Password:    dsnConfig.Password,
-		Database:    dsnConfig.Database,
-		MaxConns:    2,
-		DialTimeout: 5 * time.Second,
-		TLSConfig:   &postgres.TLSConfig{Enabled: false},
-	})
-	if err != nil {
-		t.Fatalf("create isolated postgres pool: %v", err)
-	}
-	defer isolated.Close()
+	isolated := isolatedPostgres(t)
 
 	repo := New(&Config{
 		BatchSize:       10,
@@ -626,6 +637,94 @@ func TestIntegrationClaimQueryFailureSurfacesInternal(t *testing.T) {
 	if !state.PublishedAtNull {
 		t.Fatal("failed claim query published the event")
 	}
+}
+
+// TestIntegrationClaimScanFailureSurfacesInternal injects schema drift: the
+// real relation is temporarily replaced by a stand-in whose attempts column is
+// numeric, so the claim UPDATE succeeds but scanning the fractional returned
+// value fails. The production schema uses NOT NULL columns with fixed types,
+// so this scan guard cannot fail without such drift.
+func TestIntegrationClaimScanFailureSurfacesInternal(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	topic := "test-claim-scan-error-" + t.Name()
+
+	const hiddenTable = "outbox_events_claim_scan_failure"
+	if _, err := pg.Exec(ctx, `SET lock_timeout = '10s'; ALTER TABLE outbox_events RENAME TO `+hiddenTable+`;`); err != nil {
+		t.Fatalf("hide outbox_events: %v", err)
+	}
+	restored := false
+	restore := func() {
+		if restored {
+			return
+		}
+		if _, err := pg.Exec(context.Background(), `SET lock_timeout = '10s'; DROP TABLE IF EXISTS outbox_events; ALTER TABLE IF EXISTS `+hiddenTable+` RENAME TO outbox_events;`); err != nil {
+			t.Fatalf("restore outbox_events: %v", err)
+		}
+		restored = true
+	}
+	defer restore()
+
+	// The stand-in mirrors the claim query's column surface but returns the
+	// fractional numeric, which *int cannot scan.
+	if _, err := pg.Exec(ctx, `
+		CREATE TABLE outbox_events (
+			id UUID PRIMARY KEY,
+			topic TEXT NOT NULL,
+			kafka_key TEXT NOT NULL,
+			event_key TEXT NOT NULL,
+			payload JSONB NOT NULL,
+			status TEXT NOT NULL,
+			attempts NUMERIC NOT NULL DEFAULT 0,
+			next_attempt_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+			locked_at TIMESTAMP,
+			locked_by TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+		);`); err != nil {
+		t.Fatalf("create scan-mismatch stand-in: %v", err)
+	}
+	if _, err := pg.Exec(ctx, `
+		INSERT INTO outbox_events (id, topic, kafka_key, event_key, payload, status, attempts, next_attempt_at)
+		VALUES ('00000000-0000-0000-0000-000000000001', $1, 'wf-claim-scan-error', $2, '{"job_id":"job-1"}', 'PENDING', 1.5, (now() AT TIME ZONE 'utc') - interval '1 minute');`,
+		topic, topic+"-1"); err != nil {
+		t.Fatalf("seed scan-mismatch row: %v", err)
+	}
+
+	isolated := isolatedPostgres(t)
+
+	repo := New(&Config{
+		BatchSize:       10,
+		MaxAttempts:     5,
+		RetryBackoff:    time.Minute,
+		ProcessingLease: time.Minute,
+		WorkerID:        "claim-scan-error-worker",
+	}, isolated, failingKafkaClient(t))
+
+	claimed, err := repo.PublishTopic(ctx, topic, zap.NewNop())
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("PublishTopic with scan-mismatched claim result = %v, want Internal", err)
+	}
+	if message := status.Convert(err).Message(); !strings.HasPrefix(message, "failed to scan outbox event") {
+		t.Fatalf("error message = %q, want prefix %q", message, "failed to scan outbox event")
+	}
+	if claimed != 0 {
+		t.Fatalf("PublishTopic claimed %d events, want 0", claimed)
+	}
+
+	// The failed claim transaction rolled back: the stand-in row is untouched.
+	var (
+		statusValue string
+		attempts    float64
+	)
+	if err := pg.QueryRow(ctx, `SELECT status, attempts FROM outbox_events WHERE topic = $1`, topic).Scan(&statusValue, &attempts); err != nil {
+		t.Fatalf("fetch stand-in state: %v", err)
+	}
+	if statusValue != statusPending || attempts != 1.5 {
+		t.Fatalf("state after failed claim scan = %q/%v, want PENDING/1.5", statusValue, attempts)
+	}
+
+	isolated.Close()
+	restore()
 }
 
 func TestIntegrationPublishFailureMarkFailureDatabaseErrorSurfacesInternal(t *testing.T) {

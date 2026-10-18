@@ -80,15 +80,9 @@ func (r *Repository) Heartbeat(ctx context.Context) error {
             updated_at = now() AT TIME ZONE 'utc'
         WHERE id = $1;
     `
-	ct, err := tx.Exec(ctx, query, r.cfg.ID)
+	_, err = tx.Exec(ctx, query, r.cfg.ID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to heartbeat runtime node: %v", err)
-	}
-	if ct.RowsAffected() == 0 {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			return status.Errorf(codes.Internal, "failed to rollback empty runtime heartbeat transaction: %v", rollbackErr)
-		}
-		return r.RegisterReady(ctx)
 	}
 	if err := r.reconcileRunningJobsTx(ctx, tx); err != nil {
 		return status.Errorf(codes.Internal, "failed to reconcile runtime running jobs: %v", err)

@@ -46,8 +46,6 @@ func (s *lifecycleLock) ReleaseDistributedLock(_ context.Context, key string) er
 // caller's lifecycle path uses. The fake records the TTL instead of failing the
 // acquire, so passing the wrong duration reports a precise failure here rather
 // than surfacing as an unrelated guard-code mismatch.
-//
-//nolint:unparam // Both lifecycle locks currently expire after five minutes; keeping the expected value explicit stays correct if they diverge.
 func assertLockTTLs(t *testing.T, lock *lifecycleLock, want time.Duration) {
 	t.Helper()
 	for i, ttl := range lock.ttls {

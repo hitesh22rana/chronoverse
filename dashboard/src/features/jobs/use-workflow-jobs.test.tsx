@@ -139,3 +139,18 @@ it("resets pagination by dropping only the cursor from the address", async () =>
     // Filters and the open tab must survive a return to the first page.
     expect(lastPush()).toBe("?tab=jobs&status=FAILED&trigger=MANUAL")
 })
+
+it("clears filters without inventing a tab when the address carries none", async () => {
+    const { result } = renderUseWorkflowJobs("status=FAILED&trigger=MANUAL")
+
+    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
+
+    act(() => {
+        result.current.clearAllFilters()
+    })
+
+    // Nothing pinned the address to a tab, so clearing must drop every filter
+    // and leave an empty query string rather than fabricate a tab parameter.
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    expect(lastPush()).toBe("?")
+})

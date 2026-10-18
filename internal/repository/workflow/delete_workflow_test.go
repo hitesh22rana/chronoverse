@@ -248,6 +248,36 @@ func TestDeleteWorkflowLogsFromMeiliSearchRequiresClient(t *testing.T) {
 	}
 }
 
+func TestDeleteWorkflowLogsFromMeiliSearchRequiresIndexConfig(t *testing.T) {
+	t.Parallel()
+
+	// The index map is populated at package init, so the unconfigured-index
+	// guard is only reachable by mutating it from this same-package test.
+	original := meilisearchpkg.Indexes[meilisearchpkg.IndexJobLogs]
+	defer func() { meilisearchpkg.Indexes[meilisearchpkg.IndexJobLogs] = original }()
+	meilisearchpkg.Indexes[meilisearchpkg.IndexJobLogs] = nil
+
+	fake := &deleteWorkflowMeiliFake{
+		enqueue: func(context.Context, any) (*meilisearch.TaskInfo, error) {
+			return nil, errors.New("enqueue must not be reached without an index")
+		},
+		wait: func(context.Context, int64) (*meilisearch.Task, error) {
+			return nil, errors.New("wait must not be reached without an index")
+		},
+	}
+
+	err := (&Repository{ms: fake}).deleteWorkflowLogsFromMeiliSearch(t.Context(), "workflow-1", "user-1")
+	if code := status.Code(err); code != codes.Internal {
+		t.Fatalf("deleteWorkflowLogsFromMeiliSearch() code = %s, want %s: %v", code, codes.Internal, err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "job logs index is not configured") || !strings.Contains(err.Error(), "workflow-1") {
+		t.Fatalf("deleteWorkflowLogsFromMeiliSearch() error = %v, want index configuration message", err)
+	}
+	if len(fake.enqueueCalls) != 0 || len(fake.waitCalls) != 0 {
+		t.Fatalf("meilisearch calls = %d enqueue / %d wait, want 0", len(fake.enqueueCalls), len(fake.waitCalls))
+	}
+}
+
 func TestDeleteWorkflowStatusErrorMapping(t *testing.T) {
 	t.Parallel()
 

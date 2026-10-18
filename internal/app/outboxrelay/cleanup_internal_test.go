@@ -47,8 +47,8 @@ func TestCleanupCommandIdempotencyKeysDrainsPartialBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cleanupCommandIdempotencyKeys() error = %v", err)
 	}
-	if total != 2025 || batches != 3 || !drained {
-		t.Fatalf("cleanup result = total %d, batches %d, drained %t", total, batches, drained)
+	if total != 2025 || batches != 3 || !drained || svc.calls != 3 {
+		t.Fatalf("cleanup result = total %d, batches %d, drained %t, calls %d", total, batches, drained, svc.calls)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestCleanupCommandIdempotencyKeysStopsAtLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cleanupCommandIdempotencyKeys() error = %v", err)
 	}
-	if total != 3000 || batches != 3 || drained {
-		t.Fatalf("cleanup result = total %d, batches %d, drained %t", total, batches, drained)
+	if total != 3000 || batches != 3 || drained || svc.calls != 3 {
+		t.Fatalf("cleanup result = total %d, batches %d, drained %t, calls %d", total, batches, drained, svc.calls)
 	}
 }
 
@@ -80,8 +80,8 @@ func TestCleanupCommandIdempotencyKeysStopsOnError(t *testing.T) {
 	}, svc: svc}
 
 	total, batches, drained, err := app.cleanupCommandIdempotencyKeys(t.Context())
-	if err == nil || total != 1000 || batches != 1 || drained {
-		t.Fatalf("cleanup error result = total %d, batches %d, drained %t, err %v", total, batches, drained, err)
+	if err == nil || total != 1000 || batches != 1 || drained || svc.calls != 2 {
+		t.Fatalf("cleanup error result = total %d, batches %d, drained %t, calls %d, err %v", total, batches, drained, svc.calls, err)
 	}
 }
 

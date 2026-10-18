@@ -249,7 +249,7 @@ func TestDeleteWorkflowLogsFromMeiliSearchRequiresClient(t *testing.T) {
 }
 
 func TestDeleteWorkflowLogsFromMeiliSearchRequiresIndexConfig(t *testing.T) {
-	t.Parallel()
+	// Restore global configuration before parallel sibling tests run.
 
 	// The index map is populated at package init, so the unconfigured-index
 	// guard is only reachable by mutating it from this same-package test.

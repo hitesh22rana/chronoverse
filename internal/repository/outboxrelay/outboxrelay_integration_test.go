@@ -4,9 +4,11 @@ package outboxrelay
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
@@ -78,9 +80,7 @@ func TestIntegrationPublishTopic(t *testing.T) {
 	if got := string(record.Key); got != "workflow-1" {
 		t.Fatalf("record key = %q, want %q", got, "workflow-1")
 	}
-	if got := string(record.Value); got == "" {
-		t.Fatal("record value is empty, want the payload")
-	}
+	require.JSONEq(t, `{"job_id":"job-1"}`, string(record.Value))
 
 	// Nothing is left to publish: a second run is a no-op.
 	again, err := repo.PublishTopic(ctx, kafka.TopicJobs, zap.NewNop())
@@ -92,7 +92,7 @@ func TestIntegrationPublishTopic(t *testing.T) {
 	}
 }
 
-func TestIntegrationPublishTopicPreservesOrderingAcrossKeys(t *testing.T) {
+func TestIntegrationPublishTopicPreservesOrderingForSameKey(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := New(&Config{
@@ -143,6 +143,12 @@ func TestIntegrationPublishTopicPreservesOrderingAcrossKeys(t *testing.T) {
 		t.Fatalf("statuses = %q/%q, want PUBLISHED/PENDING", firstStatus, secondStatus)
 	}
 
+	consumer := testkit.KafkaRecordConsumer(t, kafka.TopicJobs)
+	first := testkit.WaitForRecord(t, consumer, 15*time.Second, func(rec *kgo.Record) bool {
+		return string(rec.Key) == "wf-x"
+	})
+	require.JSONEq(t, `"first"`, string(first.Value))
+
 	// The second run publishes the remaining event.
 	published, err = repo.PublishTopic(ctx, kafka.TopicJobs, zap.NewNop())
 	if err != nil {
@@ -151,6 +157,12 @@ func TestIntegrationPublishTopicPreservesOrderingAcrossKeys(t *testing.T) {
 	if published != 1 {
 		t.Fatalf("second run published %d events, want 1", published)
 	}
+	second := testkit.WaitForRecord(t, consumer, 15*time.Second, func(rec *kgo.Record) bool {
+		return string(rec.Key) == "wf-x"
+	})
+	require.JSONEq(t, `"second"`, string(second.Value))
+	require.NoError(t, pg.QueryRow(ctx, `SELECT status FROM outbox_events WHERE event_key = $1`, prefix+"-2").Scan(&secondStatus))
+	require.Equal(t, "PUBLISHED", secondStatus)
 }
 
 func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
@@ -200,6 +212,13 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 	if deleted != 1 {
 		t.Fatalf("deleted %d rows with batch size 1, want 1", deleted)
 	}
+	var remaining []string
+	if queryErr := pg.QueryRow(ctx, `SELECT array_agg(idempotency_key ORDER BY idempotency_key) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&remaining); queryErr != nil {
+		t.Fatalf("fetch keys after first batch: %v", queryErr)
+	}
+	if want := []string{"expired-2", "live", "processing"}; !slices.Equal(remaining, want) {
+		t.Fatalf("keys after first batch = %v, want %v", remaining, want)
+	}
 
 	// The remaining run removes every other expired row and nothing else.
 	deleted, err = repo.CleanupCommandIdempotencyKeys(ctx, 100)
@@ -210,12 +229,11 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 		t.Fatalf("deleted %d remaining expired rows, want 1", deleted)
 	}
 
-	var total int
-	if countErr := pg.QueryRow(ctx, `SELECT count(*) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&total); countErr != nil {
-		t.Fatalf("count remaining keys: %v", countErr)
+	if queryErr := pg.QueryRow(ctx, `SELECT array_agg(idempotency_key ORDER BY idempotency_key) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&remaining); queryErr != nil {
+		t.Fatalf("fetch remaining keys: %v", queryErr)
 	}
-	if total != 2 {
-		t.Fatalf("remaining keys = %d, want 2 (live + processing)", total)
+	if want := []string{"live", "processing"}; !slices.Equal(remaining, want) {
+		t.Fatalf("remaining keys = %v, want %v", remaining, want)
 	}
 
 	// Nothing expired is left: another run is a no-op.

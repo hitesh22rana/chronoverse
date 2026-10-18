@@ -837,6 +837,27 @@ it("switches the dataset when the log level filter changes and drops the selecti
     await waitFor(() => expect(visibleLines()).toHaveLength(20))
 })
 
+it("preserves selection and requests when reselecting the active log filter", async () => {
+    const user = userEvent.setup()
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(2)
+    const requestCount = mocks.fetchApiJson.mock.calls.length
+    mocks.push.mockClear()
+    mocks.replace.mockClear()
+
+    await user.click(screen.getByLabelText("Filter logs"))
+    const activeFilter = await screen.findByLabelText("All")
+    expect(activeFilter.getAttribute("aria-checked")).toBe("true")
+    await user.click(activeFilter)
+
+    expect(fragment()).toBe("#L2")
+    expect(isSelected(2)).toBe(true)
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(requestCount)
+})
+
 it("downloads the retained logs from the download popover", async () => {
     mocks.fetchApi.mockImplementation(async () => ({ blob: async () => new Blob(["logs"]) }))
     renderViewer()

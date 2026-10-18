@@ -22,6 +22,7 @@ import userEvent from "@testing-library/user-event"
 import { useSyncExternalStore } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
+import { queryKeys } from "@/lib/api/query-keys"
 import type { Job } from "@/features/jobs/types"
 import type { Workflow } from "./types"
 import WorkflowDetailsAndJobsPage from "./workflow-details-page"
@@ -304,6 +305,36 @@ it("keeps analytics failures recoverable from the details card", async () => {
     })
 
     expect(await screen.findByText("Job executions")).toBeTruthy()
+})
+
+it("blocks duplicate analytics retries while a retained-data refetch is pending", async () => {
+    const { queryClient, user } = renderPage()
+    expect(await screen.findByText("Job executions")).toBeTruthy()
+
+    mocks.analyticsError = "analytics temporarily unavailable"
+    await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.workflow.analytics("w1") })
+    })
+    expect(await screen.findByText("Analytics unavailable")).toBeTruthy()
+
+    let resolveAnalytics!: (_value: typeof mocks.analytics) => void
+    const pending = new Promise<typeof mocks.analytics>((resolve) => { resolveAnalytics = resolve })
+    mocks.fetchApiJson.mockImplementationOnce((url: string) => {
+        expect(url).toBe("/analytics/w1")
+        return pending
+    })
+    const requestsBefore = requestedUrls().filter((url) => url.startsWith("/analytics/w1")).length
+    await user.click(screen.getByRole("button", { name: /Try again/ }))
+    const retry = screen.getByRole("button", { name: /Try again/ }) as HTMLButtonElement
+    await waitFor(() => expect(retry.disabled).toBe(true))
+    expect(retry.querySelector("svg")?.classList.contains("animate-spin")).toBe(true)
+    await user.click(retry)
+    expect(requestedUrls().filter((url) => url.startsWith("/analytics/w1"))).toHaveLength(requestsBefore + 1)
+    expect(screen.getByText("analytics temporarily unavailable")).toBeTruthy()
+
+    await act(async () => { resolveAnalytics(mocks.analytics) })
+    expect(await screen.findByText("Job executions")).toBeTruthy()
+    expect(screen.queryByText("Analytics unavailable")).toBeNull()
 })
 
 it("holds the details card back while loading but still offers editing", async () => {

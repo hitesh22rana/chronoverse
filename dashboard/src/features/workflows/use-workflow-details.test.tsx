@@ -70,8 +70,30 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-it("reports a rejected terminate and leaves cache and address untouched", async () => {
-    mocks.fetchApi.mockRejectedValue(new Error("failed to terminate workflow: 409 conflict"))
+type WorkflowDetails = ReturnType<typeof useWorkflowDetails>
+
+// A rejected action must not refresh, clear or navigate away from the page.
+it.each([
+    {
+        action: "terminate",
+        method: "PATCH",
+        requestMessage: "failed to terminate workflow",
+        errorMessage: "failed to terminate workflow: 409 conflict",
+        run: (details: WorkflowDetails) => details.terminateWorkflow(),
+        error: (details: WorkflowDetails) => details.terminateError,
+        isPending: (details: WorkflowDetails) => details.isTerminating,
+    },
+    {
+        action: "delete",
+        method: "DELETE",
+        requestMessage: "failed to delete workflow",
+        errorMessage: "failed to delete workflow: 503 unavailable",
+        run: (details: WorkflowDetails) => details.deleteWorkflow(),
+        error: (details: WorkflowDetails) => details.deleteError,
+        isPending: (details: WorkflowDetails) => details.isDeleting,
+    },
+])("reports a rejected $action and leaves cache and address untouched", async ({ method, requestMessage, errorMessage, run, error, isPending }) => {
+    mocks.fetchApi.mockRejectedValue(new Error(errorMessage))
     const { result, queryClient } = renderUseWorkflowDetails()
     await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
 
@@ -79,54 +101,19 @@ it("reports a rejected terminate and leaves cache and address untouched", async 
     const removeSpy = vi.spyOn(queryClient, "removeQueries")
 
     act(() => {
-        result.current.terminateWorkflow()
+        run(result.current)
     })
 
-    await waitFor(() =>
-        expect(mocks.toast.error).toHaveBeenCalledWith("failed to terminate workflow: 409 conflict"),
-    )
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(errorMessage))
     expect(mocks.toast.error).toHaveBeenCalledTimes(1)
     expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
     const [url, message, init] = mocks.fetchApi.mock.calls[0] as [string, string, RequestInit]
     expect(url).toBe("/workflows/w1")
-    expect(message).toBe("failed to terminate workflow")
-    expect(init.method).toBe("PATCH")
-    expect(result.current.terminateError?.message).toBe("failed to terminate workflow: 409 conflict")
-    expect(result.current.isTerminating).toBe(false)
+    expect(message).toBe(requestMessage)
+    expect(init.method).toBe(method)
+    expect(error(result.current)?.message).toBe(errorMessage)
+    expect(isPending(result.current)).toBe(false)
 
-    // A failed action must not refresh, clear or navigate away from the page.
-    expect(invalidateSpy).not.toHaveBeenCalled()
-    expect(removeSpy).not.toHaveBeenCalled()
-    expect(queryClient.getQueryData(queryKeys.workflow.detail("w1"))).toEqual(mocks.workflow)
-    expect(mocks.push).not.toHaveBeenCalled()
-    expect(mocks.back).not.toHaveBeenCalled()
-})
-
-it("reports a rejected delete and leaves cache and address untouched", async () => {
-    mocks.fetchApi.mockRejectedValue(new Error("failed to delete workflow: 503 unavailable"))
-    const { result, queryClient } = renderUseWorkflowDetails()
-    await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
-
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries")
-    const removeSpy = vi.spyOn(queryClient, "removeQueries")
-
-    act(() => {
-        result.current.deleteWorkflow()
-    })
-
-    await waitFor(() =>
-        expect(mocks.toast.error).toHaveBeenCalledWith("failed to delete workflow: 503 unavailable"),
-    )
-    expect(mocks.toast.error).toHaveBeenCalledTimes(1)
-    expect(mocks.fetchApi).toHaveBeenCalledTimes(1)
-    const [url, message, init] = mocks.fetchApi.mock.calls[0] as [string, string, RequestInit]
-    expect(url).toBe("/workflows/w1")
-    expect(message).toBe("failed to delete workflow")
-    expect(init.method).toBe("DELETE")
-    expect(result.current.deleteError?.message).toBe("failed to delete workflow: 503 unavailable")
-    expect(result.current.isDeleting).toBe(false)
-
-    // A delete that never happened must not evict the workflow or redirect home.
     expect(invalidateSpy).not.toHaveBeenCalled()
     expect(removeSpy).not.toHaveBeenCalled()
     expect(queryClient.getQueryData(queryKeys.workflow.detail("w1"))).toEqual(mocks.workflow)

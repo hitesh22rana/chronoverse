@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -188,6 +189,11 @@ func TestIntegrationPublishFailureMarksFailedAndPreservesAttempts(t *testing.T) 
 	}
 	assertScheduledBackoff(t, state.ScheduledSeconds, 10*time.Minute)
 
+	claimed, err = repo.PublishTopic(ctx, topic, zap.NewNop())
+	require.NoError(t, err)
+	require.Zero(t, claimed, "must not retry before backoff expires")
+	require.Equal(t, state, fetchOutboxState(ctx, t, pg, id), "early retry changed row")
+
 	// Open the retry window: a second failing publish claims the released row,
 	// increments attempts once more and keeps it FAILED below the maximum.
 	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second' WHERE id = $1`, id); execErr != nil {
@@ -254,6 +260,11 @@ func TestIntegrationPublishFailureMarksDeadAtMaxAttemptsWithDefaultBackoff(t *te
 	}
 	assertScheduledBackoff(t, state.ScheduledSeconds, 5*time.Second)
 
+	// Make the retry due so only the DEAD status can exclude this row.
+	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second' WHERE id = $1`, id); execErr != nil {
+		t.Fatalf("open dead event retry window: %v", execErr)
+	}
+
 	claimed, err = repo.PublishTopic(ctx, topic, zap.NewNop())
 	if err != nil {
 		t.Fatalf("PublishTopic (after dead): %v", err)
@@ -263,8 +274,8 @@ func TestIntegrationPublishFailureMarksDeadAtMaxAttemptsWithDefaultBackoff(t *te
 	}
 
 	state = fetchOutboxState(ctx, t, pg, id)
-	if state.Status != statusDead {
-		t.Fatalf("status after exclusion run = %q, want DEAD", state.Status)
+	if state.Status != statusDead || state.Attempts != 3 {
+		t.Fatalf("state after exclusion run = %q/%d, want DEAD/3", state.Status, state.Attempts)
 	}
 }
 
@@ -336,6 +347,9 @@ func TestIntegrationPublishFailureWithStaleClaimReturnsAborted(t *testing.T) {
 	if stale.LockedAtNull || stale.LockedByNull {
 		t.Fatal("stale update released the owning claim")
 	}
+	var ownerAfter string
+	require.NoError(t, pg.QueryRow(ctx, `SELECT locked_by FROM outbox_events WHERE id = $1`, id).Scan(&ownerAfter))
+	require.Equal(t, lockedBy, ownerAfter, "stale writes changed claim owner")
 }
 
 func TestIntegrationPublishFailureAfterReclaimPersistsOwnerFailure(t *testing.T) {
@@ -393,6 +407,10 @@ func TestIntegrationPublishFailureAfterReclaimPersistsOwnerFailure(t *testing.T)
 	if !owner.LockedAtNull || !owner.LockedByNull {
 		t.Fatalf("owner locks = atNull:%v byNull:%v, want released", owner.LockedAtNull, owner.LockedByNull)
 	}
+	if !owner.PublishedAtNull {
+		t.Fatal("owner failure set published_at, want NULL")
+	}
+	assertScheduledBackoff(t, owner.ScheduledSeconds, time.Minute)
 }
 
 func TestIntegrationPublishFailureDatabaseErrorsSurfaceInternal(t *testing.T) {
@@ -560,6 +578,9 @@ func TestIntegrationClaimUpdateFailureSurfacesInternal(t *testing.T) {
 	claimed, err := repo.PublishTopic(ctx, topic, zap.NewNop())
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("PublishTopic with failing claim update = %v, want Internal", err)
+	}
+	if message := status.Convert(err).Message(); !strings.HasPrefix(message, "failed to iterate outbox events") {
+		t.Fatalf("error message = %q, want iteration failure", message)
 	}
 	if claimed != 0 {
 		t.Fatalf("PublishTopic claimed %d events, want 0", claimed)
@@ -749,6 +770,9 @@ func TestIntegrationPublishFailureMarkFailureDatabaseErrorSurfacesInternal(t *te
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("PublishTopic with failing marking update = %v, want Internal", err)
 	}
+	if message := status.Convert(err).Message(); !strings.HasPrefix(message, "failed to mark outbox event failed") {
+		t.Fatalf("error message = %q, want terminal marking failure", message)
+	}
 	if claimed != 1 {
 		t.Fatalf("PublishTopic claimed %d events, want 1", claimed)
 	}
@@ -780,8 +804,15 @@ func TestIntegrationClaimCommitFailureSurfacesInternal(t *testing.T) {
 
 	id := insertPendingEvent(ctx, t, pg, topic, "wf-claim-error", eventKey)
 
-	if _, err := repo.PublishTopic(ctx, topic, zap.NewNop()); status.Code(err) != codes.Internal {
+	claimed, err := repo.PublishTopic(ctx, topic, zap.NewNop())
+	if status.Code(err) != codes.Internal {
 		t.Fatalf("PublishTopic with failing claim commit = %v, want Internal", err)
+	}
+	if message := status.Convert(err).Message(); !strings.HasPrefix(message, "failed to commit outbox claim") {
+		t.Fatalf("error message = %q, want claim commit failure", message)
+	}
+	if claimed != 0 {
+		t.Fatalf("PublishTopic claimed %d events, want 0", claimed)
 	}
 
 	state := fetchOutboxState(ctx, t, pg, id)

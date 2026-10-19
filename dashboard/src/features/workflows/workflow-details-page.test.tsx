@@ -553,6 +553,17 @@ it("lists jobs with the paging the cursor supports", async () => {
     expect(screen.queryByText("No jobs found")).toBeNull()
 })
 
+it("keeps a job navigable when its scheduled timestamp is empty", async () => {
+    // Keep the defensive display useful if an incomplete API payload reaches the card.
+    mocks.jobsResponse = { jobs: [job({ scheduled_at: "" })] }
+    renderPage("tab=jobs")
+
+    const card = await screen.findByRole("link", { name: /Job: j1/ })
+    expect(card.getAttribute("href")).toBe("/workflows/w1/jobs/j1")
+    expect(within(card).getByText("Not scheduled")).toBeTruthy()
+    expect(within(card).getByLabelText("Completed")).toBeTruthy()
+})
+
 it("describes a canceled job that never ran and reveals its reason on focus", async () => {
     mocks.jobsResponse = {
         jobs: [job({

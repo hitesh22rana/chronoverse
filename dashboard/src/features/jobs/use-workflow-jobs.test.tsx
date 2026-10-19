@@ -57,26 +57,32 @@ afterEach(() => cleanup())
 
 it("cannot page forward when the response advertises no cursor", async () => {
     const { result } = renderJobs()
-    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalled())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
 
     expect(result.current.pagination.goToNextPage()).toBe(false)
     expect(mocks.push).not.toHaveBeenCalled()
 })
 
 it("pages forward with the server cursor and drops it when resetting", async () => {
+    mocks.search = "tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-1"
     mocks.fetchApiJson.mockResolvedValue({ jobs: [], cursor: "cursor-2" })
-    const { result } = renderJobs()
+    const { result, rerender } = renderJobs()
     await waitFor(() => expect(result.current.pagination.hasNextPage).toBe(true))
 
     expect(result.current.pagination.goToNextPage()).toBe(true)
-    expect(lastPush()).toBe("?cursor=cursor-2")
+    expect(lastPush()).toBe("?tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-2")
+
+    mocks.search = lastPush().slice(1)
+    rerender()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.pagination.hasPreviousPage).toBe(true)
 
     result.current.pagination.resetPagination()
-    expect(lastPush()).toBe("?")
+    expect(lastPush()).toBe("?tab=jobs&status=FAILED&trigger=MANUAL")
 })
 
 it("clearing filters keeps an open jobs tab and writes nothing else", () => {
-    mocks.search = "tab=jobs&status=FAILED"
+    mocks.search = "tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-2"
     const { result } = renderJobs()
 
     result.current.clearAllFilters()
@@ -85,6 +91,7 @@ it("clearing filters keeps an open jobs tab and writes nothing else", () => {
 })
 
 it("clearing filters outside a tab writes an empty query", () => {
+    mocks.search = "status=FAILED&trigger=MANUAL&cursor=cursor-2"
     const { result } = renderJobs()
 
     result.current.clearAllFilters()

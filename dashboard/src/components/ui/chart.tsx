@@ -238,49 +238,97 @@ function renderTooltipItem({
         indicator === "dot" && "items-center",
       )}
     >
-      {formatter && item?.value !== undefined && item.name ? (
-        formatter(item.value, item.name, item, index, item.payload)
-      ) : (
-        <>
-          {itemConfig?.icon ? (
-            <itemConfig.icon />
-          ) : (
-            !hideIndicator && (
-              <div
-                className={cn("shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)", {
-                  "h-2.5 w-2.5": indicator === "dot",
-                  "w-1": indicator === "line",
-                  "w-0 border-[1.5px] border-dashed bg-transparent": indicator === "dashed",
-                  "my-0.5": nestLabel && indicator === "dashed",
-                })}
-                style={
-                  {
-                    "--color-bg": indicatorColor,
-                    "--color-border": indicatorColor,
-                  } as React.CSSProperties
-                }
-              />
-            )
-          )}
-          <div
-            className={cn(
-              "flex flex-1 justify-between leading-none",
-              nestLabel ? "items-end" : "items-center",
-            )}
-          >
-            <div className="grid gap-1.5">
-              {nestLabel ? tooltipLabel : null}
-              <span className="text-muted-foreground">{itemConfig?.label ?? item.name}</span>
-            </div>
-            {item.value != null && (
-              <span className="font-mono font-medium text-foreground tabular-nums">
-                {typeof item.value === "number" ? item.value.toLocaleString() : String(item.value)}
-              </span>
-            )}
-          </div>
-        </>
-      )}
+      {renderTooltipItemBody({
+        item, index, itemConfig, indicatorColor, indicator, hideIndicator, formatter, nestLabel, tooltipLabel,
+      })}
     </div>
+  )
+}
+
+function renderTooltipItemBody({
+  item,
+  index,
+  itemConfig,
+  indicatorColor,
+  indicator,
+  hideIndicator,
+  formatter,
+  nestLabel,
+  tooltipLabel,
+}: {
+  item: TooltipPayload[number]
+  index: number
+  itemConfig: ReturnType<typeof getPayloadConfigFromPayload>
+  indicatorColor: string | undefined
+  indicator: ChartTooltipContentProps["indicator"]
+  hideIndicator: ChartTooltipContentProps["hideIndicator"]
+  formatter: ChartTooltipContentProps["formatter"]
+  nestLabel: boolean
+  tooltipLabel: React.ReactNode
+}) {
+  if (formatter && item?.value !== undefined && item.name) {
+    return formatter(item.value, item.name, item, index, item.payload)
+  }
+
+  return (
+    <>
+      {renderTooltipIndicator({ itemConfig, indicatorColor, indicator, hideIndicator, nestLabel })}
+      <div
+        className={cn(
+          "flex flex-1 justify-between leading-none",
+          nestLabel ? "items-end" : "items-center",
+        )}
+      >
+        <div className="grid gap-1.5">
+          {nestLabel ? tooltipLabel : null}
+          <span className="text-muted-foreground">{itemConfig?.label ?? item.name}</span>
+        </div>
+        {item.value != null && (
+          <span className="font-mono font-medium text-foreground tabular-nums">
+            {typeof item.value === "number" ? item.value.toLocaleString() : String(item.value)}
+          </span>
+        )}
+      </div>
+    </>
+  )
+}
+
+function renderTooltipIndicator({
+  itemConfig,
+  indicatorColor,
+  indicator,
+  hideIndicator,
+  nestLabel,
+}: {
+  itemConfig: ReturnType<typeof getPayloadConfigFromPayload>
+  indicatorColor: string | undefined
+  indicator: ChartTooltipContentProps["indicator"]
+  hideIndicator: ChartTooltipContentProps["hideIndicator"]
+  nestLabel: boolean
+}) {
+  if (itemConfig?.icon) {
+    return <itemConfig.icon />
+  }
+
+  if (hideIndicator) {
+    return null
+  }
+
+  return (
+    <div
+      className={cn("shrink-0 rounded-[2px] border-(--color-border) bg-(--color-bg)", {
+        "h-2.5 w-2.5": indicator === "dot",
+        "w-1": indicator === "line",
+        "w-0 border-[1.5px] border-dashed bg-transparent": indicator === "dashed",
+        "my-0.5": nestLabel && indicator === "dashed",
+      })}
+      style={
+        {
+          "--color-bg": indicatorColor,
+          "--color-border": indicatorColor,
+        } as React.CSSProperties
+      }
+    />
   )
 }
 

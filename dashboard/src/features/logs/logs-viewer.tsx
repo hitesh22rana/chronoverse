@@ -138,6 +138,46 @@ function useLogViewerActions(model: any) {
         router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
     }
 
+    const {
+        clearLineSelection,
+        selectLogLine,
+        copyLogLines,
+        copyPermalink,
+    } = useLogLineSelectionActions({
+        lineSelection,
+        setLineSelection,
+        selectionAnchorRef,
+        logs,
+    })
+
+    const {
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+    } = useLogRowGestures({
+        rowPointerGestureRef,
+        selectLogLine,
+    })
+
+    return {
+        updateJsonRendering,
+        clearLineSelection,
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+        copyLogLines,
+        copyPermalink,
+    }
+}
+
+function useLogLineSelectionActions(model: any) {
+    const {
+        lineSelection,
+        setLineSelection,
+        selectionAnchorRef,
+        logs,
+    } = model
+
     const updateLineSelection = (selection: LogLineSelection) => {
         const normalized = normalizeLogLineSelection(selection.start, selection.end)
         if (!normalized) {
@@ -176,6 +216,40 @@ function useLogViewerActions(model: any) {
         }
         updateLineSelection(selection)
     }
+
+    const copyLogLines = async (selection: LogLineSelection) => {
+        try {
+            const text = getSelectedLogText(logs.map((log: JobLog) => log.message), selection)
+            await navigator.clipboard.writeText(text)
+            toast.success(selection.start === selection.end ? "Log line copied" : "Log lines copied")
+        } catch {
+            toast.error("Failed to copy log lines")
+        }
+    }
+
+    const copyPermalink = async (selection: LogLineSelection) => {
+        try {
+            updateLineSelection(selection)
+
+            const url = new URL(window.location.href)
+            url.hash = formatLogLineSelection(selection)
+            await navigator.clipboard.writeText(url.toString())
+            toast.success("Log permalink copied")
+        } catch {
+            toast.error("Failed to copy log permalink")
+        }
+    }
+
+    return {
+        clearLineSelection,
+        selectLogLine,
+        copyLogLines,
+        copyPermalink,
+    }
+}
+
+function useLogRowGestures(model: any) {
+    const { rowPointerGestureRef, selectLogLine } = model
 
     const handleLogRowClick = (
         lineNumber: number,
@@ -226,37 +300,10 @@ function useLogViewerActions(model: any) {
         }
     }
 
-    const copyLogLines = async (selection: LogLineSelection) => {
-        try {
-            const text = getSelectedLogText(logs.map((log: JobLog) => log.message), selection)
-            await navigator.clipboard.writeText(text)
-            toast.success(selection.start === selection.end ? "Log line copied" : "Log lines copied")
-        } catch {
-            toast.error("Failed to copy log lines")
-        }
-    }
-
-    const copyPermalink = async (selection: LogLineSelection) => {
-        try {
-            updateLineSelection(selection)
-
-            const url = new URL(window.location.href)
-            url.hash = formatLogLineSelection(selection)
-            await navigator.clipboard.writeText(url.toString())
-            toast.success("Log permalink copied")
-        } catch {
-            toast.error("Failed to copy log permalink")
-        }
-    }
-
     return {
-        updateJsonRendering,
-        clearLineSelection,
         handleLogRowClick,
         handleLogRowPointerDown,
         handleLogRowPointerMove,
-        copyLogLines,
-        copyPermalink,
     }
 }
 

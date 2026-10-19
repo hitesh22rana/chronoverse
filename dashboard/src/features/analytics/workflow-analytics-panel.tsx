@@ -110,9 +110,9 @@ function WorkflowAnalyticsContent({ analytics, error, isLoading, isFetching, log
             </CardHeader>
         </Card>
     )
-    const totalJobs = analytics?.total_jobs ?? 0
-    const totalLogs = analytics?.total_joblogs ?? 0
-    const totalRuntime = analytics?.total_job_execution_duration ?? 0
+    const totalJobs = analytics.total_jobs
+    const totalLogs = analytics.total_joblogs
+    const totalRuntime = analytics.total_job_execution_duration
     const averageRuntime = divide(totalRuntime, totalJobs)
 
     return (

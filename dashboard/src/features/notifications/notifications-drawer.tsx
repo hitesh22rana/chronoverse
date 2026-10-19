@@ -86,7 +86,7 @@ function highlightNotification(message: string): string {
     while ((match = regex.exec(message)) !== null) {
         const before = message.slice(lastIndex, match.index);
         result += escapeHtml(before);
-        const quoted = match[1] ?? "";
+        const quoted = match[1];
         result += `<span class="font-semibold">${escapeHtml(quoted)}</span>`;
         lastIndex = match.index + match[0].length;
     }
@@ -176,7 +176,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
     const renderRow = (index: number) => {
         const d = flat[index]
-        if (!d) return null
 
         if (d.type === "heading") {
             return (

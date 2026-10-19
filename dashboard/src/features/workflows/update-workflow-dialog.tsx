@@ -246,7 +246,7 @@ function initializeWorkflowForm(workflow: Workflow, form: UseFormReturn<UpdateWo
             headers,
             timeout: parsedPayload.timeout || "",
         })
-    } else if (workflow.kind === "CONTAINER") {
+    } else {
         let envArray: string[] = []
         if (parsedPayload.env && typeof parsedPayload.env === "object") {
             envArray = Object.entries(parsedPayload.env).map(([key, value]) => `${key}=${value}`)

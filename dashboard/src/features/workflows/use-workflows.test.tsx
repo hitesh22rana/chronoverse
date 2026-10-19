@@ -202,13 +202,15 @@ it("refuses to page forward without a cursor", async () => {
 })
 
 it("resets paging when the search text changes and removes it when cleared", async () => {
-    const { result } = renderUseWorkflows("cursor=c1")
+    const { result, rerender } = renderUseWorkflows("cursor=c1")
     await waitFor(() => expect(lastListRequest()).toBe("/workflows?cursor=c1"))
 
     act(() => {
         result.current.updateSearchQuery("nightly")
     })
     expect(lastPush()).toBe("?query=nightly")
+    mocks.search = lastPush().slice(1)
+    rerender()
 
     act(() => {
         result.current.updateSearchQuery("")
@@ -217,13 +219,15 @@ it("resets paging when the search text changes and removes it when cleared", asy
 })
 
 it("writes applied filters over the address and resets the cursor", async () => {
-    const { result } = renderUseWorkflows("cursor=c1&query=night&status=FAILED")
+    const { result, rerender } = renderUseWorkflows("cursor=c1&query=night&status=FAILED")
     await waitFor(() => expect(lastListRequest()).toBe("/workflows?cursor=c1&query=night&build_status=FAILED"))
 
     act(() => {
         result.current.applyAllFilters({ status: "COMPLETED", kind: "HEARTBEAT", intervalMin: "5", intervalMax: "60" })
     })
     expect(lastPush()).toBe("?query=night&status=COMPLETED&kind=HEARTBEAT&interval_min=5&interval_max=60")
+    mocks.search = lastPush().slice(1)
+    rerender()
 
     // "ALL" is the unset choice for each select, and bad intervals are dropped.
     act(() => {

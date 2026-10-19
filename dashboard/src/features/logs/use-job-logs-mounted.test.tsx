@@ -82,7 +82,6 @@ class FakeEventSource {
     close() {
         this.closed = true
         this.readyState = FakeEventSource.CLOSED
-        this.registered.clear()
     }
 
     emitLog(payload: unknown) {
@@ -356,6 +355,11 @@ it("pauses streaming while a search filter is active and resumes with a fresh st
     const second = mocks.sources[1] as FakeEventSource
     expect(second.url).toBe("/workflows/w1/jobs/j1/events")
     await waitFor(() => expect(sequences()).toEqual(["3", "2", "1"]))
+    await act(async () => {
+        first.emitLog(liveWire(9))
+        second.emitLog(liveWire(4))
+    })
+    expect(sequences()).toEqual(["4", "3", "2", "1"])
 })
 
 it("reports stream failures and stays silent for a normal close", async () => {

@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 )
 
@@ -53,18 +52,6 @@ func TestBatchSizeAndIntervalDefaults(t *testing.T) {
 	if got := repo.batchInterval(); got != time.Second {
 		t.Fatalf("configured batch interval = %s, want 1s", got)
 	}
-}
-
-func TestPublishLogGuardBranches(t *testing.T) {
-	ctx := t.Context()
-	repo := &Repository{}
-	repo.publishLog(ctx, nil)
-	repo.publishLog(ctx, &jobsmodel.JobLogEvent{Retention: true})
-
-	repo.livePublisher = &joblogevents.LivePublisher{}
-	repo.publishLog(ctx, &jobsmodel.JobLogEvent{EventKey: "log-1", Retention: false})
-	repo.publishLog(ctx, &jobsmodel.JobLogEvent{EventKey: "log-2", Retention: true, LivePublished: true})
-	repo.publishLog(ctx, &jobsmodel.JobLogEvent{EventKey: "log-3", Retention: true})
 }
 
 func TestProcessRecordsBatchSkipsUnparseableRecord(t *testing.T) {

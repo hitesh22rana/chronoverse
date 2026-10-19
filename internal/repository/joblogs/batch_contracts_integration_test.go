@@ -3,6 +3,7 @@ package joblogs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,9 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
@@ -37,7 +40,8 @@ func batchContractRepository(t *testing.T) *Repository {
 
 func batchContractEvent(t *testing.T, repo *Repository, retention bool) *queueData {
 	t.Helper()
-	userID, workflowID := seedUserWorkflow(t.Context(), t, repo.pg)
+	userID := testkit.SeedUser(t.Context(), t, repo.pg, "joblogs-"+uuid.NewString()+"@chronoverse.test")
+	workflowID := testkit.SeedWorkflow(t.Context(), t, repo.pg, userID, "joblogs-"+t.Name())
 	return &queueData{logEntry: &jobsmodel.JobLogEvent{
 		JobID: uuid.NewString(), WorkflowID: workflowID, UserID: userID,
 		Stream: "stdout", SequenceNum: 1, Message: "batch contract " + t.Name(),
@@ -114,6 +118,7 @@ func TestIntegrationBatchRetentionAndReplay(t *testing.T) {
 func TestIntegrationBatchInactiveWorkflowCleanup(t *testing.T) {
 	repo := batchContractRepository(t)
 	item := batchContractEvent(t, repo, true)
+	unrelated := seedUnrelatedBatchLog(t, repo)
 	if _, err := repo.processLogsBatch(t.Context(), []*queueData{item}); err != nil {
 		t.Fatalf("seed retained logs: %v", err)
 	}
@@ -126,6 +131,69 @@ func TestIntegrationBatchInactiveWorkflowCleanup(t *testing.T) {
 	}
 	assertBatchStorage(t, repo, item, 0)
 	assertBatchAnalytics(t, repo, item, 1)
+	assertBatchStorage(t, repo, unrelated, 1)
+	assertBatchAnalytics(t, repo, unrelated, 1)
+}
+
+func TestIntegrationPublishLogGuardsAndDelivery(t *testing.T) {
+	rdb := testkit.Redis(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	event := &jobsmodel.JobLogEvent{
+		EventKey: "log:live:stdout:1", JobID: uuid.NewString(), Retention: true,
+		WorkflowID: uuid.NewString(), UserID: uuid.NewString(),
+		Stream: "stdout", SequenceNum: 1, Message: "eligible",
+		TimeStamp: time.Now().UTC().Truncate(time.Millisecond),
+	}
+	want := *event
+	want.LivePublished = true
+	sub := rdb.Subscribe(ctx, redis.GetJobLogsChannel(event.JobID))
+	t.Cleanup(func() {
+		if err := sub.Close(); err != nil {
+			t.Errorf("close live subscription: %v", err)
+		}
+	})
+	if _, err := sub.Receive(ctx); err != nil {
+		t.Fatalf("subscribe to live logs: %v", err)
+	}
+	repo := &Repository{}
+	repo.publishLog(ctx, event)
+	repo.livePublisher = joblogevents.NewLivePublisher(rdb, joblogevents.LivePublisherConfig{BufferSize: 1})
+	repo.publishLog(ctx, nil)
+	for _, skip := range []jobsmodel.JobLogEvent{
+		{JobID: event.JobID, EventKey: "unretained", Retention: false},
+		{JobID: event.JobID, EventKey: "already-published", Retention: true, LivePublished: true},
+	} {
+		repo.publishLog(ctx, &skip)
+	}
+	repo.publishLog(ctx, event)
+	repo.publishLog(ctx, &jobsmodel.JobLogEvent{JobID: event.JobID, EventKey: "overflow", Retention: true})
+	// Starting after enqueueing makes both skip guards and overflow observable in a one-slot queue.
+	done := repo.runLiveJobLogPublisher(ctx, nil)
+	defer func() {
+		cancel()
+		<-done
+	}()
+	message, err := sub.ReceiveMessage(ctx)
+	if err != nil {
+		t.Fatalf("receive eligible log: %v", err)
+	}
+	var got jobsmodel.JobLogEvent
+	if err := json.Unmarshal([]byte(message.Payload), &got); err != nil {
+		t.Fatalf("decode live log: %v", err)
+	}
+	if got != want || event.LivePublished {
+		t.Fatalf("live log = %+v, original = %+v; want %+v and an unchanged original", got, event, want)
+	}
+}
+
+func seedUnrelatedBatchLog(t *testing.T, repo *Repository) *queueData {
+	t.Helper()
+	item := batchContractEvent(t, repo, true)
+	if _, err := repo.processLogsBatch(t.Context(), []*queueData{item}); err != nil {
+		t.Fatalf("seed retained logs: %v", err)
+	}
+	return item
 }
 
 func unavailableBatchMeili(t *testing.T) meilisearch.ServiceManager {
@@ -219,19 +287,39 @@ func (client *afterBatchIndexing) WaitForTaskWithContext(ctx context.Context, ui
 }
 
 func TestIntegrationBatchDeletionDuringIndexingRemovesRetainedLogs(t *testing.T) {
-	repo := batchContractRepository(t)
-	item := batchContractEvent(t, repo, true)
-	repo.ms = &afterBatchIndexing{ServiceManager: repo.ms, after: func() {
-		if _, err := repo.pg.Exec(t.Context(), "DELETE FROM workflows WHERE id=$1", item.logEntry.WorkflowID); err != nil {
-			t.Fatalf("delete indexed workflow: %v", err)
-		}
-	}}
-	got, err := repo.processLogsBatch(t.Context(), []*queueData{item})
-	if err != nil || got != nil {
-		t.Fatalf("deleted batch = %v, %v", got, err)
+	for _, mixed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mixed-%t", mixed), func(t *testing.T) {
+			repo := batchContractRepository(t)
+			item := batchContractEvent(t, repo, true)
+			unrelated := batchContractEvent(t, repo, true)
+			batch := []*queueData{item}
+			if mixed {
+				batch = append(batch, unrelated)
+			} else if _, err := repo.processLogsBatch(t.Context(), []*queueData{unrelated}); err != nil {
+				t.Fatalf("seed unrelated log: %v", err)
+			}
+			repo.ms = &afterBatchIndexing{ServiceManager: repo.ms, after: func() {
+				if _, err := repo.pg.Exec(t.Context(), "DELETE FROM workflows WHERE id=$1", item.logEntry.WorkflowID); err != nil {
+					t.Fatalf("delete indexed workflow: %v", err)
+				}
+			}}
+			got, err := repo.processLogsBatch(t.Context(), batch)
+			if err != nil {
+				t.Fatalf("deleted batch failed: %v", err)
+			}
+			if mixed {
+				if len(got) != 1 || got[0] != unrelated {
+					t.Fatalf("deleted batch = %v; want only the active workflow's log", got)
+				}
+			} else if got != nil {
+				t.Fatalf("deleted batch = %v; want nil", got)
+			}
+			assertBatchStorage(t, repo, item, 0)
+			assertBatchAnalytics(t, repo, item, 0)
+			assertBatchStorage(t, repo, unrelated, 1)
+			assertBatchAnalytics(t, repo, unrelated, 1)
+		})
 	}
-	assertBatchStorage(t, repo, item, 0)
-	assertBatchAnalytics(t, repo, item, 0)
 }
 
 func isolatedBatchPostgres(t *testing.T) *postgres.Postgres {
@@ -274,6 +362,7 @@ func TestIntegrationBatchDeletedCleanupFailureIsReturned(t *testing.T) {
 		t.Run(fmt.Sprintf("during-indexing-%t", duringIndexing), func(t *testing.T) {
 			repo := batchContractRepository(t)
 			item := batchContractEvent(t, repo, true)
+			unrelated := seedUnrelatedBatchLog(t, repo)
 			healthyCH := repo.ch
 			repo.ch = isolatedBatchClickHouse(t)
 			removeAndClose := func() {
@@ -297,6 +386,8 @@ func TestIntegrationBatchDeletedCleanupFailureIsReturned(t *testing.T) {
 				t.Fatalf("retry deleted cleanup: %v", err)
 			}
 			assertBatchStorage(t, repo, item, 0)
+			assertBatchStorage(t, repo, unrelated, 1)
+			assertBatchAnalytics(t, repo, unrelated, 1)
 		})
 	}
 }

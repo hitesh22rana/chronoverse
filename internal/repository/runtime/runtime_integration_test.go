@@ -74,14 +74,20 @@ func TestIntegrationRuntimeNodeLifecycle(t *testing.T) {
 		t.Fatalf("status = %q, want %q", status, runtimemodel.NodeStatusDraining)
 	}
 
-	// MarkUnhealthy transitions the node to UNHEALTHY.
+	// MarkUnhealthy preserves the last successful Docker heartbeat.
+	if _, err := pg.Exec(ctx, `UPDATE runtime_nodes SET last_heartbeat_at = $1 WHERE id = $2`, before, repo.cfg.ID); err != nil {
+		t.Fatalf("backdate heartbeat before unhealthy update: %v", err)
+	}
 	if err := repo.MarkUnhealthy(ctx); err != nil {
 		t.Fatalf("MarkUnhealthy: %v", err)
 	}
-	if err := pg.QueryRow(ctx, `SELECT status FROM runtime_nodes WHERE id = $1`, repo.cfg.ID).Scan(&status); err != nil {
+	if err := pg.QueryRow(ctx, `SELECT status, last_heartbeat_at FROM runtime_nodes WHERE id = $1`, repo.cfg.ID).Scan(&status, &heartbeat); err != nil {
 		t.Fatalf("fetch unhealthy status: %v", err)
 	}
 	if status != string(runtimemodel.NodeStatusUnhealthy) {
 		t.Fatalf("status = %q, want %q", status, runtimemodel.NodeStatusUnhealthy)
+	}
+	if !heartbeat.Equal(before) {
+		t.Fatalf("unhealthy update changed heartbeat: %v, want %v", heartbeat, before)
 	}
 }

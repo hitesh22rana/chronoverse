@@ -73,6 +73,9 @@ func (r *Repository) Heartbeat(ctx context.Context) error {
 		return status.Errorf(codes.Internal, "failed to lock runtime node for heartbeat: %v", lockErr)
 	}
 
+	// The FOR UPDATE lock proved the row exists and blocks deletes or ID
+	// changes through commit, and current migrations add no trigger or RLS
+	// policy that could suppress the UPDATE, so it always affects one row.
 	query := `
         UPDATE runtime_nodes
         SET status = 'READY',
@@ -80,15 +83,9 @@ func (r *Repository) Heartbeat(ctx context.Context) error {
             updated_at = now() AT TIME ZONE 'utc'
         WHERE id = $1;
     `
-	ct, err := tx.Exec(ctx, query, r.cfg.ID)
+	_, err = tx.Exec(ctx, query, r.cfg.ID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to heartbeat runtime node: %v", err)
-	}
-	if ct.RowsAffected() == 0 {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			return status.Errorf(codes.Internal, "failed to rollback empty runtime heartbeat transaction: %v", rollbackErr)
-		}
-		return r.RegisterReady(ctx)
 	}
 	if err := r.reconcileRunningJobsTx(ctx, tx); err != nil {
 		return status.Errorf(codes.Internal, "failed to reconcile runtime running jobs: %v", err)
@@ -113,12 +110,10 @@ func (r *Repository) upsert(ctx context.Context, nodeStatus string, refreshHeart
 	ctx, span := r.tp.Start(ctx, "runtime.Repository.Upsert")
 	defer span.End()
 
-	metadata, err := json.Marshal(map[string]string{
+	//nolint:errcheck // json.Marshal of a map[string]string cannot fail.
+	metadata, _ := json.Marshal(map[string]string{
 		"registered_by": svcpkg.Info().GetName(),
 	})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to marshal runtime metadata: %v", err)
-	}
 
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {

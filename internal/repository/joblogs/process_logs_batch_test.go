@@ -37,6 +37,7 @@ func TestUniqueWorkflowLogPairs(t *testing.T) {
 		logData("00000000-0000-0000-0000-000000000002", "10000000-0000-0000-0000-000000000002"),
 		logData("", "user-3"),
 		logData("workflow-4", ""),
+		logData("workflow-5", "user-5"),
 		nil,
 	}
 
@@ -68,7 +69,26 @@ func TestNormalizeWorkflowLogIDs(t *testing.T) {
 	}
 
 	if _, _, ok := normalizeWorkflowLogIDs("workflow-id", "user-id"); ok {
-		t.Fatal("expected invalid UUIDs to be rejected")
+		t.Fatal("expected invalid workflow UUIDs to be rejected")
+	}
+	if _, _, ok := normalizeWorkflowLogIDs("00000000-0000-0000-0000-000000000001", "user-id"); ok {
+		t.Fatal("expected invalid user UUIDs to be rejected")
+	}
+}
+
+func TestWorkflowLogPairKeyFromLog(t *testing.T) {
+	if _, ok := workflowLogPairKeyFromLog(nil); ok {
+		t.Fatal("expected nil log to be rejected")
+	}
+	if _, ok := workflowLogPairKeyFromLog(&jobsmodel.JobLogEvent{WorkflowID: "not-a-workflow", UserID: "not-a-user"}); ok {
+		t.Fatal("expected invalid IDs to be rejected")
+	}
+	key, ok := workflowLogPairKeyFromLog(&jobsmodel.JobLogEvent{
+		WorkflowID: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
+		UserID:     "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+	})
+	if !ok || key != "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\x00bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" {
+		t.Fatalf("valid key = %q, %v", key, ok)
 	}
 }
 
@@ -100,6 +120,7 @@ func TestRetainedLogsFromBatch(t *testing.T) {
 				Retention: false,
 			},
 		},
+		nil,
 	}
 
 	logs := retainedLogsFromBatch(records)
@@ -113,6 +134,23 @@ func TestRetainedLogsFromBatch(t *testing.T) {
 	}
 	if logs[1].EventKey != "log-2" {
 		t.Fatalf("expected second retained key log-2, got %q", logs[1].EventKey)
+	}
+}
+
+func TestUniqueLogEventIDs(t *testing.T) {
+	got := uniqueLogEventIDs([]*jobsmodel.JobLogEvent{
+		nil,
+		{EventKey: ""},
+		{EventKey: "log-1"},
+		{EventKey: "log-1"},
+		{EventKey: "log-2"},
+	})
+	if len(got) != 2 || got[0] != "log-1" || got[1] != "log-2" {
+		t.Fatalf("unique event IDs = %v, want [log-1 log-2]", got)
+	}
+
+	if got := uniqueLogEventIDs(nil); len(got) != 0 {
+		t.Fatalf("empty event IDs = %v, want none", got)
 	}
 }
 

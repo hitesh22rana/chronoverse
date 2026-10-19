@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Real dialog and form contracts for cancellation and pending actions.
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
@@ -22,25 +22,23 @@ const workflow = {
 
 type DialogProps = Parameters<typeof WorkflowActionDialog>[0]
 
-function renderDialog(overrides: Partial<DialogProps> = {}) {
+function renderDialog() {
     const onOpenChange = vi.fn()
     const onConfirm = vi.fn()
     const user = userEvent.setup()
-    const view = render(
-        <WorkflowActionDialog
-            workflow={workflow}
-            open
-            onOpenChange={onOpenChange}
-            onConfirm={onConfirm}
-            isPending={false}
-            title="Terminate workflow"
-            description="This action will cancel all remaining jobs and scheduled executions for this workflow."
-            warning="Terminating this workflow will terminate all ongoing jobs and prevent any future scheduled executions."
-            pendingLabel="Terminating..."
-            {...overrides}
-        />,
-    )
-    return { ...view, user, onOpenChange, onConfirm }
+    const props: DialogProps = {
+        workflow,
+        open: true,
+        onOpenChange,
+        onConfirm,
+        isPending: false,
+        title: "Terminate workflow",
+        description: "This action will cancel all remaining jobs and scheduled executions for this workflow.",
+        warning: "Terminating this workflow will terminate all ongoing jobs and prevent any future scheduled executions.",
+        pendingLabel: "Terminating...",
+    }
+    const view = render(<WorkflowActionDialog {...props} />)
+    return { ...view, props, user, onOpenChange, onConfirm }
 }
 
 /** jsdom implements none of these; `installDomStubs` stands in for them. */
@@ -113,10 +111,21 @@ it("closes without confirming when the destructive action is cancelled", async (
     expect(onConfirm).not.toHaveBeenCalled()
 })
 
-it("shows the pending label and locks the form while the action is in flight", () => {
-    renderDialog({ isPending: true })
+it("shows the pending label and locks a valid form while the action is in flight", async () => {
+    const { user, rerender, props, onConfirm, onOpenChange } = renderDialog()
+
+    await user.type(screen.getByPlaceholderText("Enter workflow name"), workflow.name)
+    await waitFor(() => expect(screen.getByRole("button", { name: "Terminate workflow" })).toHaveProperty("disabled", false))
+
+    rerender(<WorkflowActionDialog {...props} isPending />)
 
     expect(screen.getByRole("button", { name: "Terminating..." })).toHaveProperty("disabled", true)
     expect(screen.getByPlaceholderText("Enter workflow name")).toHaveProperty("disabled", true)
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true)
+
+    await user.click(screen.getByRole("button", { name: "Terminating..." }))
+    await user.click(screen.getByRole("button", { name: "Cancel" }))
+
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
 })

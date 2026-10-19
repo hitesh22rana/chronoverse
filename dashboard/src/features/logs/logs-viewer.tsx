@@ -49,7 +49,6 @@ import {
     getNextLogLineSelection,
     getSelectedLogText,
     getUnavailableSelectionMessage,
-    normalizeLogLineSelection,
     parseLogLineSelection,
     shouldFetchMoreLogsForSelection,
     shouldIgnoreLogRowSelection,
@@ -179,15 +178,10 @@ function useLogLineSelectionActions(model: any) {
     } = model
 
     const updateLineSelection = (selection: LogLineSelection) => {
-        const normalized = normalizeLogLineSelection(selection.start, selection.end)
-        if (!normalized) {
-            return
-        }
-
-        setLineSelection(normalized)
+        setLineSelection(selection)
 
         const url = new URL(window.location.href)
-        url.hash = formatLogLineSelection(normalized)
+        url.hash = formatLogLineSelection(selection)
         window.history.replaceState(window.history.state, "", url)
     }
 
@@ -207,9 +201,6 @@ function useLogLineSelectionActions(model: any) {
     const selectLogLine = (lineNumber: number, extendSelection: boolean) => {
         const anchor = selectionAnchorRef.current ?? lineSelection?.start ?? null
         const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
-        if (!selection) {
-            return
-        }
 
         if (!extendSelection) {
             selectionAnchorRef.current = lineNumber

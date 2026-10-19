@@ -90,12 +90,13 @@ export const getNextLogLineSelection = (
     lineNumber: number,
     anchor: number | null,
     extendSelection: boolean
-) => {
+): LogLineSelection => {
+    // Rows supply positive line numbers; anchors come from rows or validated URL fragments.
     if (!extendSelection || anchor === null) {
-        return normalizeLogLineSelection(lineNumber)
+        return { start: lineNumber, end: lineNumber }
     }
 
-    return normalizeLogLineSelection(anchor, lineNumber)
+    return { start: Math.min(anchor, lineNumber), end: Math.max(anchor, lineNumber) }
 }
 
 export const shouldIgnoreLogRowSelection = (

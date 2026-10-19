@@ -266,7 +266,6 @@ it("reopens without the notification selection consumed by navigation", () => {
   expect((screen.getByRole("button", { name: "Mark as read" }) as HTMLButtonElement).disabled).toBe(true);
   expect(state.markAsRead).toHaveBeenCalledTimes(1);
 });
-
 it("clears selections when closing the sheet", () => {
   state.notifications = [item("one")];
   const view = mount();

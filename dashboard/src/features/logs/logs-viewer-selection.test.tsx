@@ -838,6 +838,8 @@ it("switches the dataset when the log level filter changes and drops the selecti
 })
 
 it("preserves selection and requests when reselecting the active log filter", async () => {
+    // Radix suppresses onValueChange for the already-selected radio, so this
+    // pins the user-visible no-op; the viewer's own guard stays unexercised.
     const user = userEvent.setup()
     renderViewer()
     await loadedLines(20)

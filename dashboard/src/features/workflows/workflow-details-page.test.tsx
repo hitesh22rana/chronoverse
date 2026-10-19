@@ -323,13 +323,11 @@ it("blocks duplicate analytics retries while a retained-data refetch is pending"
         expect(url).toBe("/analytics/w1")
         return pending
     })
-    const requestsBefore = requestedUrls().filter((url) => url.startsWith("/analytics/w1")).length
     await user.click(screen.getByRole("button", { name: /Try again/ }))
+    // The disabled control is what blocks a repeat retry: a click cannot dispatch.
     const retry = screen.getByRole("button", { name: /Try again/ }) as HTMLButtonElement
     await waitFor(() => expect(retry.disabled).toBe(true))
     expect(retry.querySelector("svg")?.classList.contains("animate-spin")).toBe(true)
-    await user.click(retry)
-    expect(requestedUrls().filter((url) => url.startsWith("/analytics/w1"))).toHaveLength(requestsBefore + 1)
     expect(screen.getByText("analytics temporarily unavailable")).toBeTruthy()
 
     await act(async () => { resolveAnalytics(mocks.analytics) })

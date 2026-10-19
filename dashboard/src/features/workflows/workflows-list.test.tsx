@@ -277,6 +277,22 @@ it("lists what the unfiltered request returned", async () => {
     expect(nextPageButton()).toHaveProperty("disabled", true)
 })
 
+it("badges a terminated workflow and marks whether each card retains logs", async () => {
+    mocks.list = {
+        workflows: [
+            workflow({ terminated_at: "2026-01-03T00:00:00Z" }),
+            workflow({ id: "w2", name: "API heartbeat", kind: "HEARTBEAT", log_retention: false }),
+        ],
+    } as WorkflowsResponse
+    renderList()
+
+    expect(await screen.findByText("Nightly container")).toBeTruthy()
+    // The lifecycle drives the badge, not the stale build status.
+    expect(screen.getByText("Terminated")).toBeTruthy()
+    expect(screen.getByText("Logs retained")).toBeTruthy()
+    expect(screen.getByText("Logs not retained")).toBeTruthy()
+})
+
 it("holds refresh back while the first list request is in flight", async () => {
     mocks.holdList = true
     renderList()

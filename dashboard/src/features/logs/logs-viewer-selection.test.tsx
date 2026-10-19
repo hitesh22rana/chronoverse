@@ -671,6 +671,26 @@ it("keeps a selection through a pointer move that has no press behind it", async
     expect(isSelected(7)).toBe(true)
 })
 
+it("clears an interrupted gesture so the click after it still selects", async () => {
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(2)
+
+    // The platform takes the press over (a scroll or system gesture), so a
+    // travelled drag must not outlive it and swallow the next click.
+    const interrupted = rowButton(4)
+    await act(async () => {
+        fireEvent.pointerDown(interrupted, { clientX: 10, clientY: 10, button: 0 })
+        fireEvent.pointerMove(interrupted, { clientX: 60, clientY: 40 })
+        fireEvent.pointerCancel(interrupted)
+        fireEvent.click(interrupted, { detail: 1 })
+    })
+
+    expect(fragment()).toBe("#L4")
+    expect(isSelected(4)).toBe(true)
+    expect(isSelected(2)).toBe(false)
+})
+
 it("selects a line after a press that is not the primary button", async () => {
     renderViewer()
     await loadedLines(20)

@@ -47,6 +47,15 @@ describe("analytics response normalization", () => {
         })
     })
 
+    it("falls back when identity strings carry only whitespace", () => {
+        expect(normalizeWorkflowAnalytics({ workflow_id: "   " }, "w1")).toMatchObject({ workflow_id: "w1" })
+        expect(
+            normalizeUserAnalytics({
+                top_workflows: [{ workflow_id: "w1", workflow_name: "  ", kind: "  " }],
+            }).top_workflows,
+        ).toEqual([{ workflow_id: "w1", workflow_name: "Deleted workflow", kind: "UNKNOWN", total_jobs: 0, total_joblogs: 0, total_job_execution_duration: 0 }])
+    })
+
     it("drops unusable collection entries and clamps invalid counters to zero", () => {
         expect(normalizeUserAnalytics({
             total_jobs: Number.NaN,

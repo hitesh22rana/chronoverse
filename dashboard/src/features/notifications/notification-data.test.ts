@@ -42,6 +42,13 @@ describe("notification data", () => {
         expect(flattenNotifications()).toEqual([])
     })
 
+    it("treats a page whose repeated field was omitted as empty", () => {
+        // The API omits empty repeated fields from its JSON, so the page arrives
+        // without the property the response type declares.
+        const omitted = { cursor: "next" } as unknown as NotificationsResponse
+        expect(flattenNotifications([omitted])).toEqual([])
+    })
+
     it("removes read notifications while preserving page metadata", () => {
         const updatedPages = removeNotificationsFromPages(pages, ["two", "three"])
 

@@ -17,6 +17,10 @@ describe("safeActionUrl", () => {
         expect(safeActionUrl("")).toBe("/")
     })
 
+    it("falls back to / when the URL cannot be parsed at all", () => {
+        expect(safeActionUrl("http://[")).toBe("/")
+    })
+
     it("falls back to / for protocol-relative URLs", () => {
         expect(safeActionUrl("//evil.example/path")).toBe("/")
     })

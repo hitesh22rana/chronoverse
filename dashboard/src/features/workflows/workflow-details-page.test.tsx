@@ -172,6 +172,7 @@ beforeEach(() => {
     mocks.pathname = "/workflows/w1"
     mocks.workflow = containerWorkflow()
     mocks.jobsResponse = jobsPage
+    mocks.analytics = { workflow_id: "w1", total_jobs: 3, total_joblogs: 9, total_job_execution_duration: 125 }
     mocks.analyticsError = null
     mocks.holdDetail = false
     mocks.releaseDetail = null
@@ -335,6 +336,14 @@ it("blocks duplicate analytics retries while a retained-data refetch is pending"
     expect(screen.queryByText("Analytics unavailable")).toBeNull()
 })
 
+it("explains that a workflow with no recorded executions has generated no logs", async () => {
+    mocks.analytics = { workflow_id: "w1", total_jobs: 0, total_joblogs: 0, total_job_execution_duration: 0 }
+    renderPage()
+
+    expect(await screen.findByText("Job executions")).toBeTruthy()
+    expect(screen.getByText("No logs generated")).toBeTruthy()
+})
+
 it("holds the details card back while loading but still offers editing", async () => {
     mocks.holdDetail = true
     renderPage()
@@ -460,6 +469,48 @@ it("deletes a terminated workflow and returns to the workflow list", async () =>
     expect(mocks.push).toHaveBeenCalledWith("/")
 })
 
+it("reports a rejected termination and leaves the workflow live", async () => {
+    mocks.fetchApi.mockRejectedValue(new Error("failed to terminate workflow: 500 internal"))
+    const { user } = renderPage()
+    expect(await screen.findByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
+
+    await user.click(screen.getByRole("button", { name: /Terminate workflow/ }))
+    const dialog = await findDialog()
+    await user.type(screen.getByPlaceholderText("Enter workflow name"), "Nightly container")
+    await user.click(dialog.getByRole("button", { name: "Terminate workflow" }))
+
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith("failed to terminate workflow: 500 internal"))
+    expect(await screen.findByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
+})
+
+it("reports a rejected deletion and stays on the workflow", async () => {
+    mocks.workflow = containerWorkflow({ terminated_at: "2026-01-03T00:00:00Z" })
+    mocks.fetchApi.mockRejectedValue(new Error("failed to delete workflow: 409 conflict"))
+    const { user } = renderPage()
+    expect(await screen.findByRole("button", { name: /Delete workflow/ })).toBeTruthy()
+
+    await user.click(screen.getByRole("button", { name: /Delete workflow/ }))
+    const dialog = await findDialog()
+    await user.type(screen.getByPlaceholderText("Enter workflow name"), "Nightly container")
+    await user.click(dialog.getByRole("button", { name: "Delete workflow" }))
+
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith("failed to delete workflow: 409 conflict"))
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(await screen.findByRole("button", { name: /Delete workflow/ })).toBeTruthy()
+})
+
+it("abandons a lifecycle confirmation when cancelled", async () => {
+    const { user } = renderPage()
+    expect(await screen.findByRole("button", { name: /Terminate workflow/ })).toBeTruthy()
+
+    await user.click(screen.getByRole("button", { name: /Terminate workflow/ }))
+    const dialog = await findDialog()
+    await user.click(dialog.getByRole("button", { name: "Cancel" }))
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+    expect(mocks.fetchApi).not.toHaveBeenCalled()
+})
+
 it("moves between the details and jobs tabs through the address", async () => {
     const { user } = renderPage()
     expect(await screen.findByRole("heading", { name: "Nightly container" })).toBeTruthy()
@@ -500,6 +551,32 @@ it("lists jobs with the paging the cursor supports", async () => {
     expect(nextPageButton()).toHaveProperty("disabled", false)
     expect(previousPageButton()).toHaveProperty("disabled", true)
     expect(screen.queryByText("No jobs found")).toBeNull()
+})
+
+it("describes a canceled job that never ran and reveals its reason on focus", async () => {
+    mocks.jobsResponse = {
+        jobs: [job({
+            status: "CANCELED",
+            started_at: undefined,
+            completed_at: undefined,
+            status_reason_message: "canceled by the user",
+        })],
+    }
+    renderPage("tab=jobs")
+    expect(await screen.findByText(/Job: j1/)).toBeTruthy()
+
+    expect(screen.getByText("Not started")).toBeTruthy()
+    expect(screen.getByText("Not completed")).toBeTruthy()
+    expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull()
+
+    const card = screen.getByRole("link", { name: /Job: j1/ })
+    fireEvent.focus(card)
+    await waitFor(() =>
+        expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain("canceled by the user"),
+    )
+
+    fireEvent.blur(card)
+    await waitFor(() => expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull())
 })
 
 it.each([

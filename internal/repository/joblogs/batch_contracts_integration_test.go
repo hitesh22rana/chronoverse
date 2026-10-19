@@ -19,6 +19,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -60,11 +61,48 @@ func assertBatchAnalytics(t *testing.T, repo *Repository, item *queueData, want 
 	if count != want {
 		t.Fatalf("analytics logs_count = %d, want %d", count, want)
 	}
-	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer=$1 AND event_key=$2`, logAnalyticsConsumer, item.logEntry.EventKey).Scan(&count); err != nil {
+	if count = batchProcessedIdentityCount(t, repo, item); count != want {
+		t.Fatalf("processed identity count = %d, want %d", count, want)
+	}
+}
+
+func batchProcessedIdentityCount(t *testing.T, repo *Repository, item *queueData) int64 {
+	t.Helper()
+	key := item.logEntry.EventKey
+	if key == "" {
+		key = idempotency.LogEventKey(item.logEntry.JobID, item.logEntry.Stream, item.logEntry.SequenceNum)
+	}
+	var count int64
+	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer=$1 AND event_key=$2`, logAnalyticsConsumer, key).Scan(&count); err != nil {
 		t.Fatalf("read processed identity: %v", err)
 	}
-	if count != want {
-		t.Fatalf("processed identity count = %d, want %d", count, want)
+	return count
+}
+
+func TestIntegrationBatchProcessedIdentityAssertion(t *testing.T) {
+	repo := &Repository{pg: testkit.Postgres(t)}
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit-%t", explicit), func(t *testing.T) {
+			item := &queueData{logEntry: &jobsmodel.JobLogEvent{JobID: uuid.NewString(), Stream: "stderr", SequenceNum: 7}}
+			key := idempotency.LogEventKey(item.logEntry.JobID, item.logEntry.Stream, item.logEntry.SequenceNum)
+			if explicit {
+				key = "explicit-" + uuid.NewString()
+				item.logEntry.EventKey = key
+			}
+			original := item.logEntry.EventKey
+			if got := batchProcessedIdentityCount(t, repo, item); got != 0 {
+				t.Fatalf("unprocessed identity count = %d, want 0", got)
+			}
+			if _, err := repo.pg.Exec(t.Context(), `INSERT INTO processed_events (consumer,event_key) VALUES ($1,$2)`, logAnalyticsConsumer, key); err != nil {
+				t.Fatal(err)
+			}
+			if got := batchProcessedIdentityCount(t, repo, item); got != 1 {
+				t.Fatalf("seeded identity count = %d, want 1", got)
+			}
+			if item.logEntry.EventKey != original {
+				t.Fatalf("assertion changed event key from %q to %q", original, item.logEntry.EventKey)
+			}
+		})
 	}
 }
 

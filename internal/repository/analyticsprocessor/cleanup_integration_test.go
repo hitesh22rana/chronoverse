@@ -84,6 +84,8 @@ func TestIntegrationCleanupProcessedEventsRetentionAndBoundedBatches(t *testing.
 	}
 	seedCleanupRows(t, pg, consumers, want)
 
+	// Cleanup is table-wide and the package shares one database, so these seeded
+	// rows must be the only expired processed_events rows for the count assertions.
 	deleted, err := repo.CleanupProcessedEvents(t.Context(), 24*time.Hour, 1)
 	if err != nil || deleted != 1 {
 		t.Fatalf("first cleanup = %d, %v, want 1, nil", deleted, err)
@@ -106,7 +108,9 @@ func TestIntegrationCleanupProcessedEventsRetentionAndBoundedBatches(t *testing.
 	assertCleanupRows(t, pg, consumers, want)
 }
 
-func TestIntegrationCleanupProcessedEventsCanceledWritePreservesRows(t *testing.T) {
+// The context is canceled before the call, so this covers error mapping and the
+// guarantee that an aborted cleanup never mutates rows, not mid-query cancellation.
+func TestIntegrationCleanupProcessedEventsCanceledContextPreservesRows(t *testing.T) {
 	pg := testkit.Postgres(t)
 	repo := New(pg, testkit.Kafka(t), kafkapkg.NewPartitionLifecycle())
 	consumer := "cleanup-cancel-" + uuid.NewString()

@@ -574,6 +574,23 @@ it("tracks selection changes made through the address fragment", async () => {
     expect(visibleLines().some(isSelected)).toBe(false)
 })
 
+it.each(["#L0", "#L9007199254740992"])("rejects invalid address selection %s before the next range gesture", async (hash) => {
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(6)
+    expect(isSelected(6)).toBe(true)
+
+    await act(async () => {
+        setFragment(hash)
+    })
+    expect(visibleLines().some(isSelected)).toBe(false)
+
+    await clickLine(4, true)
+    expect(fragment()).toBe("#L4")
+    expect(isSelected(4)).toBe(true)
+    expect(isSelected(6)).toBe(false)
+})
+
 it("selects and extends a range from row clicks while ignoring drags and line menus", async () => {
     const user = userEvent.setup()
     renderViewer()

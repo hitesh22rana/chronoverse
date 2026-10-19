@@ -75,8 +75,8 @@ func assertBatchStorage(t *testing.T, repo *Repository, item *queueData, want in
 	if err != nil {
 		t.Fatalf("search retained logs: %v", err)
 	}
-	if result.EstimatedTotalHits != want {
-		t.Fatalf("Meili hits = %d, want %d", result.EstimatedTotalHits, want)
+	if int64(len(result.Hits)) != want {
+		t.Fatalf("Meili hits = %d, want %d", len(result.Hits), want)
 	}
 }
 
@@ -341,5 +341,83 @@ func TestIntegrationBatchInitialWorkflowCheckFailure(t *testing.T) {
 	assertBatchFailure(t, got, err, "failed to fetch active workflows")
 	repo.pg = healthyPG
 	assertBatchStorage(t, repo, item, 0)
+	assertBatchAnalytics(t, repo, item, 0)
+}
+
+func TestIntegrationBatchClickHouseAppendFailureIsReturned(t *testing.T) {
+	repo := &Repository{tp: otel.Tracer("joblogs-test"), ch: testkit.ClickHouse(t)}
+	err := repo.insertLogsBatchToClickhouse(t.Context(), []*jobsmodel.JobLogEvent{{
+		EventKey: "log:append:stdout:1", JobID: "not-a-uuid",
+		WorkflowID: uuid.NewString(), UserID: uuid.NewString(),
+		TimeStamp: time.Now().UTC(), Message: "append failure", SequenceNum: 1, Stream: "stdout",
+	}})
+	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to prepare batch") {
+		t.Fatalf("append failure = %v, want Internal containing failed to prepare batch", err)
+	}
+}
+
+func TestIntegrationFilterActiveWorkflowLogsSkipsMalformedEntries(t *testing.T) {
+	repo := batchContractRepository(t)
+	item := batchContractEvent(t, repo, true)
+	active, skipped, err := repo.filterActiveWorkflowLogs(t.Context(), []*queueData{
+		nil,
+		{},
+		{logEntry: &jobsmodel.JobLogEvent{WorkflowID: "not-a-workflow", UserID: "not-a-user"}},
+		item,
+	})
+	if err != nil || len(active) != 1 || active[0] != item || len(skipped) != 0 {
+		t.Fatalf("filter = %v, %v, %v; want [item], [], nil", active, skipped, err)
+	}
+}
+
+func TestIntegrationFetchActiveWorkflowLogPairsReportsInvalidIDs(t *testing.T) {
+	repo := &Repository{tp: otel.Tracer("joblogs-test"), pg: testkit.Postgres(t)}
+	_, err := repo.fetchActiveWorkflowLogPairs(t.Context(), []workflowLogPair{{
+		workflowID: "not-a-workflow", userID: uuid.NewString(),
+	}})
+	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to read active workflows") {
+		t.Fatalf("invalid pairs = %v, want Internal read failure", err)
+	}
+}
+
+func TestIntegrationProcessLogsAnalyticsBeginTransactionFailure(t *testing.T) {
+	pg := isolatedBatchPostgres(t)
+	pg.Close()
+	repo := &Repository{tp: otel.Tracer("joblogs-test"), pg: pg}
+	err := repo.processLogsAnalytics(t.Context(), nil)
+	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to start log analytics transaction") {
+		t.Fatalf("begin failure = %v, want Internal", err)
+	}
+}
+
+func TestIntegrationProcessLogsAnalyticsCommitFailure(t *testing.T) {
+	repo := &Repository{tp: otel.Tracer("joblogs-test"), pg: testkit.Postgres(t)}
+	item := batchContractEvent(t, repo, false)
+	const triggerName = "reject_batch_analytics_commit"
+	cleanup := func() {
+		if _, err := repo.pg.Exec(context.Background(), fmt.Sprintf(
+			"DROP TRIGGER IF EXISTS %s ON analytics; DROP FUNCTION IF EXISTS %s()", triggerName, triggerName,
+		)); err != nil {
+			t.Errorf("remove analytics commit trigger: %v", err)
+		}
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+	if _, err := repo.pg.Exec(t.Context(), fmt.Sprintf(`
+		CREATE FUNCTION %[1]s() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF NEW.workflow_id = '%[2]s'::uuid THEN RAISE EXCEPTION 'analytics commit unavailable'; END IF;
+			RETURN NEW;
+		END $$;
+		CREATE CONSTRAINT TRIGGER %[1]s AFTER INSERT OR UPDATE ON analytics
+		DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION %[1]s();`,
+		triggerName, item.logEntry.WorkflowID,
+	)); err != nil {
+		t.Fatalf("install commit failure: %v", err)
+	}
+	err := repo.processLogsAnalytics(t.Context(), []*queueData{item})
+	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to commit log analytics transaction") {
+		t.Fatalf("commit failure = %v, want Internal", err)
+	}
 	assertBatchAnalytics(t, repo, item, 0)
 }

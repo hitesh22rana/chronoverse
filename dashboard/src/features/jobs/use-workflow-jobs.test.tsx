@@ -113,7 +113,8 @@ it("pages forward onto the cursor the response hands back and keeps the open tab
 it("hands a previous-page request back to browser history", async () => {
     const { result } = renderUseWorkflowJobs("tab=jobs&cursor=cursor-2")
 
-    await waitFor(() => expect(result.current.pagination.hasPreviousPage).toBe(true))
+    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
+    expect(result.current.pagination.hasPreviousPage).toBe(true)
     expect(lastListRequest()).toBe("/workflows/w1/jobs?cursor=cursor-2")
 
     let moved: boolean | undefined
@@ -129,7 +130,8 @@ it("hands a previous-page request back to browser history", async () => {
 it("resets pagination by dropping only the cursor from the address", async () => {
     const { result } = renderUseWorkflowJobs("tab=jobs&cursor=cursor-2&status=FAILED&trigger=MANUAL")
 
-    await waitFor(() => expect(result.current.pagination.hasPreviousPage).toBe(true))
+    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
+    expect(result.current.pagination.hasPreviousPage).toBe(true)
     expect(lastListRequest()).toBe("/workflows/w1/jobs?cursor=cursor-2&status=FAILED&trigger=MANUAL")
 
     act(() => {

@@ -146,15 +146,14 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         setSelected(new Set())
     }
 
-    const handleOpenChange = (nextOpen: boolean) => {
-        if (!nextOpen) {
-            clearSelection()
-            onClose()
-        }
+    // The drawer is controlled and has no trigger, so Radix only reports dismissals here.
+    const handleOpenChange = () => {
+        clearSelection()
+        onClose()
     }
 
     const bulkRead = () => {
-        if (visibleSelected.size === 0) return
+        // The trigger is disabled while the selection is empty.
         markAsRead(Array.from(visibleSelected))
         clearSelection()
     }

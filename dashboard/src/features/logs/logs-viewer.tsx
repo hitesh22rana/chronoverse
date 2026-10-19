@@ -269,12 +269,7 @@ function useLogRowGestures(model: any) {
     }
 
     const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-        const target = event.target
-        if (target instanceof Element && target.closest("[data-line-options]")) {
-            rowPointerGestureRef.current = null
-            return
-        }
-
+        // The line-options gutter is a sibling of the row button, so its pointer events never reach this handler.
         if (event.shiftKey && event.button === 0) {
             event.preventDefault()
             window.getSelection()?.removeAllRanges()

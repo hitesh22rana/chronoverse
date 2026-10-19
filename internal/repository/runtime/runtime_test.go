@@ -44,6 +44,13 @@ func TestStaleRuntimeHeartbeatAtUsesUnixEpochUTC(t *testing.T) {
 	}
 }
 
+func TestNewDefaultsMaxConcurrencyToOne(t *testing.T) {
+	repo := New(Config{}, nil)
+	if repo.cfg.MaxConcurrency != 1 {
+		t.Fatalf("MaxConcurrency = %d, want 1", repo.cfg.MaxConcurrency)
+	}
+}
+
 func assertRuntimeQueryContains(t *testing.T, value, want string) {
 	t.Helper()
 

@@ -6,11 +6,13 @@
  * `next/font`, so they are stubbed as well.
  */
 import { renderToStaticMarkup } from "react-dom/server"
+import { useQueryClient } from "@tanstack/react-query"
+import { useTheme } from "next-themes"
 import type { ReactNode } from "react"
-import { beforeEach, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 vi.mock("next/font/google", () => ({
-    Poppins: () => ({ variable: "--font-poppins" }),
+    Poppins: ({ variable }: { variable: string }) => ({ variable }),
 }))
 
 // The stylesheet needs the app's PostCSS pipeline, which the test transform
@@ -40,15 +42,25 @@ beforeEach(() => {
     }
 })
 
+afterEach(() => vi.unstubAllGlobals())
+
 it("wraps the app in the themed document shell", () => {
+    function Page() {
+        useQueryClient()
+        const { theme } = useTheme()
+        return <main data-theme={theme}>page content</main>
+    }
     const markup = renderToStaticMarkup(
         <RootLayout>
-            <main>page content</main>
+            <Page />
         </RootLayout>,
     )
+    const document = new DOMParser().parseFromString(markup, "text/html")
 
     expect(metadata.title).toBe("Chronoverse - Distributed Task Scheduler & Orchestrator")
-    expect(markup).toContain('lang="en"')
-    expect(markup).toContain("--font-poppins")
-    expect(markup).toContain("page content")
+    expect(document.documentElement.lang).toBe("en")
+    expect(document.body.classList.contains("--font-sans")).toBe(true)
+    expect(document.body.classList.contains("--font-heading")).toBe(true)
+    expect(document.querySelector("main")?.textContent).toBe("page content")
+    expect(document.querySelector("main")?.getAttribute("data-theme")).toBe("system")
 })

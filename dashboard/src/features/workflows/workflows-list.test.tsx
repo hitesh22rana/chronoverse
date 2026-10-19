@@ -287,10 +287,13 @@ it("badges a terminated workflow and marks whether each card retains logs", asyn
     renderList()
 
     expect(await screen.findByText("Nightly container")).toBeTruthy()
+    const containerCard = within(screen.getByRole("link", { name: /Nightly container/ }))
+    const heartbeatCard = within(screen.getByRole("link", { name: /API heartbeat/ }))
     // The lifecycle drives the badge, not the stale build status.
-    expect(screen.getByText("Terminated")).toBeTruthy()
-    expect(screen.getByText("Logs retained")).toBeTruthy()
-    expect(screen.getByText("Logs not retained")).toBeTruthy()
+    expect(containerCard.getByText("Terminated")).toBeTruthy()
+    expect(containerCard.getByText("Logs retained")).toBeTruthy()
+    expect(heartbeatCard.getByText("Active")).toBeTruthy()
+    expect(heartbeatCard.getByText("Logs not retained")).toBeTruthy()
 })
 
 it("holds refresh back while the first list request is in flight", async () => {

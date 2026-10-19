@@ -85,7 +85,7 @@ func TestIntegrationCreateWorkflowRejectedRequestsLeaveNoEffects(t *testing.T) {
 			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0, 0)
 		})
 	}
-	got, err := repo.CreateWorkflow(ctx, "invalid", "bad-user", `{}`, "HEARTBEAT", 60, 3, true, uuid.NewString())
+	got, err := repo.CreateWorkflow(ctx, "invalid", "bad-user", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, uuid.NewString())
 	if got != nil || status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid user result=%+v err=%v", got, err)
 	}
@@ -100,7 +100,7 @@ func TestIntegrationCreateWorkflowRejectedRequestsLeaveNoEffects(t *testing.T) {
 			caller, cancel = context.WithCancel(ctx)
 		}
 		cancel()
-		got, err = repo.CreateWorkflow(caller, userID, "canceled", `{}`, "HEARTBEAT", 60, 3, true, uuid.NewString())
+		got, err = repo.CreateWorkflow(caller, userID, "canceled", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, uuid.NewString())
 		if got != nil || status.Code(err) != code {
 			t.Fatalf("canceled create=%+v err=%v, want %v", got, err, code)
 		}
@@ -113,14 +113,14 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 	repo := newTestRepository(t)
 	userID := seedUser(ctx, t, repo.pg)
 	key := uuid.NewString()
-	created, err := repo.CreateWorkflow(ctx, userID, "heartbeat", `{"url":"https://example.com","method":"GET"}`, "HEARTBEAT", 60, 3, true, key)
+	created, err := repo.CreateWorkflow(ctx, userID, "heartbeat", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created.ID == "" || created.BuildHash.Valid || created.IdempotencyReplay {
 		t.Fatalf("created=%+v", created)
 	}
-	replay, err := repo.CreateWorkflow(ctx, strings.ToUpper(userID), "heartbeat", `{ "method": "GET", "url": "https://example.com" }`, "HEARTBEAT", 60, 3, true, key)
+	replay, err := repo.CreateWorkflow(ctx, strings.ToUpper(userID), "heartbeat", `{ "timeout": "10s", "endpoint": "https://example.com" }`, "HEARTBEAT", 60, 3, true, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 		t.Fatalf("replay=%+v, created=%+v", replay, created)
 	}
 	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
-	conflict, err := repo.CreateWorkflow(ctx, userID, "changed", `{"url":"https://example.com","method":"GET"}`, "HEARTBEAT", 60, 3, true, key)
+	conflict, err := repo.CreateWorkflow(ctx, userID, "changed", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, key)
 	if conflict != nil || status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflict=%+v err=%v", conflict, err)
 	}

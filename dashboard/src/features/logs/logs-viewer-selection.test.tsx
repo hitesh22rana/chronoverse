@@ -574,6 +574,23 @@ it("tracks selection changes made through the address fragment", async () => {
     expect(visibleLines().some(isSelected)).toBe(false)
 })
 
+it.each(["#L0", "#L9007199254740992"])("rejects invalid address selection %s before the next range gesture", async (hash) => {
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(6)
+    expect(isSelected(6)).toBe(true)
+
+    await act(async () => {
+        setFragment(hash)
+    })
+    expect(visibleLines().some(isSelected)).toBe(false)
+
+    await clickLine(4, true)
+    expect(fragment()).toBe("#L4")
+    expect(isSelected(4)).toBe(true)
+    expect(isSelected(6)).toBe(false)
+})
+
 it("selects and extends a range from row clicks while ignoring drags and line menus", async () => {
     const user = userEvent.setup()
     renderViewer()
@@ -669,6 +686,31 @@ it("keeps a selection through a pointer move that has no press behind it", async
     await clickLine(7)
     expect(fragment()).toBe("#L7")
     expect(isSelected(7)).toBe(true)
+})
+
+it("preserves selection through a canceled drag and accepts the next click", async () => {
+    const user = userEvent.setup()
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(2)
+
+    // The platform takes over the drag; cancellation itself must not select a row.
+    const interrupted = rowButton(4)
+    await act(async () => {
+        fireEvent.pointerDown(interrupted, { clientX: 10, clientY: 10, button: 0 })
+        fireEvent.pointerMove(interrupted, { clientX: 60, clientY: 40 })
+        fireEvent.pointerCancel(interrupted)
+    })
+
+    expect(fragment()).toBe("#L2")
+    expect(isSelected(2)).toBe(true)
+    expect(isSelected(4)).toBe(false)
+
+    await user.click(interrupted)
+
+    expect(fragment()).toBe("#L4")
+    expect(isSelected(4)).toBe(true)
+    expect(isSelected(2)).toBe(false)
 })
 
 it("selects a line after a press that is not the primary button", async () => {
@@ -835,6 +877,29 @@ it("switches the dataset when the log level filter changes and drops the selecti
     })
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/workflows/w1/jobs/j1"))
     await waitFor(() => expect(visibleLines()).toHaveLength(20))
+})
+
+it("preserves selection and requests when reselecting the active log filter", async () => {
+    // Radix suppresses onValueChange for the already-selected radio, so this
+    // pins the user-visible no-op; the viewer's own guard stays unexercised.
+    const user = userEvent.setup()
+    renderViewer()
+    await loadedLines(20)
+    await clickLine(2)
+    const requestCount = mocks.fetchApiJson.mock.calls.length
+    mocks.push.mockClear()
+    mocks.replace.mockClear()
+
+    await user.click(screen.getByLabelText("Filter logs"))
+    const activeFilter = await screen.findByLabelText("All")
+    expect(activeFilter.getAttribute("aria-checked")).toBe("true")
+    await user.click(activeFilter)
+
+    expect(fragment()).toBe("#L2")
+    expect(isSelected(2)).toBe(true)
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(requestCount)
 })
 
 it("downloads the retained logs from the download popover", async () => {

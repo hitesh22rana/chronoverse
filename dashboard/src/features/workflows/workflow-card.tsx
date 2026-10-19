@@ -25,7 +25,7 @@ interface WorkflowCardProps {
 
 export function WorkflowCard({ workflow }: WorkflowCardProps) {
     const failureCount = workflow.consecutive_job_failures_count ?? 0
-    const failureLimit = workflow.max_consecutive_job_failures_allowed ?? 1
+    const failureLimit = workflow.max_consecutive_job_failures_allowed
 
     const status = workflow.terminated_at ? "TERMINATED" : workflow.build_status
 

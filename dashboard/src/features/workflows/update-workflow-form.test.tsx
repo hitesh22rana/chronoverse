@@ -312,6 +312,28 @@ it("submits the edited payload with an idempotency key and closes on success", a
     expect(mocks.toast.success).toHaveBeenCalledWith("workflow updated successfully")
 })
 
+it("fills a heartbeat workflow whose stored payload carries no fields from blank defaults", async () => {
+    mocks.workflow = heartbeatWorkflow({ payload: "{}" })
+    renderDialog()
+    expect(await screen.findByLabelText("Name")).toHaveProperty("value", "API heartbeat")
+
+    expect(screen.getByLabelText("Endpoint URL")).toHaveProperty("value", "")
+    expect(screen.getByLabelText("Expected Status Code")).toHaveProperty("value", "200")
+    expect(screen.getByLabelText("Timeout (optional)")).toHaveProperty("value", "")
+    expect(screen.queryByLabelText("Header 1 name")).toBeNull()
+})
+
+it("fills a container workflow whose stored payload is missing from blank defaults", async () => {
+    mocks.workflow = containerWorkflow({ payload: undefined })
+    renderDialog()
+    expect(await screen.findByLabelText("Name")).toHaveProperty("value", "Nightly container")
+
+    expect(screen.getByLabelText("Image")).toHaveProperty("value", "")
+    expect(screen.queryByLabelText("Command argument 1")).toBeNull()
+    expect(screen.queryByLabelText("Environment variable 1")).toBeNull()
+    expect(screen.getByLabelText("Timeout (optional)")).toHaveProperty("value", "")
+})
+
 it("blocks editing and closing while the save is in flight", async () => {
     mocks.holdUpdates = true
     mocks.workflow = heartbeatWorkflow()

@@ -49,7 +49,6 @@ import {
     getNextLogLineSelection,
     getSelectedLogText,
     getUnavailableSelectionMessage,
-    normalizeLogLineSelection,
     parseLogLineSelection,
     shouldFetchMoreLogsForSelection,
     shouldIgnoreLogRowSelection,
@@ -138,16 +137,51 @@ function useLogViewerActions(model: any) {
         router.replace(buildLogViewerUrl(pathname, query, hash), { scroll: false })
     }
 
-    const updateLineSelection = (selection: LogLineSelection) => {
-        const normalized = normalizeLogLineSelection(selection.start, selection.end)
-        if (!normalized) {
-            return
-        }
+    const {
+        clearLineSelection,
+        selectLogLine,
+        copyLogLines,
+        copyPermalink,
+    } = useLogLineSelectionActions({
+        lineSelection,
+        setLineSelection,
+        selectionAnchorRef,
+        logs,
+    })
 
-        setLineSelection(normalized)
+    const {
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+    } = useLogRowGestures({
+        rowPointerGestureRef,
+        selectLogLine,
+    })
+
+    return {
+        updateJsonRendering,
+        clearLineSelection,
+        handleLogRowClick,
+        handleLogRowPointerDown,
+        handleLogRowPointerMove,
+        copyLogLines,
+        copyPermalink,
+    }
+}
+
+function useLogLineSelectionActions(model: any) {
+    const {
+        lineSelection,
+        setLineSelection,
+        selectionAnchorRef,
+        logs,
+    } = model
+
+    const updateLineSelection = (selection: LogLineSelection) => {
+        setLineSelection(selection)
 
         const url = new URL(window.location.href)
-        url.hash = formatLogLineSelection(normalized)
+        url.hash = formatLogLineSelection(selection)
         window.history.replaceState(window.history.state, "", url)
     }
 
@@ -167,63 +201,11 @@ function useLogViewerActions(model: any) {
     const selectLogLine = (lineNumber: number, extendSelection: boolean) => {
         const anchor = selectionAnchorRef.current ?? lineSelection?.start ?? null
         const selection = getNextLogLineSelection(lineNumber, anchor, extendSelection)
-        if (!selection) {
-            return
-        }
 
         if (!extendSelection) {
             selectionAnchorRef.current = lineNumber
         }
         updateLineSelection(selection)
-    }
-
-    const handleLogRowClick = (
-        lineNumber: number,
-        event: ReactMouseEvent<HTMLButtonElement>
-    ) => {
-        const target = event.target
-        const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
-        // Keyboard activation has detail 0 and must ignore a previous pointer drag.
-        const wasPointerDrag = event.detail > 0 && Boolean(rowPointerGestureRef.current?.didDrag)
-        rowPointerGestureRef.current = null
-
-        if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {
-            return
-        }
-
-        selectLogLine(lineNumber, event.shiftKey)
-    }
-
-    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-        const target = event.target
-        if (target instanceof Element && target.closest("[data-line-options]")) {
-            rowPointerGestureRef.current = null
-            return
-        }
-
-        if (event.shiftKey && event.button === 0) {
-            event.preventDefault()
-            window.getSelection()?.removeAllRanges()
-        }
-
-        rowPointerGestureRef.current = {
-            startX: event.clientX,
-            startY: event.clientY,
-            didDrag: false,
-        }
-    }
-
-    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-        const gesture = rowPointerGestureRef.current
-        if (!gesture || gesture.didDrag) {
-            return
-        }
-
-        const deltaX = event.clientX - gesture.startX
-        const deltaY = event.clientY - gesture.startY
-        if (Math.hypot(deltaX, deltaY) >= 4) {
-            gesture.didDrag = true
-        }
     }
 
     const copyLogLines = async (selection: LogLineSelection) => {
@@ -250,13 +232,64 @@ function useLogViewerActions(model: any) {
     }
 
     return {
-        updateJsonRendering,
         clearLineSelection,
+        selectLogLine,
+        copyLogLines,
+        copyPermalink,
+    }
+}
+
+function useLogRowGestures(model: any) {
+    const { rowPointerGestureRef, selectLogLine } = model
+
+    const handleLogRowClick = (
+        lineNumber: number,
+        event: ReactMouseEvent<HTMLButtonElement>
+    ) => {
+        const target = event.target
+        const isLineOptionsInteraction = target instanceof Element && Boolean(target.closest("[data-line-options]"))
+        // Keyboard activation has detail 0 and must ignore a previous pointer drag.
+        const wasPointerDrag = event.detail > 0 && Boolean(rowPointerGestureRef.current?.didDrag)
+        rowPointerGestureRef.current = null
+
+        if (shouldIgnoreLogRowSelection(wasPointerDrag, isLineOptionsInteraction)) {
+            return
+        }
+
+        selectLogLine(lineNumber, event.shiftKey)
+    }
+
+    const handleLogRowPointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        // The line-options gutter is a sibling of the row button, so its pointer events never reach this handler.
+        if (event.shiftKey && event.button === 0) {
+            event.preventDefault()
+            window.getSelection()?.removeAllRanges()
+        }
+
+        rowPointerGestureRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            didDrag: false,
+        }
+    }
+
+    const handleLogRowPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+        const gesture = rowPointerGestureRef.current
+        if (!gesture || gesture.didDrag) {
+            return
+        }
+
+        const deltaX = event.clientX - gesture.startX
+        const deltaY = event.clientY - gesture.startY
+        if (Math.hypot(deltaX, deltaY) >= 4) {
+            gesture.didDrag = true
+        }
+    }
+
+    return {
         handleLogRowClick,
         handleLogRowPointerDown,
         handleLogRowPointerMove,
-        copyLogLines,
-        copyPermalink,
     }
 }
 

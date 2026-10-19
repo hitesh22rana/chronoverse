@@ -190,6 +190,15 @@ it("names a series that carries no name by its data key", () => {
     expect(within(rowAt(container, 0)).getByText("Terminal jobs")).toBeTruthy()
 })
 
+it("falls back to a placeholder key for an entry with neither data key nor name", () => {
+    const { container } = renderTooltip([entry({ dataKey: undefined, name: undefined })])
+
+    // The entry still gets a row and a printed value; the placeholder finds no
+    // config entry, so there is nothing to head the tooltip with.
+    expect(within(rowAt(container, 0)).getByText("12,345")).toBeTruthy()
+    expect(tooltipHeading(container)).toBeNull()
+})
+
 it("resolves the entry's label through its own datum", () => {
     const { container } = renderTooltip([entry({ dataKey: "count", payload: { count: "total_joblogs" } })], {
         labelKey: "count",

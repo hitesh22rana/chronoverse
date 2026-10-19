@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { format } from "date-fns";
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Notification } from "./types";
 import { NotificationsDrawer } from "./notifications-drawer";
@@ -245,6 +245,26 @@ it("reads unread links and removes only the clicked selection", () => {
   expect(unreadSelection.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(screen.getByRole("link", { name: /^read/ }));
   expect(close).toHaveBeenCalledTimes(3);
+});
+it("reopens without the notification selection consumed by navigation", () => {
+  state.notifications = [item("one")];
+  function Drawer() {
+    const [open, setOpen] = useState(true);
+    return <>
+      <button onClick={() => setOpen(true)}>Show notifications</button>
+      <NotificationsDrawer open={open} onClose={() => { close(); setOpen(false); }} />
+    </>;
+  }
+  render(<Drawer />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select one" }));
+  fireEvent.click(screen.getByRole("link", { name: /^one/ }));
+  expect(state.markAsRead).toHaveBeenCalledExactlyOnceWith(["one"]);
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("link", { name: /^one/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Show notifications" }));
+  expect(screen.getByRole("checkbox", { name: "Select one" }).getAttribute("aria-checked")).toBe("false");
+  expect((screen.getByRole("button", { name: "Mark as read" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(state.markAsRead).toHaveBeenCalledTimes(1);
 });
 it("clears selections when closing the sheet", () => {
   state.notifications = [item("one")];

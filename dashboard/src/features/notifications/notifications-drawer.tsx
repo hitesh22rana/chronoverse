@@ -86,7 +86,7 @@ function highlightNotification(message: string): string {
     while ((match = regex.exec(message)) !== null) {
         const before = message.slice(lastIndex, match.index);
         result += escapeHtml(before);
-        const quoted = match[1] ?? "";
+        const quoted = match[1];
         result += `<span class="font-semibold">${escapeHtml(quoted)}</span>`;
         lastIndex = match.index + match[0].length;
     }
@@ -146,15 +146,14 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
         setSelected(new Set())
     }
 
-    const handleOpenChange = (nextOpen: boolean) => {
-        if (!nextOpen) {
-            clearSelection()
-            onClose()
-        }
+    // The drawer is controlled and has no trigger, so Radix only reports dismissals here.
+    const handleOpenChange = () => {
+        clearSelection()
+        onClose()
     }
 
     const bulkRead = () => {
-        if (visibleSelected.size === 0) return
+        // The trigger is disabled while the selection is empty.
         markAsRead(Array.from(visibleSelected))
         clearSelection()
     }
@@ -176,7 +175,6 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
     const renderRow = (index: number) => {
         const d = flat[index]
-        if (!d) return null
 
         if (d.type === "heading") {
             return (

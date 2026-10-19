@@ -1,87 +1,95 @@
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react"
-import { renderToStaticMarkup } from "react-dom/server"
-import * as rhf from "react-hook-form"
+// @vitest-environment jsdom
+
+import { useForm } from "react-hook-form"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 import { Form } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import { WorkflowActionDialog } from "./workflow-action-dialog"
 import type { Workflow } from "./types"
 import { ContainerListField, WorkflowNumberField } from "./workflow-form-fields"
 
-vi.mock("react-hook-form", async (importOriginal) => {
-    const actual = await importOriginal<typeof rhf>()
-    return { ...actual, useForm: vi.fn(actual.useForm), useFormContext: vi.fn(actual.useFormContext) }
-})
+afterEach(cleanup)
 
-function descendants(node: ReactNode): ReactElement<any>[] {
-    return Children.toArray(node).flatMap((child) => isValidElement<{ children?: ReactNode }>(child)
-        ? [child, ...descendants(child.props.children)] : [])
-}
-
-function renderForm(children: ReactNode) {
-    let form!: rhf.UseFormReturn
+it.each([
+    ["cmd", "Command argument", "Add argument", "two"],
+    ["env", "Environment variable", "Add variable", "TWO=2"],
+] as const)("labels %s fields and keeps edited values paired with stable rows", async (name, label, addLabel, secondValue) => {
+    const user = userEvent.setup()
     function Harness() {
-        form = rhf.useForm<rhf.FieldValues>({ defaultValues: { containerPayload: { cmd: ["one", "two"], env: ["A=1", "B=2"] } } })
-        return <Form {...form}>{children}</Form>
+        const form = useForm({ defaultValues: { containerPayload: {
+            cmd: ["one", "two"], cmdIds: ["cmd-first", "cmd-second"],
+            env: ["ONE=1", "TWO=2"], envIds: ["env-first", "env-second"],
+        } } })
+        return <Form {...form}><ContainerListField name={name}
+            values={form.watch(`containerPayload.${name}`)}
+            ids={form.watch(`containerPayload.${name}Ids`)} /></Form>
     }
-    const html = renderToStaticMarkup(<Harness />)
-    vi.mocked(rhf.useFormContext).mockReturnValue(form)
-    return { form, html }
-}
-
-afterEach(() => { vi.restoreAllMocks(); vi.resetAllMocks() })
-
-it.each(["cmd", "env"] as const)("labels %s fields and keeps values paired with stable IDs", (name) => {
-    const props = { name, values: ["one", "two"], ids: ["first", "second"] }
-    const { form, html } = renderForm(<ContainerListField {...props} />)
-    for (const input of html.matchAll(/<input[^>]*\sid="([^"]+)"/g)) {
-        expect(html).toContain(`for="${input[1]}"`)
-    }
-    expect(html.match(/<input/g)).toHaveLength(2)
-    const buttons = descendants(ContainerListField(props)).filter((node) => node.type === Button)
-    const setValue = vi.spyOn(form, "setValue")
-    buttons[0].props.onClick()
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["one", "two", ""], { shouldDirty: true })
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["first", "second", expect.any(String)], { shouldDirty: true })
-    setValue.mockClear()
-    buttons[1].props.onClick()
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}`, ["two"], { shouldDirty: true })
-    expect(setValue).toHaveBeenCalledWith(`containerPayload.${name}Ids`, ["second"], { shouldDirty: true })
+    render(<Harness />)
+    const first = screen.getByRole("textbox", { name: `${label} 1` })
+    const second = screen.getByRole("textbox", { name: `${label} 2` })
+    await user.type(second, "-edited")
+    await user.click(screen.getByRole("button", { name: addLabel }))
+    expect(screen.getAllByRole("textbox")).toHaveLength(3)
+    expect(screen.getByRole("textbox", { name: `${label} 2` })).toBe(second)
+    await user.click(screen.getByRole("button", { name: `Remove ${label.toLowerCase()} 1` }))
+    expect(screen.getAllByRole("textbox")).toHaveLength(2)
+    expect(screen.getByRole("textbox", { name: `${label} 1` })).toBe(second)
+    expect((second as HTMLInputElement).value).toBe(`${secondValue}-edited`)
+    expect(document.body.contains(first)).toBe(false)
+    expect((screen.getByRole("textbox", { name: `${label} 2` }) as HTMLInputElement).value).toBe("")
 })
 
 it.each([
     ["heartbeatPayload.expectedStatusCode", 100, 599],
     ["interval", 1, undefined],
     ["maxConsecutiveJobFailuresAllowed", 3, undefined],
-] as const)("preserves %s numeric input bounds and empty values", (name, min, max) => {
-    renderForm(<WorkflowNumberField name={name} />)
-    const onChange = vi.fn()
-    const tree = WorkflowNumberField({ name }).props.render({ field: { value: undefined, onChange } })
-    const input = descendants(tree).find((node) => node.type === Input)!
-    expect(input.props).toMatchObject({ min, max, value: "", type: "number" })
-    input.props.onChange({ target: { value: "" } })
-    input.props.onChange({ target: { value: "200" } })
-    expect(onChange.mock.calls).toEqual([[""], [200]])
+] as const)("submits %s as a number or an empty value within its input bounds", async (name, min, max) => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    function Harness() {
+        const form = useForm()
+        return <Form {...form}><form noValidate onSubmit={form.handleSubmit(onSubmit)}>
+            <WorkflowNumberField name={name} />
+            <button type="submit">Save</button>
+        </form></Form>
+    }
+    render(<Harness />)
+    const input = screen.getByRole("spinbutton") as HTMLInputElement
+    expect(input.min).toBe(String(min))
+    expect(input.max).toBe(max === undefined ? "" : String(max))
+    expect(input.value).toBe("")
+    await user.type(input, "200")
+    await user.clear(input)
+    await user.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    const submittedValue = () => name.split(".").reduce((value, key) => value[key], onSubmit.mock.calls[0][0])
+    expect(submittedValue()).toBe("")
+    onSubmit.mockClear()
+    await user.type(input, "200")
+    await user.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(submittedValue()).toBe(200)
 })
 
 it("requires the exact workflow name before confirming a destructive action", async () => {
+    const user = userEvent.setup()
     const onConfirm = vi.fn()
     const onOpenChange = vi.fn()
-    let tree!: ReactElement
-    function Harness() {
-        tree = WorkflowActionDialog({ workflow: { name: "My workflow" } as Workflow, open: true, onOpenChange, onConfirm, isPending: false, title: "Delete workflow", description: "Delete", warning: "Cannot be undone", pendingLabel: "Deleting..." })
-        return null
-    }
-    renderToStaticMarkup(<Harness />)
-    const form = vi.mocked(rhf.useForm).mock.results.at(-1)!.value as rhf.UseFormReturn
-    const submit = descendants(tree).find((node) => node.type === "form")!.props.onSubmit
-    form.setValue("confirmName", "wrong")
-    await submit()
+    render(<WorkflowActionDialog workflow={{ name: "My workflow" } as Workflow} open
+        onOpenChange={onOpenChange} onConfirm={onConfirm} isPending={false}
+        title="Delete workflow" description="Delete" warning="Cannot be undone" pendingLabel="Deleting..." />)
+    const input = screen.getByRole("textbox", { name: "To confirm, type My workflow" })
+    const confirm = screen.getByRole("button", { name: "Delete workflow" }) as HTMLButtonElement
+    await user.type(input, "wrong")
+    expect(confirm.disabled).toBe(true)
+    await user.click(confirm)
     expect(onConfirm).not.toHaveBeenCalled()
     expect(onOpenChange).not.toHaveBeenCalled()
-    form.setValue("confirmName", "My workflow")
-    await submit()
-    expect(onConfirm).toHaveBeenCalledOnce()
+    await user.clear(input)
+    await user.type(input, "My workflow")
+    await waitFor(() => expect(confirm.disabled).toBe(false))
+    await user.click(confirm)
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce())
     expect(onOpenChange).toHaveBeenCalledWith(false)
 })

@@ -97,7 +97,7 @@ it("refuses to page forward when the response offers no next cursor", async () =
 
 it("pages forward onto the cursor the response hands back and keeps the open tab", async () => {
     mocks.jobsResponse = { jobs: [job()], cursor: "cursor-2" }
-    const { result } = renderUseWorkflowJobs("tab=jobs")
+    const { result } = renderUseWorkflowJobs("tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-1")
     await waitFor(() => expect(result.current.pagination.hasNextPage).toBe(true))
 
     let moved: boolean | undefined
@@ -107,7 +107,7 @@ it("pages forward onto the cursor the response hands back and keeps the open tab
 
     expect(moved).toBe(true)
     expect(mocks.push).toHaveBeenCalledTimes(1)
-    expect(lastPush()).toBe("?tab=jobs&cursor=cursor-2")
+    expect(lastPush()).toBe("?tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-2")
 })
 
 it("hands a previous-page request back to browser history", async () => {
@@ -143,7 +143,7 @@ it("resets pagination by dropping only the cursor from the address", async () =>
 })
 
 it("clears filters without inventing a tab when the address carries none", async () => {
-    const { result } = renderUseWorkflowJobs("status=FAILED&trigger=MANUAL")
+    const { result } = renderUseWorkflowJobs("status=FAILED&trigger=MANUAL&cursor=cursor-2")
 
     await waitFor(() => expect(result.current.jobs).toHaveLength(1))
 
@@ -155,4 +155,16 @@ it("clears filters without inventing a tab when the address carries none", async
     // and leave an empty query string rather than fabricate a tab parameter.
     expect(mocks.push).toHaveBeenCalledTimes(1)
     expect(lastPush()).toBe("?")
+})
+
+it("clears filters and pagination while keeping the open jobs tab", async () => {
+    const { result } = renderUseWorkflowJobs("tab=jobs&status=FAILED&trigger=MANUAL&cursor=cursor-2")
+    await waitFor(() => expect(result.current.jobs).toHaveLength(1))
+
+    act(() => {
+        result.current.clearAllFilters()
+    })
+
+    expect(mocks.push).toHaveBeenCalledTimes(1)
+    expect(lastPush()).toBe("?tab=jobs")
 })

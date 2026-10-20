@@ -1,0 +1,168 @@
+//nolint:testpackage // Exercises snapshot boundaries against PostgreSQL.
+package analytics
+
+import (
+	"context"
+	"encoding/binary"
+	"io"
+	"net"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+)
+
+func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
+	for _, tc := range []struct {
+		name, operation string
+		selects         int
+	}{
+		{"aggregate", "failed to get user analytics", 0},
+		{"kinds", "failed to get workflow kind analytics", 1},
+		{"top workflows", "failed to get top workflow analytics", 2},
+		{"commit", "failed to commit user analytics snapshot", 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := testkit.Postgres(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+			defer cancel()
+			userID := testkit.SeedUser(ctx, t, pg, "snapshot-"+uuid.NewString()+"@chronoverse.test")
+			workflowID := testkit.SeedWorkflow(ctx, t, pg, userID, "snapshot-"+tc.name)
+			if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count) VALUES($1,$2,'HEARTBEAT',1,2)`, userID, workflowID); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			address, cut := snapshotDisconnectProxy(t, net.JoinHostPort(cfg.ConnConfig.Host, strconv.Itoa(int(cfg.ConnConfig.Port))), tc.selects)
+			host, portText, err := net.SplitHostPort(address)
+			if err != nil {
+				t.Fatal(err)
+			}
+			port, err := strconv.Atoi(portText)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader, err := postgres.New(ctx, &postgres.Config{
+				Host: host, Port: port, User: cfg.ConnConfig.User, Password: cfg.ConnConfig.Password,
+				Database: cfg.ConnConfig.Database, MaxConns: 1, TLSConfig: &postgres.TLSConfig{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(reader.Close)
+			got, err := New(nil, reader).GetUserAnalytics(ctx, userID)
+			if got != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), tc.operation+":") {
+				t.Fatalf("GetUserAnalytics = %+v, %v; want nil, Internal at %s", got, err, tc.operation)
+			}
+			select {
+			case <-cut:
+			case <-ctx.Done():
+				t.Fatal("connection did not reach the selected snapshot boundary")
+			}
+		})
+	}
+}
+
+// Forward complete results before simulating a connection lost between statements.
+func snapshotDisconnectProxy(t *testing.T, upstream string, selects int) (address string, disconnected <-chan struct{}) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cut := make(chan struct{})
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		_ = listener.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("snapshot proxy did not stop")
+		}
+	})
+	go func() {
+		defer close(done)
+		client, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer client.Close()
+		server, dialErr := net.DialTimeout("tcp", upstream, 5*time.Second)
+		if dialErr != nil {
+			return
+		}
+		defer server.Close()
+		if err := client.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			return
+		}
+		if err := server.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			return
+		}
+		copying := make(chan struct{})
+		go func() {
+			defer close(copying)
+			defer server.Close()
+			if _, err := io.Copy(server, client); err != nil {
+				return
+			}
+		}()
+		if forwardSnapshotResponses(client, server, selects) {
+			_ = listener.Close()
+			close(cut)
+		}
+		_ = server.Close()
+		_ = client.Close()
+		<-copying
+	}()
+	return listener.Addr().String(), cut
+}
+
+func forwardSnapshotResponses(client io.Writer, server io.Reader, selects int) bool {
+	completed := 0
+	cutNextReady := false
+	for {
+		var header [5]byte
+		if _, err := io.ReadFull(server, header[:]); err != nil {
+			return false
+		}
+		length := binary.BigEndian.Uint32(header[1:])
+		if length < 4 || length > 16<<20 {
+			return false
+		}
+		body := make([]byte, int(length)-4)
+		if _, err := io.ReadFull(server, body); err != nil {
+			return false
+		}
+		if header[0] == 'C' {
+			tag := strings.TrimSuffix(string(body), "\x00")
+			if tag == "BEGIN" {
+				completed = 0
+				cutNextReady = selects == 0
+			}
+			if strings.HasPrefix(tag, "SELECT ") {
+				completed++
+				cutNextReady = completed == selects
+			}
+		}
+		if _, err := client.Write(header[:]); err != nil {
+			return false
+		}
+		if _, err := client.Write(body); err != nil {
+			return false
+		}
+		// ReadyForQuery(T) completes the previous statement within the snapshot.
+		if header[0] == 'Z' && string(body) == "T" && cutNextReady {
+			return true
+		}
+	}
+}

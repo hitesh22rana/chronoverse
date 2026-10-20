@@ -283,3 +283,15 @@ func assertAnalyticsTotals(t *testing.T, got *analyticsmodel.GetUserAnalyticsRes
 		t.Fatalf("analytics totals = %v, want %v", totals, want)
 	}
 }
+
+func TestIntegrationAnalyticsReadEmptyUser(t *testing.T) {
+	pg := testkit.Postgres(t)
+	got, err := New(nil, pg).GetUserAnalytics(t.Context(), uuid.NewString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertAnalyticsTotals(t, got, [4]uint64{})
+	if len(got.WorkflowKinds) != 0 || len(got.TopWorkflows) != 0 {
+		t.Fatalf("empty analytics breakdown = %+v", got)
+	}
+}

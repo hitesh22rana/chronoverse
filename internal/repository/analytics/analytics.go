@@ -75,10 +75,7 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[analyticsmodel.GetUserAnalyticsResponse])
 	if err != nil {
-		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "no analytics found for user: %v", err)
-			return nil, err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
+		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
 			return nil, err
 		}

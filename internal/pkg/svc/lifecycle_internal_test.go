@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -93,6 +94,7 @@ func TestServiceMetadataInitializedOnce(t *testing.T) {
 }
 
 func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
+	clearTelemetryEnvironment(t)
 	restoreServiceMetadata(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -146,28 +148,62 @@ func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
 	require.Positive(t, collector.traces)
 }
 
-func TestInitRejectsMalformedResource(t *testing.T) {
-	if os.Getenv("CHRONOVERSE_TEST_SVC_BAD_RESOURCE") == "1" {
-		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "missing-value")
+func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
+	if stage := os.Getenv("CHRONOVERSE_TEST_SVC_INIT_FAILURE"); stage != "" {
+		clearTelemetryEnvironment(t)
+		for _, key := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"} {
+			t.Setenv(key, "http://127.0.0.1:1")
+		}
+		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
+		t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")
+		operation := "failed to create resource"
+		cause := "missing value"
+		if stage == "resource" {
+			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "missing-value")
+		} else {
+			// The SDK decodes this valid scoped URL; gRPC rejects its raw zone escape.
+			t.Setenv("OTEL_EXPORTER_OTLP_"+strings.ToUpper(stage)+"_ENDPOINT", "http://[fe80::1%25eth0]:4317")
+			signal := map[string]string{"TRACES": "trace", "METRICS": "metric", "LOGS": "log"}[strings.ToUpper(stage)]
+			operation = "failed to create OTLP " + signal + " exporter"
+			cause = "invalid URL escape"
+		}
 		var got any
 		func() {
 			defer func() { got = recover() }()
 			Init()
 		}()
-		require.Contains(t, fmt.Sprint(got), "failed to create resource")
-		require.Contains(t, fmt.Sprint(got), "missing value")
+		require.Contains(t, fmt.Sprint(got), operation)
+		require.Contains(t, fmt.Sprint(got), cause)
 		return
 	}
+	for _, stage := range []string{"resource", "traces", "metrics", "logs"} {
+		t.Run(stage, func(t *testing.T) { runInitFailureHelper(t, stage) })
+	}
+}
+
+func runInitFailureHelper(t *testing.T, stage string) {
+	t.Helper()
 	// Init panics before returning its signal cleanup on invalid startup config.
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	args := []string{"-test.run=^TestInitRejectsMalformedResource$"}
+	args := []string{"-test.run=^TestInitRejectsInvalidTelemetryConfiguration$"}
 	if directory := flag.Lookup("test.gocoverdir").Value.String(); directory != "" {
 		args = append(args, "-test.gocoverdir="+directory)
 	}
 	//nolint:gosec // Runs only this test binary with fixed helper flags.
 	cmd := exec.CommandContext(ctx, os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "CHRONOVERSE_TEST_SVC_BAD_RESOURCE=1")
+	cmd.Env = append(os.Environ(), "CHRONOVERSE_TEST_SVC_INIT_FAILURE="+stage)
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "resource failure helper: %s", output)
+	require.NoError(t, err, "%s failure helper: %s", stage, output)
+}
+
+func clearTelemetryEnvironment(t *testing.T) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "OTEL_") {
+			t.Setenv(key, "")
+			require.NoError(t, os.Unsetenv(key))
+		}
+	}
 }

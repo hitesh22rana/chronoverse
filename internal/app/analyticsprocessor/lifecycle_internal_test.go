@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"go.uber.org/zap"
@@ -62,8 +63,11 @@ func TestRunWithoutMaintenance(t *testing.T) {
 			if err := app.Run(t.Context()); err != nil {
 				t.Fatalf("Run()=%v", err)
 			}
-			if calls != 1 || serviceCtx.Err() != context.Canceled {
-				t.Fatalf("calls=%d context=%v", calls, serviceCtx.Err())
+			if calls != 1 || serviceCtx == nil {
+				t.Fatalf("calls=%d context=%v", calls, serviceCtx)
+			}
+			if serviceCtx.Err() != context.Canceled {
+				t.Fatalf("service context=%v", serviceCtx.Err())
 			}
 			if tc.runErr != nil {
 				if logs.FilterMessage("error occurred while running the analytics processor").Len() != 1 {
@@ -78,42 +82,59 @@ func TestRunWithoutMaintenance(t *testing.T) {
 
 func TestRunWaitsForCanceledMaintenance(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	started := make(chan struct{})
-	finished := make(chan struct{})
-	var cleanupCtx context.Context
-	app := New(ctx, &Config{CleanupEnabled: true, CleanupInterval: time.Hour, CleanupBatchSize: 13, ProcessedEventsRetention: 24 * time.Hour}, lifecycleService{
-		run: func(ctx context.Context) error {
-			select {
-			case <-started:
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		canceled := make(chan struct{})
+		release := make(chan struct{})
+		finished := make(chan struct{})
+		returned := make(chan struct{})
+		app := New(t.Context(), &Config{CleanupEnabled: true, CleanupInterval: time.Hour, CleanupBatchSize: 13, ProcessedEventsRetention: 24 * time.Hour}, lifecycleService{
+			run: func(context.Context) error { <-started; return nil },
+			cleanup: func(ctx context.Context, retention time.Duration, batch int) (int64, error) {
+				if retention != 24*time.Hour || batch != 13 {
+					t.Errorf("retention=%v batch=%d", retention, batch)
+				}
+				close(started)
+				<-ctx.Done()
+				if ctx.Err() != context.Canceled {
+					t.Errorf("cleanup context=%v", ctx.Err())
+				}
+				close(canceled)
+				<-release
+				close(finished)
+				return 0, ctx.Err()
+			},
+		})
+		go func() {
+			if err := app.Run(t.Context()); err != nil {
+				t.Errorf("Run()=%v", err)
 			}
-		},
-		cleanup: func(ctx context.Context, retention time.Duration, batch int) (int64, error) {
-			cleanupCtx = ctx
-			if retention != 24*time.Hour || batch != 13 {
-				t.Errorf("retention=%v batch=%d", retention, batch)
-			}
-			close(started)
-			<-ctx.Done()
-			close(finished)
-			return 0, ctx.Err()
-		},
+			close(returned)
+		}()
+		synctest.Wait()
+		select {
+		case <-canceled:
+		default:
+			t.Error("maintenance was not canceled")
+		}
+		select {
+		case <-returned:
+			t.Error("Run returned before maintenance was released")
+		default:
+		}
+		close(release)
+		synctest.Wait()
+		select {
+		case <-finished:
+		default:
+			t.Error("maintenance did not finish")
+		}
+		select {
+		case <-returned:
+		default:
+			t.Error("Run did not return after maintenance finished")
+		}
 	})
-	if err := app.Run(ctx); err != nil {
-		t.Fatalf("Run()=%v", err)
-	}
-	select {
-	case <-finished:
-	default:
-		t.Fatal("Run returned before maintenance finished")
-	}
-	if ctx.Err() != nil || cleanupCtx.Err() != context.Canceled {
-		t.Fatalf("parent=%v cleanup=%v", ctx.Err(), cleanupCtx.Err())
-	}
 }
 
 func TestRunMaintenanceContinuesAfterFailure(t *testing.T) {

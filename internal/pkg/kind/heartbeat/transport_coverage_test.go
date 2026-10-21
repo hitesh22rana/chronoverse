@@ -333,10 +333,16 @@ func useControlledEndpointDNS(t *testing.T) <-chan struct{} {
 		}
 	}()
 	original := net.DefaultResolver
+	fixtureCtx := t.Context()
 	// Pin the old resolver: canceled lookups can leave background dial goroutines
 	// that would otherwise race with restoring net.DefaultResolver.
 	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{Resolver: original}).DialContext(ctx, "udp", listener.LocalAddr().String())
+		conn, err := (&net.Dialer{Resolver: original}).DialContext(ctx, "udp", listener.LocalAddr().String())
+		if err == nil {
+			// Teardown must unblock DNS I/O even if the lookup loses its context.
+			context.AfterFunc(fixtureCtx, func() { conn.Close() })
+		}
+		return conn, err
 	}}
 	t.Cleanup(func() {
 		net.DefaultResolver = original
@@ -367,9 +373,15 @@ func TestResolveEndpointHostWithControlledDNS(t *testing.T) {
 		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	result := make(chan error, 1)
+	lookupDone := make(chan struct{})
+	// Registered last so the lookup finishes before the fixture restores the resolver.
+	t.Cleanup(func() {
+		cancel()
+		<-lookupDone
+	})
 	go func() {
+		defer close(lookupDone)
 		_, err := resolveEndpointHost(ctx, "canceled.test")
 		result <- err
 	}()

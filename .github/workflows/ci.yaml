@@ -196,10 +196,17 @@ jobs:
     needs: [test, integration, dashboard]
     permissions:
       contents: read
+      actions: read
+      pull-requests: write
+    concurrency:
+      group: crap-report-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -235,9 +242,7 @@ jobs:
           name: coverage-dashboard
           path: dashboard/coverage
 
-      # Merges the profiles, roots the dashboard LCOV at the repository, and
-      # scores the tracked handwritten sources. A report, not a gate: a wrong
-      # score should be reviewed, not block a release.
+      # Score tracked application sources using the merged coverage profiles.
       - name: Score complexity against coverage
         run: |
           python scripts/coverage/crap_report.py \
@@ -250,7 +255,64 @@ jobs:
             echo '::endgroup::'
           }
 
+      - name: Record report provenance
+        run: python scripts/coverage/ci_report.py prepare
+
+      - name: Find exact base report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/coverage/ci_report.py baseline
+
+      - name: Compare changed functions
+        id: comparison
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            git diff --unified=0 --no-ext-diff --find-renames "$BASE_SHA" HEAD -- > .metrics/changes.diff
+          else
+            : > .metrics/changes.diff
+          fi
+          args=()
+          if [ -f .metrics/base-inventory.csv ]; then
+            args+=(--base .metrics/base-inventory.csv)
+          fi
+          reason=$(python -c 'import json; print(json.load(open(".metrics/baseline-status.json"))["reason"])')
+          python scripts/coverage/pr_report.py \
+            --head .metrics/inventory.csv "${args[@]}" \
+            --diff .metrics/changes.diff \
+            --summary target/coverage/pr-summary.md \
+            --result .metrics/pr-report.json \
+            --base-sha "$BASE_SHA" --head-sha "$PR_HEAD_SHA" \
+            --tested-sha "$(git rev-parse HEAD)" --baseline-reason "$reason"
+
+      - name: Publish job summary
+        id: summary
+        if: ${{ always() && steps.comparison.outcome != 'skipped' }}
+        env:
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork || false }}
+        run: |
+          if [ ! -f target/coverage/pr-summary.md ]; then
+            echo 'CRAP comparison failed before producing a report. See the job logs.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          cat target/coverage/pr-summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "[Full report artifact]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$IS_FORK" = true ]; then
+            echo 'Fork PR: bot comments are skipped; the summary and artifact remain available.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Update PR report comment
+        if: ${{ always() && steps.summary.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/coverage/ci_report.py publish
+
       - name: Upload CRAP report
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7.0.2
         with:
           name: crap-report
@@ -260,7 +322,13 @@ jobs:
             .metrics
             target/coverage
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
+
+      - name: Enforce changed-function regressions
+        if: ${{ always() && steps.comparison.outcome != 'skipped' }}
+        env:
+          COMPARISON_OUTCOME: ${{ steps.comparison.outcome }}
+        run: test "$COMPARISON_OUTCOME" = success
 
   static-site:
     name: Static site checks

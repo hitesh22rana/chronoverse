@@ -1,9 +1,8 @@
 # Coverage and CRAP reporting
 
-This describes how the coverage reports are produced and how they are turned into CRAP
-scores. Nothing here is a gate: no job fails on a score, no release job depends on the
-report. The scope is application code; other parts of the repository are outside it by
-choice, and each exclusion below says why.
+This describes how coverage reports become CRAP scores and pull-request feedback.
+CI reports existing debt and checks changed functions for regressions. The scope is
+application code; each exclusion below explains which sources remain outside it.
 
 The sources of truth for this pipeline are [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml),
 [`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py), and the `Makefile`
@@ -214,7 +213,50 @@ Limits worth stating plainly:
 
 For what to do about a given score, see [crapper-assessment.md](crapper-assessment.md).
 
-No threshold is enforced. A global CRAP limit of 30 can flag necessary guards or functions
-with no coverage record and encourage deleting guards rather than testing behaviour.
-Judge a change by whether it adds a behaviour test or
-removes real duplication, and recompute the numbers.
+There is no global CRAP threshold: unchanged existing debt does not fail a pull request.
+Judge improvements by behaviour tests and real simplification, not by removing useful
+guards to lower a score.
+
+
+## Pull-request feedback and regression checks
+
+The CRAP job writes a GitHub Actions summary and uploads the complete inventory,
+comparison and raw reports as the `crap-report` artifact. Reports are retained for
+90 days. For pull requests from the same repository, it also maintains one bot
+comment with before/after metrics and a link to the workflow run. It does not edit
+the author's PR description. Forks still receive the summary and artifact; their
+read-only tokens do not publish comments.
+
+The baseline must come from a successful CRAP job on a push to `main`
+at the PR's exact base commit. Metadata verifies the source revision, scoring
+revision, report scope and inventory checksum. The report distinguishes the PR
+head from the merge commit actually tested by CI. A stale run cannot replace the
+comment for a newer PR head or base.
+
+Changed production line ranges identify affected functions. Tests-only changes do
+not gate coverage changes in untouched functions; the complete inventory remains
+available for review. Unique path, namespace and name
+identities pair before/after results; ambiguous identities and renames are reported
+as uncomparable rather than guessed from line order. Deleted functions remain
+visible without being treated as coverage losses.
+
+For comparable changed functions, CI fails when:
+
+- Measured coverage falls by more than 0.01 percentage points.
+- A previously measured function loses its coverage record.
+- CRAP rises by more than 0.01 and the resulting score is at least 30.
+- A newly added function has no coverage record or has CRAP of at least 30.
+
+A CRAP increase below 30 remains visible without blocking a fully tested change.
+Existing high scores that stay unchanged or improve do not fail the gate. These
+checks do not replace logical review of tests, unsupported paths or production
+behaviour. No score should be improved by deleting required error handling.
+
+If an exact, compatible baseline is unavailable, including during initial rollout
+or after artifact expiration, the report explicitly marks comparison unavailable.
+It publishes current metrics but makes no claim that regressions were ruled out.
+Missing coverage records are distinct from measured zero, and function counts or
+averages are not presented as overall statement coverage.
+
+A regression makes the `CRAP report` check fail. Repository rules must require
+that check to enforce it before merging; release-job dependencies are unchanged.

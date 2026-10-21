@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -122,9 +123,12 @@ class MakeCoverageTests(unittest.TestCase):
         result = self.run_make("test/integration")
         self.assertEqual(result.returncode, 0, result.stderr)
         command = self.go_test_command(result)
-        tokens = command.split()
+        tokens = shlex.split(command)
         self.assertIn("-p", tokens)
         self.assertEqual(tokens[tokens.index("-p") + 1], "1")
+        self.assertIn("-run", tokens)
+        self.assertEqual(tokens[tokens.index("-run") + 1], "TestIntegration")
+        self.assertNotIn("-short", tokens)
         for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
             self.assertIn(flag, command)
         for package in self.PACKAGES:

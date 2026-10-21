@@ -5,7 +5,7 @@
 name: chronoverse
 services:
   postgres:
-    image: postgres:18.0-alpine3.22
+    image: postgres:18.6-alpine3.24
     container_name: postgres
     environment:
       POSTGRES_USER: primary
@@ -41,7 +41,7 @@ services:
       - chronoverse
 
   clickhouse:
-    image: clickhouse:25.8.7.3
+    image: clickhouse/clickhouse-server:26.9.23.15
     container_name: clickhouse
     environment:
       CLICKHOUSE_USER: chronoverse-client
@@ -72,7 +72,7 @@ services:
       - chronoverse
 
   redis:
-    image: redis:8.2.1-alpine
+    image: redis:8.10.2-alpine3.23
     container_name: redis
     ports:
       - "127.0.0.1:6379:6379"
@@ -108,7 +108,7 @@ services:
       - chronoverse
 
   meilisearch:
-    image: getmeili/meilisearch:v1.45.2
+    image: getmeili/meilisearch:v1.55.0
     container_name: meilisearch
     ports:
       - "127.0.0.1:7700:7700"
@@ -144,7 +144,7 @@ services:
       - chronoverse
 
   kafka:
-    image: confluentinc/cp-kafka:7.6.7
+    image: confluentinc/cp-kafka:8.3.1
     hostname: kafka
     container_name: kafka
     ports:
@@ -205,7 +205,7 @@ services:
       - chronoverse
 
   init-kafka-topics:
-    image: confluentinc/cp-kafka:7.6.7
+    image: confluentinc/cp-kafka:8.3.1
     container_name: init-kafka-topics
     environment:
       KAFKA_BOOTSTRAP_SERVER: kafka:9094
@@ -312,7 +312,7 @@ services:
       - chronoverse
 
   lgtm:
-    image: grafana/otel-lgtm:0.11.10
+    image: grafana/otel-lgtm:0.37.0
     container_name: lgtm
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -330,7 +330,7 @@ services:
       - chronoverse
 
   docker-proxy:
-    image: haproxy:3.4-alpine
+    image: haproxy:3.4.7-alpine3.24
     container_name: docker-proxy
     user: root
     read_only: true
@@ -357,7 +357,7 @@ services:
   # Host firewall for the workload bridge, same as prod (rules are scoped to
   # the workload subnet only, so the shared dev daemon is otherwise untouched).
   workload-firewall:
-    image: alpine:3.24.1
+    image: alpine:3.24.2
     container_name: workload-firewall
     network_mode: host
     user: root
@@ -467,7 +467,7 @@ services:
       - chronoverse
 
   init-certs:
-    image: alpine:3.22.2
+    image: alpine:3.24.2
     container_name: init-certs
     volumes:
       - ./certs:/certs:rw

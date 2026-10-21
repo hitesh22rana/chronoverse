@@ -385,7 +385,8 @@ func (r *PartitionRunner) dispatchPartition(
 			zap.String("runner", r.name),
 			zap.String("topic", topic),
 			zap.Int32("partition", partition),
-			zap.Int("records", len(records)))
+			zap.Int("records", len(records)),
+		)
 		return nil
 	}
 

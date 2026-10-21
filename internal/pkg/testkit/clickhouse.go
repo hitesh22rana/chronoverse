@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	clickHouseImage    = "clickhouse/clickhouse-server:25.8.7.3"
+	clickHouseImage    = "clickhouse/clickhouse-server:26.9.23.15"
 	clickHouseUser     = "chronoverse-client"
 	clickHousePassword = "chronoverse"
 	clickHouseDatabase = "chronoverse"

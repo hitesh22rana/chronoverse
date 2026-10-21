@@ -10,6 +10,21 @@ The Kubernetes local overlay uses the same bootstrap idea through Jobs and a loc
 
 Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections. Kubernetes uses the same posture: data-store clients mount the generated or operator-provided client certificate, and PostgreSQL host connections require TLS plus a CA-verified client certificate.
 
+## Runtime certificate trust
+
+Go services verify certificates using the Go runtime with system roots or the
+configured private CA. The dashboard container and Node CI processes use
+`NODE_OPTIONS=--use-openssl-ca` with the operating system CA store. Preserve this
+option when adding other Node flags. `--use-system-ca` adds system roots to the
+bundled roots and does not provide the same system-only trust policy.
+
+Refresh the host CA store for Node commands running outside the project images;
+those processes do not inherit container settings. Rebuild images and restart
+processes after updating runtime or CA packages. Updating application packages
+alone does not refresh the runtime's certificate verifier. Keep private service
+CAs separate from public root-store maintenance and never disable TLS verification
+to work around trust errors.
+
 ## Service authorization
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.

@@ -46,10 +46,14 @@ func TestIntegrationAnalyticsReadIdentityErrors(t *testing.T) {
 		code    codes.Code
 	}{{"canceled", false, codes.Canceled}, {"expired", true, codes.DeadlineExceeded}} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			var (
+				ctx    context.Context
+				cancel context.CancelFunc
+			)
 			if tc.expired {
-				cancel()
 				ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
 			}
 			cancel()
 			if got, err := repo.GetUserAnalytics(ctx, userID); status.Code(err) != tc.code || got != nil {
@@ -259,13 +263,19 @@ func TestIntegrationAnalyticsReadNullableStoredKind(t *testing.T) {
 	repo := New(nil, pg)
 	userID := testkit.SeedUser(ctx, t, pg, uuid.NewString()+"@chronoverse.test")
 	workflowID := uuid.NewString()
-	// The analytics schema permits a null kind.
+	// The analytics schema permits a null kind; it reads as the empty kind.
 	if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count) VALUES($1,$2,NULL,1)`, userID, workflowID); err != nil {
 		t.Fatal(err)
 	}
 	got, err := repo.GetUserAnalytics(ctx, userID)
-	if got != nil || status.Code(err) != codes.Internal {
-		t.Fatalf("GetUserAnalytics(null kind) = %+v, %v; want nil, Internal", got, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.WorkflowKinds) != 1 || got.WorkflowKinds[0].Kind != "" {
+		t.Fatalf("null kind grouping = %+v", got.WorkflowKinds)
+	}
+	if len(got.TopWorkflows) != 1 || got.TopWorkflows[0].Kind != "" {
+		t.Fatalf("null kind top workflow = %+v", got.TopWorkflows)
 	}
 	if _, err = pg.Exec(ctx, `UPDATE analytics SET kind='HEARTBEAT' WHERE user_id=$1 AND workflow_id=$2`, userID, workflowID); err != nil {
 		t.Fatal(err)

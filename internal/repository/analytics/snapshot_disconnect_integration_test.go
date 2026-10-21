@@ -20,15 +20,23 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
+// snapshotBoundary selects where the proxy drops the connection: after
+// `selects` completed SELECTs, or after `rows` DataRows of the following SELECT.
+type snapshotBoundary struct {
+	selects int
+	rows    int
+}
+
 func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 	for _, tc := range []struct {
 		name, operation string
-		selects         int
+		boundary        snapshotBoundary
 	}{
-		{"aggregate", "failed to get user analytics", 0},
-		{"kinds", "failed to get workflow kind analytics", 1},
-		{"top workflows", "failed to get top workflow analytics", 2},
-		{"commit", "failed to commit user analytics snapshot", 3},
+		{"aggregate", "failed to get user analytics", snapshotBoundary{selects: 0}},
+		{"kinds", "failed to get workflow kind analytics", snapshotBoundary{selects: 1}},
+		{"kinds partial", "failed to collect workflow kind analytics", snapshotBoundary{selects: 1, rows: 1}},
+		{"top workflows", "failed to get top workflow analytics", snapshotBoundary{selects: 2}},
+		{"commit", "failed to commit user analytics snapshot", snapshotBoundary{selects: 3}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pg := testkit.Postgres(t)
@@ -43,7 +51,7 @@ func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			address, cut := snapshotDisconnectProxy(t, net.JoinHostPort(cfg.ConnConfig.Host, strconv.Itoa(int(cfg.ConnConfig.Port))), tc.selects)
+			address, cut := snapshotDisconnectProxy(t, net.JoinHostPort(cfg.ConnConfig.Host, strconv.Itoa(int(cfg.ConnConfig.Port))), tc.boundary)
 			host, portText, err := net.SplitHostPort(address)
 			if err != nil {
 				t.Fatal(err)
@@ -73,8 +81,8 @@ func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 	}
 }
 
-// Forward complete results before simulating a connection lost between statements.
-func snapshotDisconnectProxy(t *testing.T, upstream string, selects int) (address string, disconnected <-chan struct{}) {
+// Forward results up to the selected boundary before simulating a lost connection.
+func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBoundary) (address string, disconnected <-chan struct{}) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -116,7 +124,7 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, selects int) (addres
 				return
 			}
 		}()
-		if forwardSnapshotResponses(client, server, selects) {
+		if forwardSnapshotResponses(client, server, boundary) {
 			_ = listener.Close()
 			close(cut)
 		}
@@ -127,8 +135,8 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, selects int) (addres
 	return listener.Addr().String(), cut
 }
 
-func forwardSnapshotResponses(client io.Writer, server io.Reader, selects int) bool {
-	completed := 0
+func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snapshotBoundary) bool {
+	completed, rows := 0, 0
 	cutNextReady := false
 	for {
 		var header [5]byte
@@ -143,15 +151,23 @@ func forwardSnapshotResponses(client io.Writer, server io.Reader, selects int) b
 		if _, err := io.ReadFull(server, body); err != nil {
 			return false
 		}
-		if header[0] == 'C' {
+		cutAfterRow := false
+		switch header[0] {
+		case 'C':
 			tag := strings.TrimSuffix(string(body), "\x00")
 			if tag == "BEGIN" {
-				completed = 0
-				cutNextReady = selects == 0
+				completed, rows = 0, 0
+				cutNextReady = boundary.selects == 0 && boundary.rows == 0
 			}
 			if strings.HasPrefix(tag, "SELECT ") {
 				completed++
-				cutNextReady = completed == selects
+				rows = 0
+				cutNextReady = completed == boundary.selects && boundary.rows == 0
+			}
+		case 'D':
+			if completed == boundary.selects && boundary.rows > 0 {
+				rows++
+				cutAfterRow = rows == boundary.rows
 			}
 		}
 		if _, err := client.Write(header[:]); err != nil {
@@ -159,6 +175,9 @@ func forwardSnapshotResponses(client io.Writer, server io.Reader, selects int) b
 		}
 		if _, err := client.Write(body); err != nil {
 			return false
+		}
+		if cutAfterRow {
+			return true
 		}
 		// ReadyForQuery(T) completes the previous statement within the snapshot.
 		if header[0] == 'Z' && string(body) == "T" && cutNextReady {

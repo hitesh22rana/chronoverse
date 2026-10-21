@@ -86,15 +86,15 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 
 	workflowKindsQuery := fmt.Sprintf(`
         SELECT
-            kind,
+            COALESCE(kind, '') AS kind,
             COUNT(*) AS total_workflows,
             COALESCE(SUM(jobs_count), 0) AS total_jobs,
             COALESCE(SUM(logs_count), 0) AS total_joblogs,
             COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
         FROM %s
         WHERE user_id = $1
-        GROUP BY kind
-        ORDER BY total_jobs DESC, kind ASC
+        GROUP BY COALESCE(kind, '')
+        ORDER BY total_jobs DESC, COALESCE(kind, '') ASC
     `, postgres.TableAnalytics)
 
 	workflowKindRows, err := tx.Query(ctx, workflowKindsQuery, userID)
@@ -114,7 +114,7 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
         SELECT
             a.workflow_id,
             COALESCE(w.name, 'Deleted workflow') AS workflow_name,
-            a.kind,
+            COALESCE(a.kind, '') AS kind,
             a.jobs_count AS total_jobs,
             a.logs_count AS total_joblogs,
             a.total_job_execution_duration

@@ -560,7 +560,7 @@ validate_key_permissions() {
     echo "note: skipping UID readability checks on non-Linux (mode checks above still apply)"
     return 0
   fi
-  if ! docker run --rm alpine:3.22 true >/dev/null 2>&1; then
+  if ! docker run --rm alpine:3.24.2 true >/dev/null 2>&1; then
     echo "note: docker unavailable for UID readability checks; skipping"
     return 0
   fi
@@ -568,7 +568,7 @@ validate_key_permissions() {
     # $1 = uid:gid, $2... = paths relative to certs/
     id="$1"; shift
     for rel in "$@"; do
-      if ! docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.22 test -r "/certs/$rel" >/dev/null 2>&1; then
+      if ! docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.24.2 test -r "/certs/$rel" >/dev/null 2>&1; then
         echo "key permission smoke: $id cannot read $rel" >&2
         exit 1
       fi
@@ -577,7 +577,7 @@ validate_key_permissions() {
   check_cannot_read() {
     id="$1"; shift
     for rel in "$@"; do
-      if docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.22 test -r "/certs/$rel" >/dev/null 2>&1; then
+      if docker run --rm -u "$id" -v "$root_dir/certs:/certs:ro" alpine:3.24.2 test -r "/certs/$rel" >/dev/null 2>&1; then
         echo "key permission smoke: $id can read $rel (should be denied)" >&2
         exit 1
       fi

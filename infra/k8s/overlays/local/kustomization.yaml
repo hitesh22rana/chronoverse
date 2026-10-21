@@ -103,7 +103,7 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /certs/postgres/postgres.crt ] && [ -f /certs/postgres/postgres.key ]; do echo waiting for local postgres certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
@@ -134,7 +134,7 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ] && [ -f /certs/clients/client.key ] && [ -f /trusted.json ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
@@ -286,7 +286,7 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
@@ -1678,7 +1678,7 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /trusted.json ] && [ -f /certs/ca/ca.crt ] && [ -f /certs/clients/client.crt ]; do echo waiting for local certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true
@@ -1700,7 +1700,7 @@ patches:
         # and can wait for both the TCP port and the chronoverse_app role
         # (the latter is created by init-postgres-app-role, which runs in
         # parallel and is required for the migration connection to succeed).
-        image: postgres:18.0-alpine3.22
+        image: postgres:18.6-alpine3.24
         command:
         - sh
         - -ec
@@ -1770,7 +1770,7 @@ patches:
       path: /spec/template/spec/initContainers
       value:
       - name: wait-for-kafka-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ] && [ -f /etc/kafka/secrets/keystore_creds.txt ] && [ -f /etc/kafka/secrets/truststore_creds.txt ] && [ -f /etc/kafka/secrets/key_creds.txt ]; do echo waiting for kafka certificates; sleep 2; done"]
         securityContext:
           runAsNonRoot: true

@@ -22,7 +22,7 @@ spec:
         fsGroup: 999
       initContainers:
       - name: prepare-postgres-tls
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -64,7 +64,7 @@ spec:
           mountPath: /postgres-config
       containers:
       - name: postgres
-        image: postgres:18.0-alpine3.22
+        image: postgres:18.6-alpine3.24
         imagePullPolicy: IfNotPresent
         args:
         - postgres
@@ -162,7 +162,7 @@ spec:
       automountServiceAccountToken: false
       initContainers:
       - name: wait-for-redis-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -185,7 +185,7 @@ spec:
           readOnly: true
       containers:
       - name: redis
-        image: redis:8.4-alpine
+        image: redis:8.10.2-alpine3.23
         imagePullPolicy: IfNotPresent
         args:
         - redis-server
@@ -278,7 +278,7 @@ spec:
       automountServiceAccountToken: false
       initContainers:
       - name: prepare-clickhouse-tls
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -376,7 +376,7 @@ spec:
           mountPath: /clickhouse-client
       containers:
       - name: clickhouse
-        image: clickhouse/clickhouse-server:25.11-alpine
+        image: clickhouse/clickhouse-server:26.9.23.15-alpine
         imagePullPolicy: IfNotPresent
         ports:
         - name: clickhouse
@@ -490,7 +490,7 @@ spec:
       hostname: kafka
       initContainers:
       - name: prepare-kafka-storage
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "mkdir -p /var/lib/kafka/data && chown -R 1000:1000 /var/lib/kafka/data"]
         securityContext:
           runAsUser: 0
@@ -503,7 +503,7 @@ spec:
         - name: kafka-storage
           mountPath: /var/lib/kafka/data
       - name: wait-for-kafka-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         command: ["sh", "-c", "until [ -f /etc/kafka/secrets/kafka.keystore.jks ] && [ -f /etc/kafka/secrets/kafka.truststore.jks ] && [ -f /etc/kafka/secrets/keystore_creds.txt ] && [ -f /etc/kafka/secrets/truststore_creds.txt ] && [ -f /etc/kafka/secrets/key_creds.txt ]; do echo waiting for kafka certificates; sleep 2; done"]
         volumeMounts:
         - name: kafka-secrets-storage
@@ -512,7 +512,7 @@ spec:
           readOnly: true
       containers:
       - name: kafka
-        image: confluentinc/cp-kafka:7.6.7
+        image: confluentinc/cp-kafka:8.3.1
         imagePullPolicy: IfNotPresent
         ports:
         - name: kafka
@@ -630,7 +630,7 @@ spec:
       automountServiceAccountToken: false
       initContainers:
       - name: wait-for-meilisearch-certs
-        image: alpine:3.22.2
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -653,7 +653,7 @@ spec:
           readOnly: true
       containers:
       - name: meilisearch
-        image: getmeili/meilisearch:v1.45.2
+        image: getmeili/meilisearch:v1.55.0
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
@@ -739,7 +739,7 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: lgtm
-        image: grafana/otel-lgtm:0.11.10
+        image: grafana/otel-lgtm:0.37.0
         imagePullPolicy: IfNotPresent
         ports:
         - name: grafana

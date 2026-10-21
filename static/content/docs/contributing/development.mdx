@@ -47,6 +47,19 @@ Run Go lint as `./.bin/golangci-lint`, which is what `make lint` invokes. `make 
 
 Dashboard route modules should remain thin. Keep domain components, hooks, and API response types under `dashboard/src/features/<domain>`; reserve `dashboard/src/components/ui` for reusable shadcn primitives and `dashboard/src/lib` for infrastructure shared by multiple features.
 
+## Dependency updates
+
+Keep Go modules and tools, both npm lockfiles, Docker base images, Compose and
+Kubernetes service images, integration-test fixtures, and CI toolchains aligned.
+Use stable versions supported by their plugins and framework dependencies;
+updating only a direct package can leave an unsupported toolchain. Regenerate
+protobuf output and run the existing checks after changing its generators.
+
+Review certificate verification in the runtime and operating system as well as
+SDK dependencies. Rebuild images to pick up refreshed CA packages and restart
+processes to activate them. See [Certificates and security](/docs/deployment/security)
+for the Node trust-store policy.
+
 ## Kubernetes changes
 
 Render and client-dry-run both overlays after changing `infra/k8s`, `scripts/k8s`, deployment configuration, image arguments, ports, probes, or Secrets:

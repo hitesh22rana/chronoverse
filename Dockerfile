@@ -1,4 +1,7 @@
-FROM golang:1.26.5 AS build
+FROM golang:1.27.3-alpine3.24 AS build
+
+RUN apk --no-cache upgrade ca-certificates-bundle && \
+    apk --no-cache add "ca-certificates>=20261020-r0"
 
 ARG VERSION
 ARG NAME
@@ -27,7 +30,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -X '${PKG_PATH}.authPublicKeyPath=${PUBLIC_KEY_PATH}'" \
     -o /go/bin/service ./cmd/${NAME}
 
-FROM alpine:3.24.1
+FROM alpine:3.24.2
 
 # Keep this identity stable: Kubernetes fsGroup and Compose Docker-proxy role
 # directories grant private-key access only to app UID/GID 100:101.
@@ -42,8 +45,9 @@ RUN mkdir -p /certs && \
 COPY --from=build --chown=app:app /go/bin/service /bin/service
 RUN chmod 500 /bin/service
 
-RUN apk --no-cache add ca-certificates tzdata wget && \
-    GRPC_HEALTH_PROBE_VERSION=v0.4.53 && \
+RUN apk --no-cache upgrade ca-certificates-bundle && \
+    apk --no-cache add "ca-certificates>=20261020-r0" tzdata wget && \
+    GRPC_HEALTH_PROBE_VERSION=v0.4.60 && \
     ARCH=$(uname -m) && \
     case ${ARCH} in \
     x86_64) ARCH="amd64" ;; \

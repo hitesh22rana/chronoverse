@@ -260,7 +260,8 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 				w.Header().Set("Allow", "GET, HEAD, POST")
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
-		})
+		},
+	)
 	router.HandleFunc(
 		"/workflows/{workflow_id}",
 		func(w http.ResponseWriter, r *http.Request) {

@@ -21,7 +21,7 @@ import (
 func TestIntegrationDeleteByPattern(t *testing.T) {
 	requirePatternDocker(t)
 	ctx := t.Context()
-	container, err := tcredis.Run(ctx, "redis:8.2.1-alpine")
+	container, err := tcredis.Run(ctx, "redis:8.10.2-alpine3.23")
 	if err != nil {
 		t.Fatalf("start Redis: %v", err)
 	}

@@ -993,7 +993,7 @@ func TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons(t *testing.T) {
 
 	published := make(chan []error, 1)
 	go func() {
-		for range logs { //nolint:revive // Draining without recording is the point: prove closure.
+		for range logs { // Drain to verify channel closure.
 		}
 		var collected []error
 		for streamErr := range errs {
@@ -1102,7 +1102,7 @@ func TestExecuteReportsWaitFailureAsTerminalError(t *testing.T) {
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
-		for range logs { //nolint:revive // Draining without recording is the point: prove closure.
+		for range logs { // Drain to verify channel closure.
 		}
 	}()
 
@@ -1149,7 +1149,7 @@ func TestExecutePublishesNothingWhenContainerIsGone(t *testing.T) {
 	drained := make(chan struct{})
 	go func() {
 		defer close(drained)
-		for range logs { //nolint:revive // Draining without recording is the point: prove closure.
+		for range logs { // Drain to verify channel closure.
 		}
 	}()
 

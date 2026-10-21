@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	postgresImage = "postgres:18.0-alpine3.22"
+	postgresImage = "postgres:18.6-alpine3.24"
 	postgresUser  = "primary"
 	postgresPass  = "chronoverse"
 	postgresDB    = "chronoverse"

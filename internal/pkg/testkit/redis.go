@@ -10,7 +10,7 @@ import (
 	redispkg "github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
-const redisImage = "redis:8.2.1-alpine"
+const redisImage = "redis:8.10.2-alpine3.23"
 
 // startRedis starts a Redis container and returns a ready-to-use store.
 func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {

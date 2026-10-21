@@ -29,7 +29,7 @@ curl -X POST http://localhost:8080/workflows \
   -b cookies.txt \
   -d '{
     "name": "hello-chronoverse",
-    "payload": "{\"image\":\"alpine:3.22.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
+    "payload": "{\"image\":\"alpine:3.24.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
     "kind": "CONTAINER",
     "interval": 60,
     "max_consecutive_job_failures_allowed": 3,

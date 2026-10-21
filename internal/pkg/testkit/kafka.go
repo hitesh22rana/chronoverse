@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	kafkaImage = "confluentinc/cp-kafka:7.6.7"
+	kafkaImage = "confluentinc/cp-kafka:8.3.1"
 	// kafkaClusterID must be a base64-encoded UUID (exactly 16 decoded bytes,
 	// 22 unpadded base64 characters); the Confluent entrypoint refuses to
 	// format KRaft storage with anything else and exits with code 1.

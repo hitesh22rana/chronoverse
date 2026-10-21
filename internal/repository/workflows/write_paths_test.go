@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	testImageRef    = "alpine:3.22.2"
+	testImageRef    = "alpine:3.24.2"
 	testImageDigest = "sha256:3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b"
 	testWorkflowID  = "550e8400-e29b-41d4-a716-446655440000"
 	testUserID      = "9b2d4f1e-8a3c-4d5b-9e7f-0a1b2c3d4e5f"

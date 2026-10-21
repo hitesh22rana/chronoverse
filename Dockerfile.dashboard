@@ -1,10 +1,20 @@
-FROM node:26-alpine3.24 AS deps
+FROM node:26.12.0-alpine3.24 AS base
+
+RUN apk --no-cache upgrade ca-certificates-bundle && \
+    apk --no-cache add "ca-certificates>=20261020-r0"
+
+# Use the patched system roots instead of Node's bundled CA snapshot.
+ENV NODE_OPTIONS=--use-openssl-ca
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV SSL_CERT_DIR=/etc/ssl/certs
+
+FROM base AS deps
 WORKDIR /app
 
 COPY dashboard/package.json dashboard/package-lock.json* ./
 RUN npm ci
 
-FROM node:26-alpine3.24 AS builder
+FROM base AS builder
 WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL
@@ -18,7 +28,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN npm run build
 
-FROM node:26-alpine3.24 AS runner
+FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

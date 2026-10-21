@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	testRedisImage = "redis:8.2.1-alpine"
+	testRedisImage = "redis:8.10.2-alpine3.23"
 	// testSessionUserID is the identity every seeded session maps to.
 	testSessionUserID = "user-42"
 	// testContainerStartTimeout bounds the container start, including the

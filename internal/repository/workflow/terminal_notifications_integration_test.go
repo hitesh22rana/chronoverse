@@ -443,7 +443,7 @@ func durableTerminalSeed(t *testing.T, maxConsecutiveFailures int32) *durableTer
 	workflowsRepo := workflows.New(&workflows.Config{FetchLimit: 20}, pg)
 	name := "durable-terminal-" + tag
 	created, err := workflowsRepo.CreateWorkflow(
-		ctx, userID, name, `{"image":"alpine:3.22.2"}`,
+		ctx, userID, name, `{"image":"alpine:3.24.2"}`,
 		workflowsmodel.KindContainer.ToString(), 60, maxConsecutiveFailures, true,
 		"durable-terminal-create-"+tag,
 	)
@@ -460,7 +460,7 @@ func durableTerminalSeed(t *testing.T, maxConsecutiveFailures int32) *durableTer
 		digest string
 	}{
 		{status: workflowsmodel.WorkflowBuildStatusStarted.ToString()},
-		{status: workflowsmodel.WorkflowBuildStatusCompleted.ToString(), ref: "alpine:3.22.2", digest: "sha256:durable-terminal"},
+		{status: workflowsmodel.WorkflowBuildStatusCompleted.ToString(), ref: "alpine:3.24.2", digest: "sha256:durable-terminal"},
 	} {
 		if buildErr := workflowsRepo.UpdateWorkflowBuildStatus(ctx, created.ID, userID, step.status, created.Generation, step.ref, step.digest); buildErr != nil {
 			t.Fatalf("UpdateWorkflowBuildStatus(%s): %v", step.status, buildErr)

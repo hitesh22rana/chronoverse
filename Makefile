@@ -111,7 +111,7 @@ k8s/dry-run/production:
 .PHONY: tools
 tools:
 	@mkdir -p ${GO_BIN}
-	@GOBIN=${GO_BIN} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+	@GOBIN=${GO_BIN} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 	@grep _ tools.go | awk -F'"' '{print $$2}' | while read tool; do \
 		version=latest; \
 		if [ "$$tool" = "google.golang.org/protobuf/cmd/protoc-gen-go" ]; then version=${PROTOC_GEN_GO_VERSION}; fi; \

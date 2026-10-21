@@ -29,6 +29,11 @@ existing `npm test` gate plus the LCOV report. The `coverage` job needs `test`,
 `integration`, and `dashboard`; it runs the script's own tests, downloads their three
 artifacts, and scores the profiles without a Go or Node toolchain.
 
+The integration target defaults to one package binary at a time to prevent
+concurrent startup against the shared Testcontainers/Ryuk reaper. It still runs
+every selected package with race detection and fresh execution. Unit package
+parallelism is unchanged.
+
 Both Go jobs must use the same `-covermode`: the Makefile defaults `COVERMODE` to `atomic`
 because the race detector needs atomic counters, and summing atomic hit counts is what the
 merge step defines. Overriding it is possible, but the merge refuses profiles that disagree,

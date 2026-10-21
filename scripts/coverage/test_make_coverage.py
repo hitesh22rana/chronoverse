@@ -129,12 +129,23 @@ class MakeCoverageTests(unittest.TestCase):
         self.assertIn("-run", tokens)
         self.assertEqual(tokens[tokens.index("-run") + 1], "TestIntegration")
         self.assertNotIn("-short", tokens)
+        self.assertIn("-exec", tokens)
+        launcher = shlex.split(tokens[tokens.index("-exec") + 1])
+        self.assertEqual(launcher[0], "python3")
+        self.assertEqual(Path(launcher[1]), self.root / "scripts/test/integration_exec.py")
         for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
             self.assertIn(flag, command)
         for package in self.PACKAGES:
             self.assertIn(package, command)
         unit = self.run_make("test/short")
         self.assertNotIn("-p", self.go_test_command(unit).split())
+
+    def test_integration_parallelism_can_be_bounded_by_the_caller(self):
+        result = self.run_make("test/integration", INTEGRATION_PARALLELISM="2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tokens = shlex.split(self.go_test_command(result))
+        self.assertEqual(tokens[tokens.index("-p") + 1], "2")
+        self.assertIn("-exec", tokens)
 
     def test_every_required_tree_must_resolve_a_package(self):
         # go list exits 0 and only warns when a pattern matches nothing, so a

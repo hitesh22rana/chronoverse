@@ -14,9 +14,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	collectorlog "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectormetric "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
@@ -135,13 +137,16 @@ func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
 	t.Cleanup(shutdown)
 	require.NoError(t, ctx.Err())
 	require.Equal(t, "test-service", Info().GetName())
-	require.NotNil(t, loggerpkg.FromContext(ctx))
+	logger := loggerpkg.FromContext(ctx)
+	// Stdout starts at Info, so Debug checks only the OTLP logging core.
+	require.True(t, logger.Core().Enabled(zapcore.DebugLevel))
 	_, span := otel.Tracer("service-test").Start(ctx, "flush-on-shutdown")
+	require.True(t, span.IsRecording())
 	span.End()
 	counter, err := otel.Meter("service-test").Int64Counter("shutdown_test_calls")
 	require.NoError(t, err)
 	counter.Add(ctx, 1)
-	loggerpkg.FromContext(ctx).Info("flush-on-shutdown")
+	logger.Info("flush-on-shutdown")
 	var callers sync.WaitGroup
 	for range 4 {
 		callers.Go(shutdown)
@@ -149,6 +154,13 @@ func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
 	callers.Wait()
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 	shutdown()
+	_, span = otel.Tracer("service-test").Start(t.Context(), "after-shutdown")
+	defer span.End()
+	require.False(t, span.IsRecording(), "trace provider must stop recording after shutdown")
+	meterProvider, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+	require.True(t, ok)
+	require.ErrorIs(t, meterProvider.ForceFlush(t.Context()), sdkmetric.ErrReaderShutdown)
+	require.False(t, logger.Core().Enabled(zapcore.DebugLevel), "log provider must stop accepting records after shutdown")
 	collector.mu.Lock()
 	defer collector.mu.Unlock()
 	require.Positive(t, collector.logs)

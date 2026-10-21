@@ -29,10 +29,12 @@ existing `npm test` gate plus the LCOV report. The `coverage` job needs `test`,
 `integration`, and `dashboard`; it runs the script's own tests, downloads their three
 artifacts, and scores the profiles without a Go or Node toolchain.
 
-The integration target defaults to one package binary at a time to prevent
-concurrent startup against the shared Testcontainers/Ryuk reaper. It still runs
-every selected package with race detection and fresh execution. Unit package
-parallelism is unchanged.
+The integration launcher gives each package binary its own Testcontainers/Ryuk
+session before the binary starts, so parallel packages do not reuse the same
+reaper. Local runs default to one package at a time; CI uses two. Override
+`INTEGRATION_PARALLELISM` to select a bound suitable for the available Docker
+CPU and memory. Python is required for the launcher. Every selected package still
+runs with race detection and fresh execution; unit package parallelism is unchanged.
 
 Both Go jobs must use the same `-covermode`: the Makefile defaults `COVERMODE` to `atomic`
 because the race detector needs atomic counters, and summing atomic hit counts is what the

@@ -97,12 +97,12 @@ jobs:
 
   integration:
     name: Integration tests (Docker)
+    env:
+      INTEGRATION_PARALLELISM: "2"
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    # Serialized package binaries take ~15m; one stalled package can still consume
-    # its 20m Go timeout after the rest. Keep this above normal runtime plus one
-    # package timeout so a stall fails with annotations, and cap image pulls too.
+    # Bound the whole job, including pulls and a possible 20m package timeout.
     timeout-minutes: 40
     steps:
       - name: Check out code
@@ -128,10 +128,13 @@ jobs:
       - name: Run integration tests
         shell: bash
         run: |
+          started=$SECONDS
           mkdir -p target
           if make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out 2>&1 | tee target/integration-tests.log; then
+            echo "Integration tests: $((SECONDS - started))s; package parallelism: $INTEGRATION_PARALLELISM." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          echo "Integration tests failed after $((SECONDS - started))s; package parallelism: $INTEGRATION_PARALLELISM." >> "$GITHUB_STEP_SUMMARY"
           python - <<'PYTHON'
           import re
           from pathlib import Path

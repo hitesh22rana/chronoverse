@@ -88,9 +88,12 @@ class MakeCoverageTests(unittest.TestCase):
         # Each run is one make process, so start its call log empty and let
         # discoveries() report only what this run did.
         self.log.write_text("", encoding="utf-8")
+        env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
+        # The defaults under test must come from the Makefile, not the caller's shell.
+        env.pop("INTEGRATION_PARALLELISM", None)
+        env.update(fake)
         return subprocess.run(
-            args, cwd=self.root, text=True, capture_output=True,
-            env={**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"], **fake},
+            args, cwd=self.root, text=True, capture_output=True, env=env,
         )
 
     def go_test_command(self, result) -> str:
@@ -118,14 +121,16 @@ class MakeCoverageTests(unittest.TestCase):
     def test_integration_serializes_packages_without_weakening_test_flags(self):
         result = self.run_make("test/integration")
         self.assertEqual(result.returncode, 0, result.stderr)
-        command = next(line for line in result.stdout.splitlines() if line.startswith("go test "))
-        self.assertIn("-p 1", command)
+        command = self.go_test_command(result)
+        tokens = command.split()
+        self.assertIn("-p", tokens)
+        self.assertEqual(tokens[tokens.index("-p") + 1], "1")
         for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
             self.assertIn(flag, command)
         for package in self.PACKAGES:
             self.assertIn(package, command)
         unit = self.run_make("test/short")
-        self.assertNotIn("-p 1", unit.stdout)
+        self.assertNotIn("-p", self.go_test_command(unit).split())
 
     def test_every_required_tree_must_resolve_a_package(self):
         # go list exits 0 and only warns when a pattern matches nothing, so a

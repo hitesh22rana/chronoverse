@@ -25,6 +25,7 @@ import (
 type lifecycleCollector struct {
 	mu                    sync.Mutex
 	logs, metrics, traces int
+	metricNames           map[string]struct{}
 }
 
 // The services have the same Export name, so each adapter delegates to the collector.
@@ -45,10 +46,17 @@ type lifecycleMetricCollector struct {
 	collector *lifecycleCollector
 }
 
-func (c lifecycleMetricCollector) Export(context.Context, *collectormetric.ExportMetricsServiceRequest) (*collectormetric.ExportMetricsServiceResponse, error) {
+func (c lifecycleMetricCollector) Export(_ context.Context, req *collectormetric.ExportMetricsServiceRequest) (*collectormetric.ExportMetricsServiceResponse, error) {
 	c.collector.mu.Lock()
 	defer c.collector.mu.Unlock()
 	c.collector.metrics++
+	for _, resourceMetrics := range req.GetResourceMetrics() {
+		for _, scopeMetrics := range resourceMetrics.GetScopeMetrics() {
+			for _, metric := range scopeMetrics.GetMetrics() {
+				c.collector.metricNames[metric.GetName()] = struct{}{}
+			}
+		}
+	}
 	return &collectormetric.ExportMetricsServiceResponse{}, nil
 }
 
@@ -98,7 +106,7 @@ func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
 	restoreServiceMetadata(t)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	collector := &lifecycleCollector{}
+	collector := &lifecycleCollector{metricNames: make(map[string]struct{})}
 	server := grpc.NewServer()
 	collectorlog.RegisterLogsServiceServer(server, lifecycleLogCollector{collector: collector})
 	collectormetric.RegisterMetricsServiceServer(server, lifecycleMetricCollector{collector: collector})
@@ -146,6 +154,7 @@ func TestInitFlushesProvidersAndCancelsOnce(t *testing.T) {
 	require.Positive(t, collector.logs)
 	require.Positive(t, collector.metrics)
 	require.Positive(t, collector.traces)
+	require.Contains(t, collector.metricNames, "shutdown_test_calls")
 }
 
 func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
@@ -157,7 +166,6 @@ func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
 		t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")
 		operation := "failed to create resource"
-		cause := "missing value"
 		if stage == "resource" {
 			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "missing-value")
 		} else {
@@ -165,15 +173,14 @@ func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_"+strings.ToUpper(stage)+"_ENDPOINT", "http://[fe80::1%25eth0]:4317")
 			signal := map[string]string{"TRACES": "trace", "METRICS": "metric", "LOGS": "log"}[strings.ToUpper(stage)]
 			operation = "failed to create OTLP " + signal + " exporter"
-			cause = "invalid URL escape"
 		}
 		var got any
 		func() {
 			defer func() { got = recover() }()
 			Init()
 		}()
+		// Assert only the svc-level operation: the library cause is not part of this package's contract.
 		require.Contains(t, fmt.Sprint(got), operation)
-		require.Contains(t, fmt.Sprint(got), cause)
 		return
 	}
 	for _, stage := range []string{"resource", "traces", "metrics", "logs"} {

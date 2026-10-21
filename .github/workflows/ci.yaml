@@ -100,9 +100,10 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    # Caps a stalled container or image-pull step; the Go-level timeout only
-    # bounds the tests themselves (-timeout=20m), not the job.
-    timeout-minutes: 30
+    # Serialized package binaries take ~15m; one stalled package can still consume
+    # its 20m Go timeout after the rest. Keep this above normal runtime plus one
+    # package timeout so a stall fails with annotations, and cap image pulls too.
+    timeout-minutes: 40
     steps:
       - name: Check out code
         uses: actions/checkout@v7.0.1

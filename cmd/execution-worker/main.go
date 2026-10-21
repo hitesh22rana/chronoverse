@@ -228,6 +228,9 @@ func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.Resour
 	if memoryBytes < 0 {
 		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
 	}
+	if math.IsNaN(cfg.WorkloadCPUs) || math.IsInf(cfg.WorkloadCPUs, 0) {
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be finite")
+	}
 	if cfg.WorkloadCPUs < 0 {
 		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
 	}
@@ -235,9 +238,18 @@ func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.Resour
 		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
 	}
 
+	nanoCPUs := math.Round(cfg.WorkloadCPUs * 1e9)
+	if nanoCPUs >= float64(math.MaxInt64) {
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: exceeds supported nanocpu range")
+	}
+
+	if cfg.WorkloadCPUs > 0 && nanoCPUs == 0 {
+		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: positive limits must round to at least one nanocpu")
+	}
+
 	return container.ResourceLimits{
 		MemoryBytes: memoryBytes,
-		NanoCPUs:    int64(math.Round(cfg.WorkloadCPUs * 1e9)),
+		NanoCPUs:    int64(nanoCPUs),
 		PidsLimit:   cfg.WorkloadPidsLimit,
 	}, nil
 }

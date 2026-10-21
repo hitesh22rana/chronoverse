@@ -267,6 +267,9 @@ def markdown(report: dict, limit: int = 50) -> str:
                   "it does not establish that coverage or CRAP did not regress.", ""]
         if report.get("baseline_reason"):
             lines += ["Baseline unavailable: " + escape(report["baseline_reason"]), ""]
+    if report["uncomparable"] and report["comparison"] != "unavailable":
+        lines += ["The check fails because changed-function identities could not be compared reliably. "
+                  "Resolve renamed or duplicate identities before merging.", ""]
     lines += ["| Inventory metric | Base | Tested |", "|---|---:|---:|"]
     for key, label in (("functions", "Functions"), ("measured", "Measured functions"),
                        ("missing", "Functions without coverage records"), ("crap_ge_30", "Measured functions with CRAP ≥ 30")):
@@ -316,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(markdown(report), encoding="utf-8")
     args.result.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    return 1 if report["regressions"] else 0
+    return 1 if report["gate"] in {"failed", "incomplete"} else 0
 
 
 if __name__ == "__main__":

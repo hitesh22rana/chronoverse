@@ -225,6 +225,34 @@ class InventoryAndCliTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         read_inventory(file)
 
+    def test_cli_fails_incomplete_comparison_and_preserves_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = self.row()
+            self.write_inventory(root/"base.csv", [row, row])
+            self.write_inventory(root/"head.csv", [row, row])
+            (root/"diff.patch").write_text(patch())
+            args = ["--head", str(root/"head.csv"), "--base", str(root/"base.csv"),
+                    "--diff", str(root/"diff.patch"), "--summary", str(root/"summary.md"),
+                    "--result", str(root/"result.json"), "--head-sha", "head",
+                    "--tested-sha", "merge"]
+            self.assertEqual(main(args), 1)
+            result = json.loads((root/"result.json").read_text())
+            self.assertEqual(result["gate"], "incomplete")
+            self.assertEqual(result["regressions"], 0)
+            self.assertGreater(result["uncomparable"], 0)
+            self.assertIn("Duplicate identity", (root/"summary.md").read_text())
+            old = self.row(); old["path"] = "old.go"
+            new = self.row(); new["path"] = "new.go"; new["coverage"] = "20"
+            self.write_inventory(root/"base.csv", [old])
+            self.write_inventory(root/"head.csv", [new])
+            (root/"diff.patch").write_text(
+                "diff --git a/old.go b/new.go\nrename from old.go\nrename to new.go\n"
+                "--- a/old.go\n+++ b/new.go\n@@ -12 +12 @@\n-old\n+new\n")
+            self.assertEqual(main(args), 1)
+            self.assertEqual(json.loads((root/"result.json").read_text())["gate"], "incomplete")
+            self.assertIn("check fails", (root/"summary.md").read_text())
+
     def test_cli_writes_artifacts_before_returning_regression_exit_code(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

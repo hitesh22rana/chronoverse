@@ -237,7 +237,9 @@ Changed production line ranges identify affected functions. Tests-only changes d
 not gate coverage changes in untouched functions; the complete inventory remains
 available for review. Unique path, namespace and name
 identities pair before/after results; ambiguous identities and renames are reported
-as uncomparable rather than guessed from line order. Deleted functions remain
+as uncomparable rather than guessed from line order. An incomplete comparison
+fails the check and requires resolving the ambiguous identities or rename before
+merging. Deleted functions remain
 visible without being treated as coverage losses.
 
 For comparable changed functions, CI fails when:
@@ -260,3 +262,8 @@ averages are not presented as overall statement coverage.
 
 A regression makes the `CRAP report` check fail. Repository rules must require
 that check to enforce it before merging; release-job dependencies are unchanged.
+
+Comment publication is best-effort: GitHub API failures cannot turn a successful
+comparison into a failed gate. The job summary and artifact retain the results.
+New PR runs cancel older runs for that PR; main-branch reports use separate
+concurrency groups per commit so later pushes do not cancel baseline collection.

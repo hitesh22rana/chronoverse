@@ -199,8 +199,8 @@ jobs:
       actions: read
       pull-requests: write
     concurrency:
-      group: crap-report-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
+      group: crap-report-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -306,6 +306,7 @@ jobs:
           fi
 
       - name: Update PR report comment
+        continue-on-error: true
         if: ${{ always() && steps.summary.outcome == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ github.token }}

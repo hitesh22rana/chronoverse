@@ -103,7 +103,7 @@ jobs:
   integration:
     name: Integration tests (Docker)
     env:
-      INTEGRATION_PARALLELISM: "2"
+      INTEGRATION_PARALLELISM: "4"
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -133,6 +133,8 @@ jobs:
       - name: Run integration tests
         shell: bash
         run: |
+          cpus=$(getconf _NPROCESSORS_ONLN)
+          echo "::notice title=Integration runner capacity::logical CPUs: $cpus; package parallelism: $INTEGRATION_PARALLELISM"
           started=$SECONDS
           mkdir -p target
           if make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out 2>&1 | tee target/integration-tests.log; then

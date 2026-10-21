@@ -45,9 +45,6 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  experimental: {
-    viewTransition: true,
-  },
   typescript: {
     ignoreBuildErrors: true,
   },

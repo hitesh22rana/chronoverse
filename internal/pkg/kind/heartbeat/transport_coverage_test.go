@@ -274,13 +274,14 @@ var controlledDNSAnswers = map[string][][4]byte{
 
 // Sequential only: replaces net.DefaultResolver until cleanup.
 // Go defers parallel tests until sequential tests finish.
-func useControlledEndpointDNS(t *testing.T) {
+func useControlledEndpointDNS(t *testing.T) <-chan struct{} {
 	t.Helper()
 	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
+	lookupStarted := make(chan struct{}, 1)
 	go func() {
 		defer close(done)
 		buffer := make([]byte, 1500)
@@ -291,6 +292,14 @@ func useControlledEndpointDNS(t *testing.T) {
 			}
 			var message dnsmessage.Message
 			if message.Unpack(buffer[:n]) != nil {
+				continue
+			}
+			// Hold this lookup open so a DNS answer cannot race with cancellation.
+			if len(message.Questions) == 1 && message.Questions[0].Name.String() == "canceled.test." {
+				select {
+				case lookupStarted <- struct{}{}:
+				default:
+				}
 				continue
 			}
 			message.Header.Response = true
@@ -334,11 +343,12 @@ func useControlledEndpointDNS(t *testing.T) {
 		listener.Close()
 		<-done
 	})
+	return lookupStarted
 }
 
 // Stay sequential while replacing net.DefaultResolver.
 func TestResolveEndpointHostWithControlledDNS(t *testing.T) {
-	useControlledEndpointDNS(t)
+	lookupStarted := useControlledEndpointDNS(t)
 	for _, tc := range []struct {
 		host string
 		want []string
@@ -356,10 +366,26 @@ func TestResolveEndpointHostWithControlledDNS(t *testing.T) {
 			t.Fatalf("%s: addresses %v, error %v", host, addresses, e)
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := resolveEndpointHost(ctx, "canceled.test")
+		result <- err
+	}()
+	select {
+	case <-lookupStarted:
+	case <-time.After(fixtureTimeout):
+		t.Fatal("DNS lookup did not reach the controlled resolver")
+	}
 	cancel()
-	if _, e := resolveEndpointHost(ctx, "canceled.test"); !errors.Is(e, context.Canceled) || errors.Is(e, ErrDisallowedTarget) {
-		t.Fatalf("DNS cancellation error = %v", e)
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) || errors.Is(err, ErrDisallowedTarget) {
+			t.Fatalf("DNS cancellation error = %v", err)
+		}
+	case <-time.After(fixtureTimeout):
+		t.Fatal("cancellation did not stop the DNS lookup")
 	}
 }
 

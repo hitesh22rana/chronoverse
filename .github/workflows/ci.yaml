@@ -125,7 +125,25 @@ jobs:
       # Same -covermode=atomic as the unit job over the same package set, so the
       # two profiles merge instead of one masking the other.
       - name: Run integration tests
-        run: make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out
+        shell: bash
+        run: |
+          mkdir -p target
+          if make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out 2>&1 | tee target/integration-tests.log; then
+            exit 0
+          fi
+          python - <<'PYTHON'
+          import re
+          from pathlib import Path
+
+          lines = Path("target/integration-tests.log").read_text(errors="replace").splitlines()
+          failures = [i for i, line in enumerate(lines)
+                      if re.search(r"--- FAIL:|^FAIL\s|^panic:|^fatal error:|^# ", line)]
+          for i in (failures[:20] or [len(lines) - 1]):
+              excerpt = "\n".join(lines[max(0, i - 30):i + 7])[-4000:]
+              escaped = excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::error title=Integration test failure::" + escaped)
+          PYTHON
+          exit 1
 
       - name: Upload integration coverage profile
         uses: actions/upload-artifact@v7.0.2

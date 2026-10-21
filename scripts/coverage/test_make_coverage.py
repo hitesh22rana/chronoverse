@@ -115,6 +115,18 @@ class MakeCoverageTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("-coverpkg", result.stdout)
 
+    def test_integration_serializes_packages_without_weakening_test_flags(self):
+        result = self.run_make("test/integration")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = next(line for line in result.stdout.splitlines() if line.startswith("go test "))
+        self.assertIn("-p 1", command)
+        for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
+            self.assertIn(flag, command)
+        for package in self.PACKAGES:
+            self.assertIn(package, command)
+        unit = self.run_make("test/short")
+        self.assertNotIn("-p 1", unit.stdout)
+
     def test_every_required_tree_must_resolve_a_package(self):
         # go list exits 0 and only warns when a pattern matches nothing, so a
         # tree that resolves nothing is the case discovery has to catch itself.

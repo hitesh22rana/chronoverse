@@ -27,6 +27,38 @@ type snapshotBoundary struct {
 	rows    int
 }
 
+// snapshotProgress reports whether the current frame is the selected cut point.
+type snapshotProgress struct {
+	completed    int
+	rows         int
+	cutNextReady bool
+}
+
+func (p *snapshotProgress) observe(kind byte, body []byte, boundary snapshotBoundary) bool {
+	switch kind {
+	case 'C':
+		tag := strings.TrimSuffix(string(body), "\x00")
+		if tag == "BEGIN" {
+			p.completed, p.rows = 0, 0
+			p.cutNextReady = boundary.selects == 0 && boundary.rows == 0
+		}
+		if strings.HasPrefix(tag, "SELECT ") {
+			p.completed++
+			p.rows = 0
+			p.cutNextReady = p.completed == boundary.selects && boundary.rows == 0
+		}
+	case 'D':
+		if p.completed == boundary.selects && boundary.rows > 0 {
+			p.rows++
+			return p.rows == boundary.rows
+		}
+	case 'Z':
+		return p.cutNextReady && len(body) == 1 && body[0] == 'T'
+	}
+
+	return false
+}
+
 func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 	for _, tc := range []struct {
 		name, operation string
@@ -136,8 +168,7 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 }
 
 func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snapshotBoundary) bool {
-	completed, rows := 0, 0
-	cutNextReady := false
+	var progress snapshotProgress
 	for {
 		var header [5]byte
 		if _, err := io.ReadFull(server, header[:]); err != nil {
@@ -151,36 +182,14 @@ func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snaps
 		if _, err := io.ReadFull(server, body); err != nil {
 			return false
 		}
-		cutAfterRow := false
-		switch header[0] {
-		case 'C':
-			tag := strings.TrimSuffix(string(body), "\x00")
-			if tag == "BEGIN" {
-				completed, rows = 0, 0
-				cutNextReady = boundary.selects == 0 && boundary.rows == 0
-			}
-			if strings.HasPrefix(tag, "SELECT ") {
-				completed++
-				rows = 0
-				cutNextReady = completed == boundary.selects && boundary.rows == 0
-			}
-		case 'D':
-			if completed == boundary.selects && boundary.rows > 0 {
-				rows++
-				cutAfterRow = rows == boundary.rows
-			}
-		}
+		cut := progress.observe(header[0], body, boundary)
 		if _, err := client.Write(header[:]); err != nil {
 			return false
 		}
 		if _, err := client.Write(body); err != nil {
 			return false
 		}
-		if cutAfterRow {
-			return true
-		}
-		// ReadyForQuery(T) completes the previous statement within the snapshot.
-		if header[0] == 'Z' && string(body) == "T" && cutNextReady {
+		if cut {
 			return true
 		}
 	}

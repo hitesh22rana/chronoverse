@@ -113,6 +113,7 @@ func buildWithLock(ctx context.Context, client Client, locks LockStore, imageNam
 		return err
 	case err := <-renewalErrCh:
 		cancel()
+		//nolint:errcheck // Preserve the renewal failure after joining the canceled build.
 		<-buildErrCh
 		return err
 	}

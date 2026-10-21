@@ -271,7 +271,7 @@ infrastructure and each other while preserving internet egress:
   existing deployments must recreate the network once
   (`docker network rm chronoverse-workloads`, it is recreated on demand).
 - **Enforced firewall (prod).** The `workload-firewall` unit is plain
-  `alpine:3.24.1` plus a runtime `apk add` (no image to build or release; needs
+  `alpine:3.24.2` plus a runtime `apk add` (no image to build or release; needs
   registry access on (re)create, and any failure fails health checks loudly)
   and runs in the host network namespace, installing filtering in
   two chains:

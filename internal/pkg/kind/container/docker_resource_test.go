@@ -72,7 +72,7 @@ func TestDockerWorkflowExecuteAppliesResourceLimits(t *testing.T) {
 	}
 
 	//nolint:dogsled // Ignore returned values, we only care about the error and createCalled.
-	_, _, _, err = workflow.Execute(context.Background(), time.Second, "alpine:3.22.2", []string{"true"}, nil)
+	_, _, _, err = workflow.Execute(context.Background(), time.Second, "alpine:3.24.2", []string{"true"}, nil)
 	require.Error(t, err)
 	require.True(t, createCalled)
 }

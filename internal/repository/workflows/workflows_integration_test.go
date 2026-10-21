@@ -37,7 +37,7 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	idempotencyKey := "workflow-lifecycle-" + t.Name()
 
 	created, err := repo.CreateWorkflow(
-		ctx, userID, "nightly-backup", `{"image":"alpine:3.22.2"}`, "CONTAINER",
+		ctx, userID, "nightly-backup", `{"image":"alpine:3.24.2"}`, "CONTAINER",
 		3600, 3, true, idempotencyKey,
 	)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 
 	// Replaying the same idempotency key returns the same workflow.
 	replayed, err := repo.CreateWorkflow(
-		ctx, userID, "nightly-backup", `{"image":"alpine:3.22.2"}`, "CONTAINER",
+		ctx, userID, "nightly-backup", `{"image":"alpine:3.24.2"}`, "CONTAINER",
 		3600, 3, true, idempotencyKey,
 	)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	}
 
 	// UpdateWorkflow changes the payload and interval.
-	if updateErr := repo.UpdateWorkflow(ctx, created.ID, userID, "nightly-backup", `{"image":"alpine:3.22.2","tag":"v2"}`, 7200, 5, idempotencyKey); updateErr != nil {
+	if updateErr := repo.UpdateWorkflow(ctx, created.ID, userID, "nightly-backup", `{"image":"alpine:3.24.2","tag":"v2"}`, 7200, 5, idempotencyKey); updateErr != nil {
 		t.Fatalf("UpdateWorkflow: %v", updateErr)
 	}
 	updated, err := repo.GetWorkflow(ctx, created.ID, userID)
@@ -91,7 +91,7 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	if buildErr := repo.UpdateWorkflowBuildStatus(ctx, created.ID, userID, "STARTED", updated.Generation, "", ""); buildErr != nil {
 		t.Fatalf("UpdateWorkflowBuildStatus(STARTED): %v", buildErr)
 	}
-	if buildErr := repo.UpdateWorkflowBuildStatus(ctx, created.ID, userID, "COMPLETED", updated.Generation, "alpine:3.22.2", "sha256:abc123"); buildErr != nil {
+	if buildErr := repo.UpdateWorkflowBuildStatus(ctx, created.ID, userID, "COMPLETED", updated.Generation, "alpine:3.24.2", "sha256:abc123"); buildErr != nil {
 		t.Fatalf("UpdateWorkflowBuildStatus(COMPLETED): %v", buildErr)
 	}
 	built, err := repo.GetWorkflow(ctx, created.ID, userID)
@@ -101,8 +101,8 @@ func TestIntegrationWorkflowLifecycle(t *testing.T) {
 	if built.WorkflowBuildStatus != "COMPLETED" {
 		t.Fatalf("build_status = %q, want %q", built.WorkflowBuildStatus, "COMPLETED")
 	}
-	if built.ResolvedImageRef.String != "alpine:3.22.2" {
-		t.Fatalf("resolved_image_ref = %q, want %q", built.ResolvedImageRef.String, "alpine:3.22.2")
+	if built.ResolvedImageRef.String != "alpine:3.24.2" {
+		t.Fatalf("resolved_image_ref = %q, want %q", built.ResolvedImageRef.String, "alpine:3.24.2")
 	}
 
 	// Build status updates are gated on the generation.

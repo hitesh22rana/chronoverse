@@ -127,7 +127,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: docker-proxy
-        image: haproxy:3.4-alpine
+        image: haproxy:3.4.7-alpine3.24
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-ec"]
         args:
@@ -250,7 +250,7 @@ spec:
       - name: workload-firewall
         # Plain alpine, tools installed at boot (no image to build); the loop
         # re-applies and refreshes the registration gate marker.
-        image: alpine:3.24.1
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "-c", "while true; do /apply/apply.sh; sleep 60; done"]
         env:

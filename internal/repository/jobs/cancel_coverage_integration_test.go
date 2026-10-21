@@ -28,10 +28,10 @@ func TestIntegrationCancelJobFaultsRollback(t *testing.T) {
 		{name: "commit", table: "jobs", condition: "NEW.status = 'CANCELED'", message: "failed to commit cancel command", deferred: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
 			pg := testkit.Postgres(t)
 			repo := newTestRepository(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 			var jobID string
 			if tc.table == "runtime_nodes" {
 				jobID = seedClaimedJob(ctx, t, pg, repo).JobID

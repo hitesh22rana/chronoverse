@@ -71,7 +71,7 @@ spec:
           type: RuntimeDefault
       initContainers:
       - name: prepare-pgbouncer
-        image: edoburu/pgbouncer:v1.25.2-p0
+        image: edoburu/pgbouncer:v1.26.0-p0
         imagePullPolicy: IfNotPresent
         command:
         - sh
@@ -117,7 +117,7 @@ spec:
           mountPath: /runtime
       containers:
       - name: pgbouncer
-        image: edoburu/pgbouncer:v1.25.2-p0
+        image: edoburu/pgbouncer:v1.26.0-p0
         imagePullPolicy: IfNotPresent
         command: ["pgbouncer"]
         args: ["/etc/pgbouncer-runtime/pgbouncer.ini"]
@@ -254,7 +254,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: init-postgres-app-role
-        image: postgres:18.0-alpine3.22
+        image: postgres:18.6-alpine3.24
         imagePullPolicy: IfNotPresent
         command:
         - sh

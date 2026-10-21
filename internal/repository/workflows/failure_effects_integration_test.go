@@ -31,9 +31,9 @@ const (
 	// fixtureImage is the resolved image reference a completed CONTAINER build
 	// carries. Every fixture shares one payload and image so only the identities
 	// under assertion can explain a differing outcome.
-	fixtureImage = "alpine:3.22.2"
+	fixtureImage = "alpine:3.24.2"
 	// fixturePayload is the CONTAINER payload seeded into every fixture workflow.
-	fixturePayload = `{"image":"alpine:3.22.2"}`
+	fixturePayload = `{"image":"alpine:3.24.2"}`
 	// fixtureImageDigest is the resolved digest a completed CONTAINER build must carry.
 	fixtureImageDigest = "sha256:3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b"
 	// fixtureScheduleOffset is how far ahead fixture jobs are scheduled. It keeps

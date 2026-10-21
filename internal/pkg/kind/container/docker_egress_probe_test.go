@@ -40,7 +40,7 @@ func TestIntegrationWorkloadEgressDropsHostListener(t *testing.T) {
 		t.Skipf("no Docker daemon: %v", err)
 	}
 	require.NoError(t, w.ensureWorkloadNetwork(ctx))
-	require.NoError(t, w.Build(ctx, "alpine:3.22.2"))
+	require.NoError(t, w.Build(ctx, "alpine:3.24.2"))
 
 	gateway := firstSubnetIP(t, subnet)
 	ln, err := net.Listen("tcp", net.JoinHostPort(gateway, "0"))
@@ -65,7 +65,7 @@ func TestIntegrationWorkloadEgressDropsHostListener(t *testing.T) {
 
 	resp, err := w.Client.ContainerCreate(ctx,
 		&container.Config{
-			Image: "alpine:3.22.2",
+			Image: "alpine:3.24.2",
 			Cmd:   []string{"sh", "-c", fmt.Sprintf("echo probe | nc -w 5 %s %d", gateway, port)},
 		},
 		w.hostConfig(),

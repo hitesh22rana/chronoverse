@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	meilisearchImage = "getmeili/meilisearch:v1.45.2"
+	meilisearchImage = "getmeili/meilisearch:v1.55.0"
 	meilisearchKey   = "chronoverse-test-master-key"
 )
 

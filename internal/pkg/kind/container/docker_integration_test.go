@@ -50,7 +50,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 	}{
 		{
 			name:           "successful execution",
-			image:          "alpine:3.22.2",
+			image:          "alpine:3.24.2",
 			cmd:            []string{"/bin/sh", "-c", "echo 'Hello from Docker!' && sleep 5 && echo 'Goodbye from Docker!'"},
 			env:            nil,
 			timeout:        10 * time.Second,
@@ -60,7 +60,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		},
 		{
 			name:           "successful execution with environment variables",
-			image:          "alpine:3.22.2",
+			image:          "alpine:3.24.2",
 			cmd:            []string{"/bin/sh", "-c", "echo $MY_ENV_VAR1 && sleep 5 && echo $MY_ENV_VAR2"},
 			env:            []string{"MY_ENV_VAR1=Hello from Docker!", "MY_ENV_VAR2=Goodbye from Docker!"},
 			timeout:        10 * time.Second,
@@ -80,7 +80,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		},
 		{
 			name:           "error during execution (nonexistent command)",
-			image:          "alpine:3.22.2",
+			image:          "alpine:3.24.2",
 			cmd:            []string{"/bin/nonexistent"},
 			env:            nil,
 			timeout:        5 * time.Second,
@@ -90,7 +90,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		},
 		{
 			name:           "error failure during runtime",
-			image:          "alpine:3.22.2",
+			image:          "alpine:3.24.2",
 			cmd:            []string{"/bin/sh", "-c", "echo 'About to fail...' >&2 && sleep 2 && exit 1"},
 			env:            nil,
 			timeout:        5 * time.Second,
@@ -100,7 +100,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		},
 		{
 			name:           "error workflow timeout",
-			image:          "alpine:3.22.2",
+			image:          "alpine:3.24.2",
 			cmd:            []string{"/bin/sh", "-c", "sleep 5"},
 			env:            nil,
 			timeout:        2 * time.Second,
@@ -190,7 +190,7 @@ func cleanupDockerContainer(t *testing.T, workflow *container.DockerWorkflow, co
 // containers from local images without pulling.
 func ensureBaseImage(t *testing.T, workflow *container.DockerWorkflow) {
 	t.Helper()
-	require.NoError(t, workflow.Build(t.Context(), "alpine:3.22.2"))
+	require.NoError(t, workflow.Build(t.Context(), "alpine:3.24.2"))
 }
 
 func collect[T any](_ *testing.T, ch <-chan T) ([]T, error) {
@@ -270,10 +270,10 @@ func TestIntegrationDockerWorkflowImageExists(t *testing.T) {
 		workflow.Close()
 	})
 
-	err = workflow.Build(t.Context(), "alpine:3.22.2")
+	err = workflow.Build(t.Context(), "alpine:3.24.2")
 	require.NoError(t, err)
 
-	exists, err := workflow.ImageExists(t.Context(), "alpine:3.22.2")
+	exists, err := workflow.ImageExists(t.Context(), "alpine:3.24.2")
 	require.NoError(t, err)
 	assert.True(t, exists)
 
@@ -301,7 +301,7 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Run("successful termination", func(t *testing.T) {
 		t.Parallel()
 
-		containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, "alpine:3.22.2", []string{"sleep", "5"}, nil)
+		containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, "alpine:3.24.2", []string{"sleep", "5"}, nil)
 		cleanupDockerContainer(t, workflow, containerID)
 		require.NoError(t, err)
 		require.NotEmpty(t, containerID)

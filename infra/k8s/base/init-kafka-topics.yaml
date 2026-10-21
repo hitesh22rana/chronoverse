@@ -22,7 +22,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: init-kafka-topics
-        image: confluentinc/cp-kafka:7.6.7
+        image: confluentinc/cp-kafka:8.3.1
         imagePullPolicy: IfNotPresent
         env:
         - name: KAFKA_BOOTSTRAP_SERVER

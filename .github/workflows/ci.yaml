@@ -149,6 +149,28 @@ jobs:
           PYTHON
           exit 1
 
+      - name: Summarize integration package runtimes
+        if: ${{ always() }}
+        run: |
+          python - <<'PYTHON'
+          import html
+          import os
+          from pathlib import Path
+          import re
+
+          log = Path("target/integration-tests.log")
+          rows = re.findall(r"^(?:ok|FAIL)\s+(\S+)\s+(\d+(?:\.\d+)?)s(?:\s|$)", log.read_text(errors="replace") if log.exists() else "", re.MULTILINE)
+          slowest = sorted(rows, key=lambda row: float(row[1]), reverse=True)[:10]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("\n### Slowest integration packages\n\nPackage times include test setup and cleanup, but exclude compilation; concurrent durations overlap.\n\n| Package | Elapsed |\n|---|---:|\n")
+              for package, seconds in slowest:
+                  summary.write("| " + html.escape(package).replace("|", "\\|") + " | " + seconds + "s |\n")
+                  message = (package + ": " + seconds + "s").replace("%", "%25")
+                  print("::notice title=Integration package timing::" + message)
+              if not slowest:
+                  summary.write("\nNo completed package timings were available.\n")
+          PYTHON
+
       - name: Upload integration coverage profile
         uses: actions/upload-artifact@v7.0.2
         with:

@@ -16,6 +16,8 @@ runs:
       uses: actions/setup-go@v7.0.0
       with:
         go-version: ${{ inputs.go-version }}
+        # The explicit cache step below owns these paths.
+        cache: false
 
     - name: Cache Go modules
       uses: actions/cache@v6.1.0

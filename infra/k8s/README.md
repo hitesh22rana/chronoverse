@@ -3,6 +3,10 @@
 Chronoverse Kubernetes support is packaged with Kustomize and an operator-facing
 setup script.
 
+Local certificate Jobs use Alpine and install OpenSSL and, for Kafka stores,
+OpenJDK before generating keys. Their pods need access to the Alpine package
+repositories; Kafka broker images are not used as certificate-tool images.
+
 ## Prerequisites
 
 - `kubectl` configured for the intended cluster.

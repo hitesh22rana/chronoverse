@@ -26,7 +26,7 @@ spec:
           mountPath: /certs
       containers:
       - name: init-certs
-        image: confluentinc/cp-kafka:8.3.1
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 0
@@ -35,6 +35,7 @@ spec:
         - sh
         - -ec
         - |
+          apk add --no-cache openssl
           AUTH_ISSUERS="server users-service workflows-service jobs-service notifications-service analytics-service scheduling-worker workflow-worker execution-worker runtime-agent joblogs-processor analytics-processor outbox-relay"
           mkdir -p /certs/issuers
           for iss in $AUTH_ISSUERS; do
@@ -109,7 +110,7 @@ spec:
           mountPath: /certs
       containers:
       - name: init-service-certs
-        image: confluentinc/cp-kafka:8.3.1
+        image: alpine:3.24.2
         imagePullPolicy: IfNotPresent
         securityContext:
           runAsUser: 0
@@ -118,6 +119,7 @@ spec:
         - sh
         - -ec
         - |
+          apk add --no-cache openssl openjdk25-jre-headless
           mkdir -p /certs/ca /certs/clients
           services="postgres redis clickhouse kafka meilisearch users-service workflows-service jobs-service notifications-service analytics-service"
           for svc in $services; do

@@ -76,8 +76,8 @@ test/short: dependencies
 
 # Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
 # selecting every TestIntegration* test. Requires a running Docker daemon.
-# Package binaries share one Docker daemon and Testcontainers/Ryuk session.
-# Serialize their startup to avoid reaper reuse races across processes.
+# Give every package binary its own Ryuk session before Testcontainers initializes.
+# Keep local concurrency conservative; CI opts into bounded parallelism.
 # The explicit -timeout leaves headroom over Go's default 10m per-package
 # limit: the joblogs suite boots five containers plus sequential Eventually
 # windows.
@@ -85,7 +85,7 @@ test/short: dependencies
 test/integration: dependencies
 	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
-	@go test -p $(INTEGRATION_PARALLELISM) -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
+	@go test -p $(INTEGRATION_PARALLELISM) -race -v -count=1 -timeout=20m -exec '$(PYTHON) "$(abspath scripts/test/integration_exec.py)"' -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 .PHONY: k8s/setup
 k8s/setup:

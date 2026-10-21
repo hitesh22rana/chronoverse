@@ -18,7 +18,7 @@ The setup script prepares required Secrets and certificates before applying the 
 - Node.js `26.12.0` for both the static-site CI path and dashboard container builds
 - Buf matching the `buf-version` default in `.github/actions/setup-go-env/action.yaml` for protobuf generation
 - Docker for integration tests and container execution tests
-- Python matching the CRAP job in `.github/workflows/ci.yaml` when reproducing coverage reports
+- Python 3 for the integration-test launcher; match the CRAP job in `.github/workflows/ci.yaml` when reproducing coverage reports
 
 ```bash
 make tools

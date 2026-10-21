@@ -38,14 +38,14 @@ func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := svc.Build(ctx, "alpine:3.22.2"); err != nil {
+			if err := svc.Build(ctx, "alpine:3.24.2"); err != nil {
 				t.Errorf("Build: %v", err)
 			}
 		}()
 	}
 	wg.Wait()
 
-	if got := inner.MaxConcurrentBuilds("alpine:3.22.2"); got != 1 {
+	if got := inner.MaxConcurrentBuilds("alpine:3.24.2"); got != 1 {
 		t.Fatalf("max concurrent builds = %d, want 1 (lock did not serialize)", got)
 	}
 	if got := len(inner.CompletedBuilds()); got != 3 {
@@ -54,7 +54,7 @@ func TestIntegrationImagePullLockSerializesBuilds(t *testing.T) {
 
 	// The lock is released after the build; the next pull proceeds immediately.
 	before := time.Now()
-	if err := svc.Build(ctx, "alpine:3.22.2"); err != nil {
+	if err := svc.Build(ctx, "alpine:3.24.2"); err != nil {
 		t.Fatalf("Build after release: %v", err)
 	}
 	if elapsed := time.Since(before); elapsed > 2*time.Second {

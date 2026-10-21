@@ -131,8 +131,8 @@ The setup script prepares required Secrets and certificates before applying the 
 
 ## Development toolchain
 
-- Go `1.26.5`
-- Node.js 26 for both the static-site CI path and dashboard container builds
+- Go `1.27.3`
+- Node.js `26.12.0` for both the static-site CI path and dashboard container builds
 - Buf for protobuf generation
 - Docker for integration tests and container execution tests
 
@@ -195,7 +195,7 @@ curl -X POST http://localhost:8080/workflows \
   -b cookies.txt \
   -d '{
     "name": "hello-chronoverse",
-    "payload": "{\"image\":\"alpine:3.22.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
+    "payload": "{\"image\":\"alpine:3.24.2\",\"cmd\":[\"echo\",\"hello from chronoverse\"]}",
     "kind": "CONTAINER",
     "interval": 60,
     "max_consecutive_job_failures_allowed": 3,

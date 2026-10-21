@@ -3,6 +3,10 @@
 Chronoverse Kubernetes support is packaged with Kustomize and an operator-facing
 setup script.
 
+Local certificate Jobs use Alpine and install OpenSSL and, for Kafka stores,
+OpenJDK before generating keys. Their pods need access to the Alpine package
+repositories; Kafka broker images are not used as certificate-tool images.
+
 ## Prerequisites
 
 - `kubectl` configured for the intended cluster.
@@ -26,7 +30,7 @@ KEDA installation is:
 ```sh
 helm repo add kedacore https://kedacore.github.io/charts
 helm repo update
-helm upgrade --install keda kedacore/keda --version 2.20.2 --namespace keda --create-namespace
+helm upgrade --install keda kedacore/keda --version 2.21.0 --namespace keda --create-namespace
 kubectl label namespace keda chronoverse.io/keda-kafka-access=true --overwrite
 kubectl get crd scaledobjects.keda.sh
 kubectl get apiservice v1beta1.external.metrics.k8s.io

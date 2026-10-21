@@ -55,7 +55,7 @@ run_in_certs() {
   # Executes the script inside an alpine helper with /certs mounted rw, installing
   # openssl+jq on first use. Falls back to host sh when docker is not needed.
   if [ "$use_docker" -eq 1 ]; then
-    docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache openssl jq >/dev/null 2>&1; $1"
+    docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.24.2 sh -c "apk add --no-cache openssl jq >/dev/null 2>&1; $1"
   else
     sh -c "$1"
   fi
@@ -225,7 +225,7 @@ Next steps (verifier-first):
        jq --arg iss "$issuer" --arg pub "$issuer/auth.ed.pub" 'with_entries(select(.value.iss != \$iss or .value.pub == \$pub))' "$trusted" > "$trusted.tmp" && mv "$trusted.tmp" "$trusted" && chmod 444 "$trusted" && docker compose -f $compose_file up -d --no-deps --force-recreate $all_issuers
      (prunes all inline grace keys even after repeated rotations without intermediate prune; every auth service caches the bundle in Auth.New and must reload to drop old kids)
      When rotation used the helper container, the jq above may need the same helper:
-       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.22 sh -c "apk add --no-cache jq >/dev/null 2>&1; tmp=\\\$(mktemp /certs/issuers/tmp.XXXXXX); jq --arg iss \"$issuer\" --arg pub \"$issuer/auth.ed.pub\" 'with_entries(select(.value.iss != \\\$iss or .value.pub == \\\$pub))' /certs/issuers/trusted.json > \\\$tmp && mv \\\$tmp /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
+       docker run --rm -v "$root_dir/certs:/certs:rw" alpine:3.24.2 sh -c "apk add --no-cache jq >/dev/null 2>&1; tmp=\\\$(mktemp /certs/issuers/tmp.XXXXXX); jq --arg iss \"$issuer\" --arg pub \"$issuer/auth.ed.pub\" 'with_entries(select(.value.iss != \\\$iss or .value.pub == \\\$pub))' /certs/issuers/trusted.json > \\\$tmp && mv \\\$tmp /certs/issuers/trusted.json && chmod 444 /certs/issuers/trusted.json"
        docker compose -f $compose_file up -d --no-deps --force-recreate $all_issuers
 
 EOF

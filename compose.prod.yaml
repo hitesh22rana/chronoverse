@@ -59,7 +59,7 @@ x-limits:
 services:
   postgres:
     <<: *database-limits
-    image: postgres:18.0-alpine3.22
+    image: postgres:18.6-alpine3.24
     container_name: postgres
     environment:
       POSTGRES_USER: primary
@@ -94,7 +94,7 @@ services:
 
   clickhouse:
     <<: *database-limits
-    image: clickhouse:25.8.7.3
+    image: clickhouse/clickhouse-server:26.9.23.15
     container_name: clickhouse
     environment:
       CLICKHOUSE_USER: chronoverse-client
@@ -124,7 +124,7 @@ services:
 
   redis:
     <<: *database-limits
-    image: redis:8.2.1-alpine
+    image: redis:8.10.2-alpine3.23
     container_name: redis
     restart: on-failure
     volumes:
@@ -158,7 +158,7 @@ services:
       - chronoverse
 
   meilisearch:
-    image: getmeili/meilisearch:v1.45.2
+    image: getmeili/meilisearch:v1.55.0
     container_name: meilisearch
     restart: on-failure
     environment:
@@ -194,7 +194,7 @@ services:
 
   kafka:
     <<: *database-limits
-    image: confluentinc/cp-kafka:7.6.7
+    image: confluentinc/cp-kafka:8.3.1
     hostname: kafka
     container_name: kafka
     restart: on-failure
@@ -252,7 +252,7 @@ services:
       - chronoverse
 
   init-kafka-topics:
-    image: confluentinc/cp-kafka:7.6.7
+    image: confluentinc/cp-kafka:8.3.1
     container_name: init-kafka-topics
     environment:
       KAFKA_BOOTSTRAP_SERVER: kafka:9094
@@ -360,7 +360,7 @@ services:
       - chronoverse
 
   lgtm:
-    image: grafana/otel-lgtm:0.11.10
+    image: grafana/otel-lgtm:0.37.0
     container_name: lgtm
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -377,7 +377,7 @@ services:
 
   docker-proxy:
     <<: *services-limit
-    image: haproxy:3.4-alpine
+    image: haproxy:3.4.7-alpine3.24
     container_name: docker-proxy
     user: root
     read_only: true
@@ -408,7 +408,7 @@ services:
   workload-firewall:
     # Plain alpine, tools installed at boot (no image to build); failures fail
     # the healthcheck loudly. Loop re-applies and refreshes the ready marker.
-    image: alpine:3.24.1
+    image: alpine:3.24.2
     container_name: workload-firewall
     network_mode: host
     user: root
@@ -511,7 +511,7 @@ services:
       - chronoverse
 
   init-certs:
-    image: alpine:3.22.2
+    image: alpine:3.24.2
     container_name: init-certs
     environment:
       KAFKA_SSL_KEYSTORE_PASSWORD: ${KAFKA_SSL_KEYSTORE_PASSWORD:?Set KAFKA_SSL_KEYSTORE_PASSWORD}
@@ -1943,7 +1943,7 @@ services:
       - chronoverse
 
   nginx:
-    image: nginx:alpine3.22
+    image: nginx:1.31.7-alpine3.24
     container_name: nginx
     tmpfs:
       - /etc/nginx/conf.d

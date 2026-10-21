@@ -17,7 +17,9 @@ trouble reasoning about regardless of coverage. Then look at `coverage_recorded`
 
 The summary the script prints ends with two counts. `CRAP >= 30` is how many scored
 functions landed at or above 30, which mostly means high complexity combined with little or
-no measured coverage; it is a count, not a verdict, and it is not a gate. `CC > 10` is how many
+no measured coverage. This global count does not itself fail CI; the changed-function
+comparison gates regressions and fails ambiguous comparisons as described in
+[coverage.md](coverage.md). `CC > 10` is how many
 functions carry more than ten decision points, independent of coverage. The second is the more
 useful of the two, because adding tests moves the first number and leaves the second alone.
 Extraction, unlike tests, lowers both.

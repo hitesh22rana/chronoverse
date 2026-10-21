@@ -51,6 +51,7 @@ COVERFLAGS=$(if $(COVERPROFILE),-covermode=$(COVERMODE) -coverprofile=$(COVERPRO
 COVERAGE_INPUTS=target/coverage-inputs
 UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
 INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
+INTEGRATION_PARALLELISM?=1
 DASHBOARD_LCOV=dashboard/coverage/lcov.info
 
 # Interpreter that has the pinned crapper installed (see docs/coverage.md).
@@ -75,6 +76,8 @@ test/short: dependencies
 
 # Runs all Docker-backed suites (Testcontainers and direct-daemon tests) by
 # selecting every TestIntegration* test. Requires a running Docker daemon.
+# Package binaries share one Docker daemon and Testcontainers/Ryuk session.
+# Serialize their startup to avoid reaper reuse races across processes.
 # The explicit -timeout leaves headroom over Go's default 10m per-package
 # limit: the joblogs suite boots five containers plus sequential Eventually
 # windows.
@@ -82,7 +85,7 @@ test/short: dependencies
 test/integration: dependencies
 	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
-	@go test -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
+	@go test -p $(INTEGRATION_PARALLELISM) -race -v -count=1 -timeout=20m -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 .PHONY: k8s/setup
 k8s/setup:

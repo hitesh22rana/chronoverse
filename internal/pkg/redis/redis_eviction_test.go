@@ -20,7 +20,7 @@ func newTestStore(ctx context.Context, t *testing.T, maxMemory, evictionPolicy s
 	//nolint:contextcheck // RequireDocker mints its own ping context; no caller ctx to propagate.
 	testkit.RequireDocker(t)
 
-	ctr, err := tcredis.Run(ctx, "redis:8.2.1-alpine")
+	ctr, err := tcredis.Run(ctx, "redis:8.10.2-alpine3.23")
 	if err != nil {
 		t.Fatalf("start redis container: %v", err)
 	}

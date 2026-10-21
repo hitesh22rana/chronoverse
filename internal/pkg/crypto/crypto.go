@@ -49,7 +49,7 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 	}
 
 	// Seal authenticates the ciphertext and prepends a random nonce.
-	cipherText := aead.Seal(nil, nil, []byte(data), nil)
+	cipherText := aead.Seal(nil, nil, []byte(data), nil) // #nosec G407 -- NewGCMWithRandomNonce generates the nonce.
 	return c.encode(cipherText), nil
 }
 

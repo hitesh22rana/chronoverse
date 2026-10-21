@@ -31,7 +31,7 @@ artifacts, and scores the profiles without a Go or Node toolchain.
 
 The integration launcher gives each package binary its own Testcontainers/Ryuk
 session before the binary starts, so parallel packages do not reuse the same
-reaper. Local runs default to one package at a time; CI uses two. Override
+reaper. Local runs default to one package at a time; CI uses four. Override
 `INTEGRATION_PARALLELISM` to select a bound suitable for the available Docker
 CPU and memory. Python is required for the launcher. Every selected package still
 runs with race detection and fresh execution; unit package parallelism is unchanged.

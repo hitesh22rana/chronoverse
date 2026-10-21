@@ -11,9 +11,7 @@ on:
       - "v*"
 
 jobs:
-  # TEMP(#237): restore these checks after integration profiling.
   lint:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     permissions:
       contents: read
       packages: write
@@ -32,7 +30,6 @@ jobs:
         run: make lint
 
   build:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     permissions:
       contents: read
       packages: write
@@ -48,7 +45,6 @@ jobs:
         run: make build/all
 
   proto-generated:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     name: Check Generated Protobuf Stubs
     permissions:
       contents: read
@@ -73,7 +69,6 @@ jobs:
           fi
 
   test:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     permissions:
       contents: read
       packages: write
@@ -187,7 +182,6 @@ jobs:
           retention-days: 14
 
   dashboard:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     name: Dashboard checks
     env:
       NODE_OPTIONS: --use-openssl-ca
@@ -244,7 +238,6 @@ jobs:
         run: npm run build
 
   coverage:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     name: CRAP report
     needs: [test, integration, dashboard]
     permissions:
@@ -385,7 +378,6 @@ jobs:
         run: test "$COMPARISON_OUTCOME" = success
 
   static-site:
-    if: ${{ github.head_ref != 'ci/isolated-integration-sessions' }}
     name: Static site checks
     env:
       NODE_OPTIONS: --use-openssl-ca

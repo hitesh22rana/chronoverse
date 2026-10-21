@@ -3,7 +3,14 @@
 Update Go modules and tools, npm manifests and lockfiles, Docker bases, service
 images, generated-code tools and CI versions together. Use stable releases that
 satisfy upstream compatibility requirements. Check release notes and regenerate
-code and lockfiles with the selected tools.
+code and lockfiles with the selected tools. Include integration-test fixtures and
+installation examples in the same sweep so they exercise and describe the selected
+service versions.
+
+For frontend tools, check the peer ranges of Next.js, its ESLint plugins and the
+TypeScript parser before choosing a release. A newer direct package is not an
+upgrade if it makes the installed graph unsupported. Do not force npm to ignore
+peer conflicts; record any compatibility constraint in the pull request.
 
 Run Go tests with race detection, integration tests, frontend lint/type checks and
 production builds. Compare coverage and CRAP reports on matching source scopes.

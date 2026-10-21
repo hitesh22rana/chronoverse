@@ -16,8 +16,9 @@ The setup script prepares required Secrets and certificates before applying the 
 
 - Go `1.27.3`
 - Node.js `26.12.0` for both the static-site CI path and dashboard container builds
-- Buf for protobuf generation
+- Buf matching the `buf-version` default in `.github/actions/setup-go-env/action.yaml` for protobuf generation
 - Docker for integration tests and container execution tests
+- Python matching the CRAP job in `.github/workflows/ci.yaml` when reproducing coverage reports
 
 ```bash
 make tools
@@ -27,6 +28,10 @@ make test/short
 make lint
 make build/all
 ```
+
+The `go` directive in `go.mod`, Dockerfile base images, and CI toolchain settings
+define the build requirements. Check these files when updating a local toolchain
+rather than assuming an older installed version is compatible.
 
 ## Frontend workspaces
 
@@ -38,6 +43,12 @@ cd ../static && npm ci
 ```
 
 Both workspaces commit their lockfiles and pin direct dependencies exactly. Use `npm ci` so local and CI installs reproduce the reviewed dependency graph.
+
+ESLint and TypeScript upgrades must also satisfy the dependencies of
+`eslint-config-next`. A deprecation warning from ESLint does not mean `npm ci`
+failed: the committed version currently preserves the React lint plugin's
+supported peer range. Do not use `--force` or `--legacy-peer-deps` to hide a
+conflict. Recheck the upstream peer ranges before upgrading the linter.
 
 The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.
 

@@ -5,7 +5,9 @@ CI reports existing debt and checks changed functions for regressions. The scope
 application code; each exclusion below explains which sources remain outside it.
 
 The sources of truth for this pipeline are [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml),
-[`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py), and the `Makefile`
+[`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py),
+[`scripts/coverage/pr_report.py`](../scripts/coverage/pr_report.py),
+[`scripts/coverage/ci_report.py`](../scripts/coverage/ci_report.py), and the `Makefile`
 coverage targets. Where this page and those files disagree, those files are correct. For how to
 read the output and decide what to do about it, see
 [crapper-assessment.md](crapper-assessment.md).

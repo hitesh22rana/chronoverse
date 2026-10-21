@@ -133,8 +133,9 @@ The setup script prepares required Secrets and certificates before applying the 
 
 - Go `1.27.3`
 - Node.js `26.12.0` for both the static-site CI path and dashboard container builds
-- Buf for protobuf generation
+- Buf matching the `buf-version` default in `.github/actions/setup-go-env/action.yaml` for protobuf generation
 - Docker for integration tests and container execution tests
+- Python matching the CRAP job in `.github/workflows/ci.yaml` when reproducing coverage reports
 
 ```bash
 make tools
@@ -144,6 +145,10 @@ make test/short
 make lint
 make build/all
 ```
+
+The `go` directive in `go.mod`, Dockerfile base images, and CI toolchain settings
+define the build requirements. Check these files when updating a local toolchain
+rather than assuming an older installed version is compatible.
 
 ## Frontend workspaces
 
@@ -155,6 +160,12 @@ cd ../static && npm ci
 ```
 
 Both workspaces commit their lockfiles and pin direct dependencies exactly. Use `npm ci` so local and CI installs reproduce the reviewed dependency graph.
+
+ESLint and TypeScript upgrades must also satisfy the dependencies of
+`eslint-config-next`. A deprecation warning from ESLint does not mean `npm ci`
+failed: the committed version currently preserves the React lint plugin's
+supported peer range. Do not use `--force` or `--legacy-peer-deps` to hide a
+conflict. Recheck the upstream peer ranges before upgrading the linter.
 
 The static site exports plain HTML into `static/out` and is deployed to GitHub Pages.
 
@@ -1533,6 +1544,21 @@ The Kubernetes local overlay uses the same bootstrap idea through Jobs and a loc
 
 Compose enables TLS or mTLS for PostgreSQL, ClickHouse, Redis, Meilisearch, Kafka, and gRPC service connections. Kubernetes uses the same posture: data-store clients mount the generated or operator-provided client certificate, and PostgreSQL host connections require TLS plus a CA-verified client certificate.
 
+## Runtime certificate trust
+
+Go services verify certificates using the Go runtime with system roots or the
+configured private CA. The dashboard container and Node CI processes use
+`NODE_OPTIONS=--use-openssl-ca` with the operating system CA store. Preserve this
+option when adding other Node flags. `--use-system-ca` adds system roots to the
+bundled roots and does not provide the same system-only trust policy.
+
+Refresh the host CA store for Node commands running outside the project images;
+those processes do not inherit container settings. Rebuild images and restart
+processes after updating runtime or CA packages. Updating application packages
+alone does not refresh the runtime's certificate verifier. Keep private service
+CAs separate from public root-store maintenance and never disable TLS verification
+to work around trust errors.
+
 ## Service authorization
 
 The HTTP gateway signs downstream authorization metadata. gRPC services validate that context in addition to transport identity.
@@ -2667,6 +2693,19 @@ Use `npm ci` in both frontend workspaces when reproducing CI from their committe
 Run Go lint as `./.bin/golangci-lint`, which is what `make lint` invokes. `make tools` installs a build of it there, and `GO_BIN` defaults to that directory. A `golangci-lint` found on `PATH` is usually a different build of a different Go toolchain; when it predates the Go version in `go.mod` it aborts with `can't load config: the Go language version ... is lower than the targeted Go version`, which reads like a config bug but is only a toolchain mismatch. To lint a subset, pass package patterns to the pinned binary: `./.bin/golangci-lint run ./internal/pkg/kafka/...`.
 
 Dashboard route modules should remain thin. Keep domain components, hooks, and API response types under `dashboard/src/features/<domain>`; reserve `dashboard/src/components/ui` for reusable shadcn primitives and `dashboard/src/lib` for infrastructure shared by multiple features.
+
+## Dependency updates
+
+Keep Go modules and tools, both npm lockfiles, Docker base images, Compose and
+Kubernetes service images, integration-test fixtures, and CI toolchains aligned.
+Use stable versions supported by their plugins and framework dependencies;
+updating only a direct package can leave an unsupported toolchain. Regenerate
+protobuf output and run the existing checks after changing its generators.
+
+Review certificate verification in the runtime and operating system as well as
+SDK dependencies. Rebuild images to pick up refreshed CA packages and restart
+processes to activate them. See [Certificates and security](./docs/deployment/security)
+for the Node trust-store policy.
 
 ## Kubernetes changes
 

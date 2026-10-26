@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -114,6 +115,7 @@ func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 }
 
 // Forward results up to the selected boundary before simulating a lost connection.
+// Every pool connection is served so a health-check retry cannot stall on the listen backlog.
 func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBoundary) (address string, disconnected <-chan struct{}) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -121,9 +123,28 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 		t.Fatal(err)
 	}
 	cut := make(chan struct{})
+	var cutOnce sync.Once
+	var (
+		connsMu sync.Mutex
+		conns   []net.Conn
+	)
+	track := func(conn net.Conn) {
+		connsMu.Lock()
+		conns = append(conns, conn)
+		connsMu.Unlock()
+	}
+	closeConns := func() {
+		connsMu.Lock()
+		defer connsMu.Unlock()
+		for _, conn := range conns {
+			_ = conn.Close()
+		}
+		conns = nil
+	}
 	done := make(chan struct{})
 	t.Cleanup(func() {
 		_ = listener.Close()
+		closeConns()
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -132,37 +153,48 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 	})
 	go func() {
 		defer close(done)
-		client, acceptErr := listener.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer client.Close()
-		server, dialErr := net.DialTimeout("tcp", upstream, 5*time.Second)
-		if dialErr != nil {
-			return
-		}
-		defer server.Close()
-		if err := client.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-			return
-		}
-		if err := server.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-			return
-		}
-		copying := make(chan struct{})
-		go func() {
-			defer close(copying)
-			defer server.Close()
-			if _, err := io.Copy(server, client); err != nil {
-				return
+		var handlers sync.WaitGroup
+		for {
+			client, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				break
 			}
-		}()
-		if forwardSnapshotResponses(client, server, boundary) {
-			_ = listener.Close()
-			close(cut)
+			track(client)
+			handlers.Add(1)
+			go func(client net.Conn) {
+				defer handlers.Done()
+				defer client.Close()
+				server, dialErr := net.DialTimeout("tcp", upstream, 5*time.Second)
+				if dialErr != nil {
+					return
+				}
+				track(server)
+				defer server.Close()
+				if err := client.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+					return
+				}
+				if err := server.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+					return
+				}
+				copying := make(chan struct{})
+				go func() {
+					defer close(copying)
+					defer server.Close()
+					_, _ = io.Copy(server, client)
+				}()
+				if forwardSnapshotResponses(client, server, boundary) {
+					cutOnce.Do(func() {
+						_ = listener.Close()
+						close(cut)
+					})
+				}
+				_ = server.Close()
+				_ = client.Close()
+				<-copying
+			}(client)
 		}
-		_ = server.Close()
-		_ = client.Close()
-		<-copying
+		handlers.Wait()
+		closeConns()
 	}()
 	return listener.Addr().String(), cut
 }

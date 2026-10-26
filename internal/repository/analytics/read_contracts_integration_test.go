@@ -271,6 +271,9 @@ func TestIntegrationAnalyticsReadNullableStoredKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if got == nil {
+		t.Fatal("GetUserAnalytics returned a nil response")
+	}
 	if len(got.WorkflowKinds) != 1 || got.WorkflowKinds[0].Kind != "" {
 		t.Fatalf("null kind grouping = %+v", got.WorkflowKinds)
 	}
@@ -288,6 +291,9 @@ func TestIntegrationAnalyticsReadNullableStoredKind(t *testing.T) {
 
 func assertAnalyticsTotals(t *testing.T, got *analyticsmodel.GetUserAnalyticsResponse, want [4]uint64) {
 	t.Helper()
+	if got == nil {
+		t.Fatal("analytics response is nil")
+	}
 	totals := [4]uint64{uint64(got.TotalWorkflows), got.TotalJobs, got.TotalJoblogs, got.TotalJobExecutionDuration}
 	if totals != want {
 		t.Fatalf("analytics totals = %v, want %v", totals, want)

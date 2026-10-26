@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 
@@ -212,7 +213,7 @@ func TestGetUserAnalytics(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
+			res, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
 			if (err != nil) != tt.isErr {
 				t.Errorf("GetUserAnalytics() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -223,6 +224,9 @@ func TestGetUserAnalytics(t *testing.T) {
 					t.Error("GetUserAnalytics() error = nil, want error")
 				}
 				return
+			}
+			if !proto.Equal(res, tt.res) {
+				t.Errorf("response = %v, want %v", res, tt.res)
 			}
 		})
 	}
@@ -377,7 +381,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
+			res, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
 			if (err != nil) != tt.isErr {
 				t.Errorf("GetWorkflowAnalytics() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -388,6 +392,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					t.Error("GetWorkflowAnalytics() error = nil, want error")
 				}
 				return
+			}
+			if !proto.Equal(res, tt.res) {
+				t.Errorf("response = %v, want %v", res, tt.res)
 			}
 		})
 	}

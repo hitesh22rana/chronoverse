@@ -180,7 +180,9 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 				go func() {
 					defer close(copying)
 					defer server.Close()
-					_, _ = io.Copy(server, client)
+					if _, err := io.Copy(server, client); err != nil {
+						return
+					}
 				}()
 				if forwardSnapshotResponses(client, server, boundary) {
 					cutOnce.Do(func() {

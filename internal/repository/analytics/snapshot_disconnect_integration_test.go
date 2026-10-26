@@ -14,14 +14,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
-// snapshotBoundary selects where the proxy drops the connection: after
+// snapshotBoundary selects where the proxy intercepts the connection: after
 // `selects` completed SELECTs, or after `rows` DataRows of the following SELECT.
 type snapshotBoundary struct {
 	selects int
@@ -80,27 +82,7 @@ func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 			if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count) VALUES($1,$2,'HEARTBEAT',1,2)`, userID, workflowID); err != nil {
 				t.Fatal(err)
 			}
-			cfg, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
-			if err != nil {
-				t.Fatal(err)
-			}
-			address, cut := snapshotDisconnectProxy(t, net.JoinHostPort(cfg.ConnConfig.Host, strconv.Itoa(int(cfg.ConnConfig.Port))), tc.boundary)
-			host, portText, err := net.SplitHostPort(address)
-			if err != nil {
-				t.Fatal(err)
-			}
-			port, err := strconv.Atoi(portText)
-			if err != nil {
-				t.Fatal(err)
-			}
-			reader, err := postgres.New(ctx, &postgres.Config{
-				Host: host, Port: port, User: cfg.ConnConfig.User, Password: cfg.ConnConfig.Password,
-				Database: cfg.ConnConfig.Database, MaxConns: 1, TLSConfig: &postgres.TLSConfig{},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(reader.Close)
+			reader, cut := snapshotReader(t, tc.boundary, nil)
 			got, err := New(nil, reader).GetUserAnalytics(ctx, userID)
 			if got != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), tc.operation+":") {
 				t.Fatalf("GetUserAnalytics = %+v, %v; want nil, Internal at %s", got, err, tc.operation)
@@ -114,9 +96,114 @@ func TestIntegrationAnalyticsSnapshotDisconnects(t *testing.T) {
 	}
 }
 
-// Forward results up to the selected boundary before simulating a lost connection.
+func TestIntegrationAnalyticsSnapshotConsistency(t *testing.T) {
+	pg := testkit.Postgres(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	userID := testkit.SeedUser(ctx, t, pg, "snapshot-"+uuid.NewString()+"@chronoverse.test")
+	workflowID := testkit.SeedWorkflow(ctx, t, pg, userID, "before update")
+	if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count,total_job_execution_duration)
+VALUES($1,$2,'HEARTBEAT',1,2,3)`, userID, workflowID); err != nil {
+		t.Fatal(err)
+	}
+
+	paused, resume := make(chan struct{}), make(chan struct{})
+	reader, _ := snapshotReader(t, snapshotBoundary{selects: 1}, func() {
+		close(paused)
+		select {
+		case <-resume:
+		case <-ctx.Done():
+		}
+	})
+	type result struct {
+		response *analyticsmodel.GetUserAnalyticsResponse
+		err      error
+	}
+	results := make(chan result, 1)
+	go func() {
+		response, err := New(nil, reader).GetUserAnalytics(ctx, userID)
+		results <- result{response, err}
+	}()
+	select {
+	case <-paused:
+	case got := <-results:
+		t.Fatalf("snapshot returned before the aggregate boundary: %+v, %v", got.response, got.err)
+	case <-ctx.Done():
+		t.Fatal("snapshot did not reach the aggregate boundary")
+	}
+
+	if _, err := pg.Exec(ctx, `UPDATE analytics SET kind='CONTAINER',jobs_count=9,logs_count=12,total_job_execution_duration=15
+WHERE user_id=$1 AND workflow_id=$2`, userID, workflowID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.Exec(ctx, `UPDATE workflows SET name='after update' WHERE user_id=$1 AND id=$2`, userID, workflowID); err != nil {
+		t.Fatal(err)
+	}
+	close(resume)
+
+	want := &analyticsmodel.GetUserAnalyticsResponse{
+		TotalWorkflows: 1, TotalJobs: 1, TotalJoblogs: 2, TotalJobExecutionDuration: 3,
+		WorkflowKinds: []*analyticsmodel.WorkflowKindAnalytics{{
+			Kind: "HEARTBEAT", TotalWorkflows: 1, TotalJobs: 1, TotalJoblogs: 2, TotalJobExecutionDuration: 3,
+		}},
+		TopWorkflows: []*analyticsmodel.WorkflowAnalyticsSummary{{
+			WorkflowID: workflowID, WorkflowName: "before update", Kind: "HEARTBEAT",
+			TotalJobs: 1, TotalJoblogs: 2, TotalJobExecutionDuration: 3,
+		}},
+	}
+	select {
+	case got := <-results:
+		require.NoError(t, got.err)
+		require.Equal(t, want, got.response)
+	case <-ctx.Done():
+		t.Fatal("snapshot did not finish after the concurrent update")
+	}
+	current, err := New(nil, pg).GetUserAnalytics(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := &analyticsmodel.GetUserAnalyticsResponse{
+		TotalWorkflows: 1, TotalJobs: 9, TotalJoblogs: 12, TotalJobExecutionDuration: 15,
+		WorkflowKinds: []*analyticsmodel.WorkflowKindAnalytics{{
+			Kind: "CONTAINER", TotalWorkflows: 1, TotalJobs: 9, TotalJoblogs: 12, TotalJobExecutionDuration: 15,
+		}},
+		TopWorkflows: []*analyticsmodel.WorkflowAnalyticsSummary{{
+			WorkflowID: workflowID, WorkflowName: "after update", Kind: "CONTAINER",
+			TotalJobs: 9, TotalJoblogs: 12, TotalJobExecutionDuration: 15,
+		}},
+	}
+	require.Equal(t, updated, current)
+}
+
+func snapshotReader(t *testing.T, boundary snapshotBoundary, beforeContinue func()) (reader *postgres.Postgres, disconnected <-chan struct{}) {
+	t.Helper()
+	cfg, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, cut := snapshotProxy(t, net.JoinHostPort(cfg.ConnConfig.Host, strconv.Itoa(int(cfg.ConnConfig.Port))), boundary, beforeContinue)
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err = postgres.New(t.Context(), &postgres.Config{
+		Host: host, Port: port, User: cfg.ConnConfig.User, Password: cfg.ConnConfig.Password,
+		Database: cfg.ConnConfig.Database, MaxConns: 1, TLSConfig: &postgres.TLSConfig{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(reader.Close)
+	return reader, cut
+}
+
+// At the selected boundary, disconnect or pause before forwarding the final frame.
 // Every pool connection is served so a health-check retry cannot stall on the listen backlog.
-func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBoundary) (address string, disconnected <-chan struct{}) {
+func snapshotProxy(t *testing.T, upstream string, boundary snapshotBoundary, beforeContinue func()) (address string, disconnected <-chan struct{}) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -184,7 +271,7 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 						return
 					}
 				}()
-				if forwardSnapshotResponses(client, server, boundary) {
+				if forwardSnapshotResponses(client, server, boundary, beforeContinue) {
 					cutOnce.Do(func() {
 						_ = listener.Close()
 						close(cut)
@@ -201,8 +288,9 @@ func snapshotDisconnectProxy(t *testing.T, upstream string, boundary snapshotBou
 	return listener.Addr().String(), cut
 }
 
-func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snapshotBoundary) bool {
+func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snapshotBoundary, beforeContinue func()) bool {
 	var progress snapshotProgress
+	handled := false
 	for {
 		var header [5]byte
 		if _, err := io.ReadFull(server, header[:]); err != nil {
@@ -216,7 +304,13 @@ func forwardSnapshotResponses(client io.Writer, server io.Reader, boundary snaps
 		if _, err := io.ReadFull(server, body); err != nil {
 			return false
 		}
-		cut := progress.observe(header[0], body, boundary)
+		cut := !handled && progress.observe(header[0], body, boundary)
+		if cut && beforeContinue != nil {
+			// Hold ReadyForQuery so the next query cannot start before the writer commits.
+			beforeContinue()
+			handled = true
+			cut = false
+		}
 		if _, err := client.Write(header[:]); err != nil {
 			return false
 		}

@@ -264,27 +264,29 @@ func TestIntegrationAnalyticsReadNullableStoredKind(t *testing.T) {
 	userID := testkit.SeedUser(ctx, t, pg, uuid.NewString()+"@chronoverse.test")
 	workflowID := uuid.NewString()
 	// The analytics schema permits a null kind; it reads as the empty kind.
-	if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count) VALUES($1,$2,NULL,1)`, userID, workflowID); err != nil {
+	if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count,total_job_execution_duration)
+VALUES($1,$2,NULL,1,2,3),($1,$3,'',4,5,6)`, userID, workflowID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	got, err := repo.GetUserAnalytics(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got == nil {
-		t.Fatal("GetUserAnalytics returned a nil response")
-	}
-	if len(got.WorkflowKinds) != 1 || got.WorkflowKinds[0].Kind != "" {
+	assertAnalyticsTotals(t, got, [4]uint64{2, 5, 7, 9})
+	wantKinds := []*analyticsmodel.WorkflowKindAnalytics{{
+		Kind: "", TotalWorkflows: 2, TotalJobs: 5, TotalJoblogs: 7, TotalJobExecutionDuration: 9,
+	}}
+	if !reflect.DeepEqual(got.WorkflowKinds, wantKinds) {
 		t.Fatalf("null kind grouping = %+v", got.WorkflowKinds)
 	}
-	if len(got.TopWorkflows) != 1 || got.TopWorkflows[0].Kind != "" {
+	if len(got.TopWorkflows) != 2 || got.TopWorkflows[0].Kind != "" || got.TopWorkflows[1].Kind != "" {
 		t.Fatalf("null kind top workflow = %+v", got.TopWorkflows)
 	}
 	if _, err = pg.Exec(ctx, `UPDATE analytics SET kind='HEARTBEAT' WHERE user_id=$1 AND workflow_id=$2`, userID, workflowID); err != nil {
 		t.Fatal(err)
 	}
 	got, err = repo.GetUserAnalytics(ctx, userID)
-	if err != nil || got == nil || len(got.WorkflowKinds) != 1 || got.WorkflowKinds[0].Kind != "HEARTBEAT" {
+	if err != nil || got == nil || len(got.WorkflowKinds) != 2 || got.WorkflowKinds[0].Kind != "" || got.WorkflowKinds[1].Kind != "HEARTBEAT" {
 		t.Fatalf("GetUserAnalytics(repaired kind) = %+v, %v", got, err)
 	}
 }

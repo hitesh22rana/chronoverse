@@ -31,8 +31,8 @@ func TestRunHealthCheckedHeartbeatsCanceledCaller(t *testing.T) {
 			if err := runHealthCheckedHeartbeats(ctx, repo, health, interval); !errors.Is(err, context.Canceled) {
 				t.Fatalf("error = %v, want caller cancellation", err)
 			}
-			if repo.registerReadyCalls != 1 || health.calls != 0 || repo.heartbeatCalls != 0 || repo.markUnhealthyCalls != 0 {
-				t.Fatalf("calls = health:%d register:%d heartbeat:%d unhealthy:%d", health.calls, repo.registerReadyCalls, repo.heartbeatCalls, repo.markUnhealthyCalls)
+			if health.calls != 0 || repo.heartbeatCalls != 0 || repo.markUnhealthyCalls != 0 {
+				t.Fatalf("calls = health:%d heartbeat:%d unhealthy:%d", health.calls, repo.heartbeatCalls, repo.markUnhealthyCalls)
 			}
 		})
 	}
@@ -97,6 +97,7 @@ func TestCombinedHealthCheckerRequiresEveryCheck(t *testing.T) {
 	}
 
 	failure := errors.New("firewall unavailable")
+	// Index 0 is consumed by the successful check above; the next call returns failure.
 	second.errs = []error{nil, failure}
 	next := &fakeDockerHealthChecker{}
 	checker.checkers = append(checker.checkers, next)

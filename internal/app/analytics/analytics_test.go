@@ -2,16 +2,17 @@ package analytics_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -27,43 +28,31 @@ import (
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
-func initClient(server *grpc.Server) (client analyticspb.AnalyticsServiceClient, _close func()) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	buffer := 1024 * 1024
-	lis := bufconn.Listen(buffer)
-
-	go func() {
-		if err := server.Serve(lis); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to serve gRPC server: %v\n", err)
-		}
-	}()
-
-	//nolint:staticcheck,nolintlint // SA1019: This is required for testing.
-	conn, err := grpc.DialContext(
-		ctx,
-		"bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to gRPC server: %v\n", err)
-		return nil, nil
-	}
-
-	_close = func() {
-		err := lis.Close()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close listener: %v\n", err)
-		}
-
+func initClient(t *testing.T, server *grpc.Server, transport credentials.TransportCredentials) *grpc.ClientConn {
+	t.Helper()
+	lis := bufconn.Listen(1024 * 1024)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(lis) }()
+	t.Cleanup(func() {
 		server.Stop()
-	}
-
-	return analyticspb.NewAnalyticsServiceClient(conn), _close
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				t.Errorf("serve analytics: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("analytics server did not stop")
+		}
+	})
+	conn, err := grpc.NewClient("passthrough:///analytics.test",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(transport),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	return conn
 }
 
 func TestGetUserAnalytics(t *testing.T) {
@@ -72,10 +61,9 @@ func TestGetUserAnalytics(t *testing.T) {
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
 
-	client, _close := initClient(analytics.New(t.Context(), &analytics.Config{
+	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
+	}, _auth, svc), insecure.NewCredentials()))
 
 	type args struct {
 		getCtx func() context.Context
@@ -238,10 +226,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
 
-	client, _close := initClient(analytics.New(t.Context(), &analytics.Config{
+	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
+	}, _auth, svc), insecure.NewCredentials()))
 
 	type args struct {
 		getCtx func() context.Context

@@ -199,8 +199,8 @@ func TestGetUserAnalytics(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.args.req)
 			res, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
 			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
 			if tt.wantCode != codes.OK {
@@ -361,8 +361,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.args.req)
 			res, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
 			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
 			if tt.wantCode != codes.OK {

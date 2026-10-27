@@ -1,10 +1,11 @@
 package analytics_test
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
@@ -27,17 +28,10 @@ func TestGetUserAnalytics(t *testing.T) {
 
 	s := analytics.New(validator.New(), repo)
 
-	var (
-		singleflightRepoCalls   int32
-		singleflightReleaseChan chan struct{}
-		singleflightLeaderRan   chan struct{}
-	)
-
 	tests := []struct {
 		name     string
 		req      *analyticspb.GetUserAnalyticsRequest
 		mock     func(req *analyticspb.GetUserAnalyticsRequest)
-		execute  func(t *testing.T, req *analyticspb.GetUserAnalyticsRequest, want *analyticsmodel.GetUserAnalyticsResponse)
 		want     *analyticsmodel.GetUserAnalyticsResponse
 		wantCode codes.Code
 	}{
@@ -56,77 +50,6 @@ func TestGetUserAnalytics(t *testing.T) {
 					TotalJoblogs:              5000,
 					TotalJobExecutionDuration: 1000000,
 				}, nil)
-			},
-			want: &analyticsmodel.GetUserAnalyticsResponse{
-				TotalWorkflows:            10,
-				TotalJobs:                 200,
-				TotalJoblogs:              5000,
-				TotalJobExecutionDuration: 1000000,
-			},
-			wantCode: codes.OK,
-		},
-		{
-			name: "success: singleflight deduplicates concurrent request",
-			req: &analyticspb.GetUserAnalyticsRequest{
-				// Own user ID, so this case's expectation cannot answer another's.
-				UserId: "singleflight_user",
-			},
-			mock: func(req *analyticspb.GetUserAnalyticsRequest) {
-				singleflightRepoCalls = 0
-				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks, so the wait below cannot be
-				// satisfied by a call that already returned.
-				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
-				// t.Fatalf on the leader goroutine, which Goexits it before
-				// singleflight publishes its result and hangs the package. The dedupe
-				// is asserted on singleflightRepoCalls.
-				repo.EXPECT().GetUserAnalytics(
-					gomock.Any(),
-					req.GetUserId(),
-				).DoAndReturn(func(_ any, _ string) (*analyticsmodel.GetUserAnalyticsResponse, error) {
-					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
-						close(singleflightLeaderRan)
-						<-singleflightReleaseChan
-					}
-					return &analyticsmodel.GetUserAnalyticsResponse{
-						TotalWorkflows:            10,
-						TotalJobs:                 200,
-						TotalJoblogs:              5000,
-						TotalJobExecutionDuration: 1000000,
-					}, nil
-				}).AnyTimes()
-			},
-			execute: func(t *testing.T, req *analyticspb.GetUserAnalyticsRequest, want *analyticsmodel.GetUserAnalyticsResponse) {
-				t.Helper()
-
-				var wg sync.WaitGroup
-				results := make([]*analyticsmodel.GetUserAnalyticsResponse, 2)
-				errs := make([]error, 2)
-
-				for i := range 2 {
-					idx := i
-					wg.Go(func() {
-						results[idx], errs[idx] = s.GetUserAnalytics(t.Context(), req)
-					})
-				}
-
-				// Wait for the leader to park, then hold it long enough for the
-				// second caller to join the flight instead of opening a second.
-				select {
-				case <-singleflightLeaderRan:
-				case <-time.After(30 * time.Second):
-					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
-				}
-				time.Sleep(100 * time.Millisecond)
-				close(singleflightReleaseChan)
-				wg.Wait()
-
-				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
-				assert.NoError(t, errs[0])
-				assert.NoError(t, errs[1])
-				assert.Equal(t, want, results[0])
-				assert.Equal(t, want, results[1])
 			},
 			want: &analyticsmodel.GetUserAnalyticsResponse{
 				TotalWorkflows:            10,
@@ -178,13 +101,8 @@ func TestGetUserAnalytics(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.execute != nil {
-				tt.execute(t, tt.req, tt.want)
-				return
-			}
-
+			tt.mock(tt.req)
 			analytics, err := s.GetUserAnalytics(t.Context(), tt.req)
 			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
 			if tt.wantCode != codes.OK {
@@ -196,6 +114,48 @@ func TestGetUserAnalytics(t *testing.T) {
 			assert.Equal(t, tt.want, analytics)
 		})
 	}
+}
+
+func TestGetUserAnalyticsSingleflight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		repo := analyticsmock.NewMockRepository(gomock.NewController(t))
+		s := analytics.New(validator.New(), repo)
+		req := &analyticspb.GetUserAnalyticsRequest{UserId: "singleflight_user"}
+		release := make(chan struct{})
+		var calls atomic.Int32
+		// Count instead of Times(1): gomock.Fatal in singleflight's goroutine would prevent result delivery.
+		repo.EXPECT().GetUserAnalytics(gomock.Any(), req.GetUserId()).DoAndReturn(
+			func(_ context.Context, _ string) (*analyticsmodel.GetUserAnalyticsResponse, error) {
+				calls.Add(1)
+				<-release
+				return &analyticsmodel.GetUserAnalyticsResponse{
+					TotalWorkflows: 10, TotalJobs: 200, TotalJoblogs: 5000, TotalJobExecutionDuration: 1000000,
+				}, nil
+			},
+		).AnyTimes()
+
+		var (
+			wg      sync.WaitGroup
+			results [2]*analyticsmodel.GetUserAnalyticsResponse
+			errs    [2]error
+		)
+		for i := range results {
+			wg.Go(func() { results[i], errs[i] = s.GetUserAnalytics(t.Context(), req) })
+		}
+		// Both callers must be blocked on the shared result before the repository can return.
+		synctest.Wait()
+		close(release)
+		wg.Wait()
+
+		require.Equal(t, int32(1), calls.Load())
+		want := &analyticsmodel.GetUserAnalyticsResponse{
+			TotalWorkflows: 10, TotalJobs: 200, TotalJoblogs: 5000, TotalJobExecutionDuration: 1000000,
+		}
+		for i := range results {
+			require.NoError(t, errs[i])
+			require.Equal(t, want, results[i])
+		}
+	})
 }
 
 func TestGetWorkflowAnalytics(t *testing.T) {
@@ -295,8 +255,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
+			tt.mock(tt.req)
 			analytics, err := s.GetWorkflowAnalytics(t.Context(), tt.req)
 			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
 			if tt.wantCode != codes.OK {

@@ -71,11 +71,11 @@ func TestGetUserAnalytics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*analyticspb.GetUserAnalyticsRequest)
-		res   *analyticspb.GetUserAnalyticsResponse
-		isErr bool
+		name     string
+		args     args
+		mock     func(*analyticspb.GetUserAnalyticsRequest)
+		res      *analyticspb.GetUserAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -111,7 +111,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				TotalJoblogs:              1000,
 				TotalJobExecutionDuration: 1000000,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: invalid token",
@@ -129,8 +129,8 @@ func TestGetUserAnalytics(t *testing.T) {
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -152,8 +152,8 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.InvalidArgument, "missing required fields in request"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: missing required headers in metadata",
@@ -167,9 +167,9 @@ func TestGetUserAnalytics(t *testing.T) {
 					UserId: "user1",
 				},
 			},
-			mock:  func(_ *analyticspb.GetUserAnalyticsRequest) {},
-			res:   nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetUserAnalyticsRequest) {},
+			res:      nil,
+			wantCode: codes.FailedPrecondition,
 		},
 		{
 			name: "error: internal server error",
@@ -191,8 +191,8 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Internal,
 		},
 	}
 
@@ -202,17 +202,12 @@ func TestGetUserAnalytics(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("GetUserAnalytics() error = %v, wantErr %v", err, tt.isErr)
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, res)
 				return
 			}
-
-			if tt.isErr {
-				if err == nil {
-					t.Error("GetUserAnalytics() error = nil, want error")
-				}
-				return
-			}
+			require.NoError(t, err)
 			if !proto.Equal(res, tt.res) {
 				t.Errorf("response = %v, want %v", res, tt.res)
 			}
@@ -236,11 +231,11 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*analyticspb.GetWorkflowAnalyticsRequest)
-		res   *analyticspb.GetWorkflowAnalyticsResponse
-		isErr bool
+		name     string
+		args     args
+		mock     func(*analyticspb.GetWorkflowAnalyticsRequest)
+		res      *analyticspb.GetWorkflowAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -274,7 +269,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				TotalJobs:                 20,
 				TotalJoblogs:              200,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: invalid token",
@@ -293,8 +288,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -317,8 +312,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.InvalidArgument, "missing required fields in request"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: missing required headers in metadata",
@@ -333,9 +328,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					WorkflowId: "workflow_id",
 				},
 			},
-			mock:  func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
-			res:   nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
+			res:      nil,
+			wantCode: codes.FailedPrecondition,
 		},
 		{
 			name: "error: internal server error",
@@ -358,8 +353,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Internal,
 		},
 	}
 
@@ -369,17 +364,12 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			res, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("GetWorkflowAnalytics() error = %v, wantErr %v", err, tt.isErr)
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, res)
 				return
 			}
-
-			if tt.isErr {
-				if err == nil {
-					t.Error("GetWorkflowAnalytics() error = nil, want error")
-				}
-				return
-			}
+			require.NoError(t, err)
 			if !proto.Equal(res, tt.res) {
 				t.Errorf("response = %v, want %v", res, tt.res)
 			}

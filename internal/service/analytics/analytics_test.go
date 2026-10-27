@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,12 +34,12 @@ func TestGetUserAnalytics(t *testing.T) {
 	)
 
 	tests := []struct {
-		name    string
-		req     *analyticspb.GetUserAnalyticsRequest
-		mock    func(req *analyticspb.GetUserAnalyticsRequest)
-		execute func(t *testing.T, req *analyticspb.GetUserAnalyticsRequest, want *analyticsmodel.GetUserAnalyticsResponse)
-		want    *analyticsmodel.GetUserAnalyticsResponse
-		isErr   bool
+		name     string
+		req      *analyticspb.GetUserAnalyticsRequest
+		mock     func(req *analyticspb.GetUserAnalyticsRequest)
+		execute  func(t *testing.T, req *analyticspb.GetUserAnalyticsRequest, want *analyticsmodel.GetUserAnalyticsResponse)
+		want     *analyticsmodel.GetUserAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -62,7 +63,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				TotalJoblogs:              5000,
 				TotalJobExecutionDuration: 1000000,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "success: singleflight deduplicates concurrent request",
@@ -133,7 +134,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				TotalJoblogs:              5000,
 				TotalJobExecutionDuration: 1000000,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: not found",
@@ -146,17 +147,17 @@ func TestGetUserAnalytics(t *testing.T) {
 					req.GetUserId(),
 				).Return(nil, status.Errorf(codes.NotFound, "user not found"))
 			},
-			want:  nil,
-			isErr: true,
+			want:     nil,
+			wantCode: codes.NotFound,
 		},
 		{
 			name: "error: missing user ID",
 			req: &analyticspb.GetUserAnalyticsRequest{
 				UserId: "",
 			},
-			mock:  func(_ *analyticspb.GetUserAnalyticsRequest) {},
-			want:  nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetUserAnalyticsRequest) {},
+			want:     nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: internal error",
@@ -169,8 +170,8 @@ func TestGetUserAnalytics(t *testing.T) {
 					req.GetUserId(),
 				).Return(nil, status.Errorf(codes.Internal, "internal error"))
 			},
-			want:  nil,
-			isErr: true,
+			want:     nil,
+			wantCode: codes.Internal,
 		},
 	}
 
@@ -185,17 +186,12 @@ func TestGetUserAnalytics(t *testing.T) {
 			}
 
 			analytics, err := s.GetUserAnalytics(t.Context(), tt.req)
-			if tt.isErr {
-				if err == nil {
-					t.Errorf("expected error, got nil")
-				}
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, analytics)
 				return
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
+			require.NoError(t, err)
 
 			assert.Equal(t, tt.want, analytics)
 		})
@@ -210,11 +206,11 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	s := analytics.New(validator.New(), repo)
 
 	tests := []struct {
-		name  string
-		req   *analyticspb.GetWorkflowAnalyticsRequest
-		mock  func(req *analyticspb.GetWorkflowAnalyticsRequest)
-		want  *analyticsmodel.GetWorkflowAnalyticsResponse
-		isErr bool
+		name     string
+		req      *analyticspb.GetWorkflowAnalyticsRequest
+		mock     func(req *analyticspb.GetWorkflowAnalyticsRequest)
+		want     *analyticsmodel.GetWorkflowAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -240,7 +236,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				TotalJobs:                 50,
 				TotalJoblogs:              1000,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: not found",
@@ -255,8 +251,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					req.GetWorkflowId(),
 				).Return(nil, status.Errorf(codes.NotFound, "workflow not found"))
 			},
-			want:  nil,
-			isErr: true,
+			want:     nil,
+			wantCode: codes.NotFound,
 		},
 		{
 			name: "error: missing user ID",
@@ -264,9 +260,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				UserId:     "",
 				WorkflowId: "workflow1",
 			},
-			mock:  func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
-			want:  nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
+			want:     nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: missing workflow ID",
@@ -274,9 +270,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				UserId:     "user1",
 				WorkflowId: "",
 			},
-			mock:  func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
-			want:  nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
+			want:     nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: internal error",
@@ -291,8 +287,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					req.GetWorkflowId(),
 				).Return(nil, status.Errorf(codes.Internal, "internal error"))
 			},
-			want:  nil,
-			isErr: true,
+			want:     nil,
+			wantCode: codes.Internal,
 		},
 	}
 
@@ -302,17 +298,12 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
 			analytics, err := s.GetWorkflowAnalytics(t.Context(), tt.req)
-			if tt.isErr {
-				if err == nil {
-					t.Errorf("expected error, got nil")
-				}
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, analytics)
 				return
 			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
+			require.NoError(t, err)
 
 			assert.Equal(t, tt.want, analytics)
 		})

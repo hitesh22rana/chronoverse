@@ -12,7 +12,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
@@ -32,16 +34,27 @@ func assertCreateEffects(ctx context.Context, t *testing.T, repo *Repository, us
 	}
 }
 
+func assertBuildEvent(ctx context.Context, t *testing.T, repo *Repository, workflowID string, generation int64) {
+	t.Helper()
+	build := workflowsmodel.ActionBuild.ToString()
+	assertEventKeys(
+		t,
+		"build events",
+		workflowActionEventKeys(ctx, t, repo.pg, workflowID, build),
+		idempotency.WorkflowEventKey(workflowID, build, generation),
+	)
+}
+
 func TestIntegrationCreateWorkflowFaultsRollBack(t *testing.T) {
 	for _, tc := range []struct {
 		name, table, event, message string
 		deferred                    bool
 	}{
-		{"reserve", postgres.TableCommandIdempotencyKeys, "INSERT", "", false},
-		{"legacy identity", postgres.TableCommandIdempotencyLegacyIdentities, "INSERT", "", false},
+		{"reserve", postgres.TableCommandIdempotencyKeys, "INSERT", "failed to reserve command idempotency key", false},
+		{"legacy identity", postgres.TableCommandIdempotencyLegacyIdentities, "INSERT", "failed to store command legacy identity", false},
 		{"workflow", postgres.TableWorkflows, "INSERT", "failed to insert workflow", false},
 		{"outbox", postgres.TableOutboxEvents, "INSERT", "failed to insert outbox event", false},
-		{"complete", postgres.TableCommandIdempotencyKeys, "UPDATE", "", false},
+		{"complete", postgres.TableCommandIdempotencyKeys, "UPDATE", "failed to complete command idempotency key", false},
 		{"commit", postgres.TableWorkflows, "INSERT", "failed to commit transaction", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -128,9 +141,17 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 		t.Fatalf("replay=%+v, created=%+v", replay, created)
 	}
 	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
+	assertBuildEvent(ctx, t, repo, created.ID, created.Generation)
 	conflict, err := repo.CreateWorkflow(ctx, userID, "changed", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, key)
 	if conflict != nil || status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflict=%+v err=%v", conflict, err)
+	}
+	stored, err := repo.GetWorkflow(ctx, created.ID, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != created.Name {
+		t.Fatalf("conflicting reuse renamed workflow to %q, want %q", stored.Name, created.Name)
 	}
 	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
 }
@@ -142,7 +163,7 @@ func TestIntegrationCreateWorkflowInterruptedInsertRollsBack(t *testing.T) {
 			repo := newTestRepository(t)
 			userID := seedUser(ctx, t, repo.pg)
 			key := uuid.NewString()
-			lock := interruptionLock{label: "workflow insert", lockSQL: "LOCK TABLE workflows IN SHARE ROW EXCLUSIVE MODE", pattern: "%INSERT INTO workflows%"}
+			lock := lockWorkflowWrite("%INSERT INTO " + postgres.TableWorkflows + "%")
 			caller, step := callerStopPlan(ctx, t, repo.pg, stop, lock)
 			err := runWhileBlocked(caller, t, repo.pg, lock, step, func(commandCtx context.Context) error {
 				got, createErr := repo.CreateWorkflow(commandCtx, userID, "interrupted-create", `{"image":"alpine:3.22.2"}`, "CONTAINER", 60, 3, true, key)
@@ -167,6 +188,7 @@ func TestIntegrationCreateWorkflowInterruptedInsertRollsBack(t *testing.T) {
 				t.Fatalf("retry=%+v err=%v", created, err)
 			}
 			assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
+			assertBuildEvent(ctx, t, repo, created.ID, created.Generation)
 		})
 	}
 }

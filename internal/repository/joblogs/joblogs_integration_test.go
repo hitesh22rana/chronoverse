@@ -188,6 +188,10 @@ func TestIntegrationDropsLogsForUnknownWorkflows(t *testing.T) {
 		//nolint:errcheck // Run blocks until ctx is canceled; the pipeline is asserted below.
 		_ = repo.Run(ctx)
 	}()
+	defer func() {
+		cancel()
+		<-runDone
+	}()
 
 	record, err := joblogevents.KafkaRecord(&jobsmodel.JobLogEvent{
 		EventKey:    "log:" + jobID + ":stdout:1",
@@ -215,7 +219,4 @@ func TestIntegrationDropsLogsForUnknownWorkflows(t *testing.T) {
 	if count := clickHouseRowCount(ctx, ch, jobID); count != 0 {
 		t.Fatalf("job_logs count = %d, want 0 for unknown workflow", count)
 	}
-
-	cancel()
-	<-runDone
 }

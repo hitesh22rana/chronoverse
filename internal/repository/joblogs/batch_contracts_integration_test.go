@@ -212,7 +212,7 @@ func TestIntegrationPublishLogGuardsAndDelivery(t *testing.T) {
 	}
 	repo.publishLog(ctx, event)
 	repo.publishLog(ctx, &jobsmodel.JobLogEvent{JobID: event.JobID, EventKey: "overflow", Retention: true})
-	// Starting after enqueueing makes both skip guards and overflow observable in a one-slot queue.
+	// Starting after enqueueing makes skipped events observable in a one-slot queue.
 	done := repo.runLiveJobLogPublisher(ctx, nil)
 	defer func() {
 		cancel()

@@ -5,14 +5,13 @@ import (
 	"testing"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
 
 func TestLivePublisherTryPublishIsBounded(t *testing.T) {
 	t.Parallel()
 
-	publisher := &LivePublisher{
-		events: make(chan *jobsmodel.JobLogEvent, 1),
-	}
+	publisher := NewLivePublisher(&redis.Store{}, LivePublisherConfig{BufferSize: 1})
 	event := &jobsmodel.JobLogEvent{
 		JobID:     "job-1",
 		Retention: true,

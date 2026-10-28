@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/meilisearch/meilisearch-go"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -465,14 +466,20 @@ func TestIntegrationBatchAnalyticsFailureRollsBackReplayIdentity(t *testing.T) {
 	assertBatchAnalytics(t, repo, item, 1)
 }
 
-func TestIntegrationBatchInitialWorkflowCheckFailure(t *testing.T) {
+func TestIntegrationProcessRecordsBatchInitialWorkflowCheckFailure(t *testing.T) {
 	repo := batchContractRepository(t)
 	item := batchContractEvent(t, repo, true)
+	payload, err := json.Marshal(item.logEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	healthyPG := repo.pg
 	repo.pg = isolatedBatchPostgres(t)
 	repo.pg.Close()
-	got, err := repo.processLogsBatch(t.Context(), []*queueData{item})
-	assertBatchFailure(t, got, err, "failed to fetch active workflows")
+	err = repo.processRecordsBatch(t.Context(), []*kgo.Record{{Value: payload}})
+	if status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to fetch active workflows") {
+		t.Fatalf("process records = %v, want Internal containing failed to fetch active workflows", err)
+	}
 	repo.pg = healthyPG
 	assertBatchStorage(t, repo, item, 0)
 	assertBatchAnalytics(t, repo, item, 0)

@@ -96,6 +96,11 @@ func TestIntegrationBatchProcessedIdentityAssertion(t *testing.T) {
 			if _, err := repo.pg.Exec(t.Context(), `INSERT INTO processed_events (consumer,event_key) VALUES ($1,$2)`, logAnalyticsConsumer, key); err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				if _, err := repo.pg.Exec(context.Background(), `DELETE FROM processed_events WHERE consumer=$1 AND event_key=$2`, logAnalyticsConsumer, key); err != nil {
+					t.Errorf("remove seeded processed identity: %v", err)
+				}
+			})
 			if got := batchProcessedIdentityCount(t, repo, item); got != 1 {
 				t.Fatalf("seeded identity count = %d, want 1", got)
 			}

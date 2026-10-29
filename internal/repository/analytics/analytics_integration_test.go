@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -22,7 +23,7 @@ func TestMain(m *testing.M) {
 func seedAnalytics(ctx context.Context, t *testing.T, pg *postgres.Postgres) (userID, workflowID string) {
 	t.Helper()
 
-	userID = testkit.SeedUser(ctx, t, pg, fmt.Sprintf("analytics-%s@chronoverse.test", t.Name()))
+	userID = testkit.SeedUser(ctx, t, pg, fmt.Sprintf("analytics-%s@chronoverse.test", uuid.NewString()))
 	workflowA := testkit.SeedWorkflow(ctx, t, pg, userID, fmt.Sprintf("wf-%s-0", t.Name()))
 	workflowB := testkit.SeedWorkflow(ctx, t, pg, userID, fmt.Sprintf("wf-%s-1", t.Name()))
 

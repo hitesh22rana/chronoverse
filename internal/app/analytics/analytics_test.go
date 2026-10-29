@@ -2,20 +2,22 @@ package analytics_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 
@@ -26,43 +28,31 @@ import (
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 )
 
-func initClient(server *grpc.Server) (client analyticspb.AnalyticsServiceClient, _close func()) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	buffer := 1024 * 1024
-	lis := bufconn.Listen(buffer)
-
-	go func() {
-		if err := server.Serve(lis); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to serve gRPC server: %v\n", err)
-		}
-	}()
-
-	//nolint:staticcheck,nolintlint // SA1019: This is required for testing.
-	conn, err := grpc.DialContext(
-		ctx,
-		"bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return lis.Dial()
-		}),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect to gRPC server: %v\n", err)
-		return nil, nil
-	}
-
-	_close = func() {
-		err := lis.Close()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to close listener: %v\n", err)
-		}
-
+func initClient(t *testing.T, server *grpc.Server, transport credentials.TransportCredentials) *grpc.ClientConn {
+	t.Helper()
+	lis := bufconn.Listen(1024 * 1024)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(lis) }()
+	t.Cleanup(func() {
 		server.Stop()
-	}
-
-	return analyticspb.NewAnalyticsServiceClient(conn), _close
+		select {
+		case err := <-done:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				t.Errorf("serve analytics: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Error("analytics server did not stop")
+		}
+	})
+	conn, err := grpc.NewClient("passthrough:///analytics.test",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(transport),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, conn.Close()) })
+	return conn
 }
 
 func TestGetUserAnalytics(t *testing.T) {
@@ -71,10 +61,9 @@ func TestGetUserAnalytics(t *testing.T) {
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
 
-	client, _close := initClient(analytics.New(t.Context(), &analytics.Config{
+	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
+	}, _auth, svc), insecure.NewCredentials()))
 
 	type args struct {
 		getCtx func() context.Context
@@ -82,11 +71,11 @@ func TestGetUserAnalytics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*analyticspb.GetUserAnalyticsRequest)
-		res   *analyticspb.GetUserAnalyticsResponse
-		isErr bool
+		name     string
+		args     args
+		mock     func(*analyticspb.GetUserAnalyticsRequest)
+		res      *analyticspb.GetUserAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -122,7 +111,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				TotalJoblogs:              1000,
 				TotalJobExecutionDuration: 1000000,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: invalid token",
@@ -140,8 +129,8 @@ func TestGetUserAnalytics(t *testing.T) {
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -163,8 +152,8 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.InvalidArgument, "missing required fields in request"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: missing required headers in metadata",
@@ -178,9 +167,9 @@ func TestGetUserAnalytics(t *testing.T) {
 					UserId: "user1",
 				},
 			},
-			mock:  func(_ *analyticspb.GetUserAnalyticsRequest) {},
-			res:   nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetUserAnalyticsRequest) {},
+			res:      nil,
+			wantCode: codes.FailedPrecondition,
 		},
 		{
 			name: "error: internal server error",
@@ -202,27 +191,25 @@ func TestGetUserAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Internal,
 		},
 	}
 
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("GetUserAnalytics() error = %v, wantErr %v", err, tt.isErr)
+			tt.mock(tt.args.req)
+			res, err := client.GetUserAnalytics(tt.args.getCtx(), tt.args.req)
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, res)
 				return
 			}
-
-			if tt.isErr {
-				if err == nil {
-					t.Error("GetUserAnalytics() error = nil, want error")
-				}
-				return
+			require.NoError(t, err)
+			if !proto.Equal(res, tt.res) {
+				t.Errorf("response = %v, want %v", res, tt.res)
 			}
 		})
 	}
@@ -234,10 +221,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
 
-	client, _close := initClient(analytics.New(t.Context(), &analytics.Config{
+	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
-	}, _auth, svc))
-	defer _close()
+	}, _auth, svc), insecure.NewCredentials()))
 
 	type args struct {
 		getCtx func() context.Context
@@ -245,11 +231,11 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*analyticspb.GetWorkflowAnalyticsRequest)
-		res   *analyticspb.GetWorkflowAnalyticsResponse
-		isErr bool
+		name     string
+		args     args
+		mock     func(*analyticspb.GetWorkflowAnalyticsRequest)
+		res      *analyticspb.GetWorkflowAnalyticsResponse
+		wantCode codes.Code
 	}{
 		{
 			name: "success",
@@ -283,7 +269,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 				TotalJobs:                 20,
 				TotalJoblogs:              200,
 			},
-			isErr: false,
+			wantCode: codes.OK,
 		},
 		{
 			name: "error: invalid token",
@@ -302,8 +288,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, status.Error(codes.Unauthenticated, "invalid token")) //nolint:lll // line length due to mock setup
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Unauthenticated,
 		},
 		{
 			name: "error: missing required fields in request",
@@ -326,8 +312,8 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.InvalidArgument, "missing required fields in request"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.InvalidArgument,
 		},
 		{
 			name: "error: missing required headers in metadata",
@@ -342,9 +328,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					WorkflowId: "workflow_id",
 				},
 			},
-			mock:  func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
-			res:   nil,
-			isErr: true,
+			mock:     func(_ *analyticspb.GetWorkflowAnalyticsRequest) {},
+			res:      nil,
+			wantCode: codes.FailedPrecondition,
 		},
 		{
 			name: "error: internal server error",
@@ -367,27 +353,25 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					gomock.Any(),
 				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
-			res:   nil,
-			isErr: true,
+			res:      nil,
+			wantCode: codes.Internal,
 		},
 	}
 
 	defer ctrl.Finish()
 
 	for _, tt := range tests {
-		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
-			if (err != nil) != tt.isErr {
-				t.Errorf("GetWorkflowAnalytics() error = %v, wantErr %v", err, tt.isErr)
+			tt.mock(tt.args.req)
+			res, err := client.GetWorkflowAnalytics(tt.args.getCtx(), tt.args.req)
+			require.Equal(t, tt.wantCode, status.Code(err), "%v", err)
+			if tt.wantCode != codes.OK {
+				require.Nil(t, res)
 				return
 			}
-
-			if tt.isErr {
-				if err == nil {
-					t.Error("GetWorkflowAnalytics() error = nil, want error")
-				}
-				return
+			require.NoError(t, err)
+			if !proto.Equal(res, tt.res) {
+				t.Errorf("response = %v, want %v", res, tt.res)
 			}
 		})
 	}

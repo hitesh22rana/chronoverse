@@ -40,7 +40,8 @@ func TestRunCanceledBeforeFirstTick(t *testing.T) {
 
 func TestRunContinuesAfterServiceFailureAndCancelsEachAttempt(t *testing.T) {
 	t.Parallel()
-	parent, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	type contextKey struct{}
+	parent, stop := context.WithTimeout(context.WithValue(t.Context(), contextKey{}, "scheduler"), 5*time.Second)
 	defer stop()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -50,6 +51,9 @@ func TestRunContinuesAfterServiceFailureAndCancelsEachAttempt(t *testing.T) {
 	app := &Scheduler{logger: zap.New(core), cfg: &Config{PollInterval: time.Millisecond, ContextTimeout: time.Second}, svc: schedulerServiceFunc(func(attempt context.Context) (int, error) {
 		if len(attempts) > 0 && attempts[len(attempts)-1].Err() != context.Canceled {
 			t.Error("previous attempt was not canceled before next poll")
+		}
+		if attempt.Value(contextKey{}) != "scheduler" {
+			t.Error("poll context lost parent values")
 		}
 		deadline, ok := attempt.Deadline()
 		if !ok || !deadline.After(time.Now()) {
@@ -106,8 +110,14 @@ func TestRunEnforcesAttemptDeadline(t *testing.T) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	calls := 0
-	app := New(ctx, &Config{PollInterval: time.Millisecond, ContextTimeout: 5 * time.Millisecond}, schedulerServiceFunc(func(attempt context.Context) (int, error) {
+	const attemptTimeout = 5 * time.Millisecond
+	started := time.Now()
+	app := New(ctx, &Config{PollInterval: time.Millisecond, ContextTimeout: attemptTimeout}, schedulerServiceFunc(func(attempt context.Context) (int, error) {
 		calls++
+		deadline, ok := attempt.Deadline()
+		if !ok || deadline.Before(started.Add(attemptTimeout)) || deadline.After(time.Now().Add(attemptTimeout)) {
+			t.Errorf("attempt deadline=%v does not match timeout %v", deadline, attemptTimeout)
+		}
 		<-attempt.Done()
 		if calls == 1 && !errors.Is(attempt.Err(), context.DeadlineExceeded) {
 			t.Errorf("attempt error=%v", attempt.Err())

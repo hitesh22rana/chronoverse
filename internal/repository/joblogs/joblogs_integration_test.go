@@ -188,6 +188,10 @@ func TestIntegrationDropsLogsForUnknownWorkflows(t *testing.T) {
 		//nolint:errcheck // Run blocks until ctx is canceled; the pipeline is asserted below.
 		_ = repo.Run(ctx)
 	}()
+	defer func() {
+		cancel()
+		<-runDone
+	}()
 
 	record, err := joblogevents.KafkaRecord(&jobsmodel.JobLogEvent{
 		EventKey:    "log:" + jobID + ":stdout:1",
@@ -207,12 +211,12 @@ func TestIntegrationDropsLogsForUnknownWorkflows(t *testing.T) {
 		t.Fatalf("produce log: %v", err)
 	}
 
-	// The batch is dropped before any durable write happens.
-	time.Sleep(5 * time.Second)
+	// Wait for acknowledgement so an idle consumer cannot satisfy the zero-row assertion.
+	testkit.Eventually(t, 30*time.Second, 500*time.Millisecond, func() bool {
+		committed, ok := kfk.CommittedOffsets()[record.Topic][record.Partition]
+		return ok && committed.Offset > record.Offset
+	})
 	if count := clickHouseRowCount(ctx, ch, jobID); count != 0 {
 		t.Fatalf("job_logs count = %d, want 0 for unknown workflow", count)
 	}
-
-	cancel()
-	<-runDone
 }

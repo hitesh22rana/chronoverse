@@ -174,3 +174,26 @@ func sameErrorCode(got, want error) bool {
 
 	return status.Code(got) == status.Code(want)
 }
+
+func TestDoHonorsCancellationBeforeAttempt(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	calls := 0
+	err := retry.Do(ctx, 3, 0, func() error { calls++; return nil })
+	if !errors.Is(err, context.Canceled) || calls != 0 {
+		t.Fatalf("Do() = %v with %d calls, want cancellation before any call", err, calls)
+	}
+}
+
+func TestDoNormalizesNonPositiveAttempts(t *testing.T) {
+	t.Parallel()
+	for _, attempts := range []int{0, -1} {
+		expected := errors.New("operation failed")
+		calls := 0
+		err := retry.Do(t.Context(), attempts, 0, func() error { calls++; return expected })
+		if !errors.Is(err, expected) || calls != 1 {
+			t.Fatalf("Do(attempts=%d) = %v with %d calls, want original error and one call", attempts, err, calls)
+		}
+	}
+}

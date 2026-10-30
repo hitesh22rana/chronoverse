@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -216,6 +215,9 @@ func executionWorkerRetryConfig() *grpcclient.RetryConfig {
 	}
 }
 
+// workloadResourceLimits converts the validated execution worker configuration
+// into container limits. ExecutionWorkerConfig.validate rejects out-of-range
+// values before startup reaches this point.
 func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.ResourceLimits, error) {
 	if cfg == nil {
 		return container.ResourceLimits{}, nil
@@ -224,15 +226,6 @@ func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.Resour
 	memoryBytes, err := units.RAMInBytes(cfg.WorkloadMemory)
 	if err != nil {
 		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
-	}
-	if memoryBytes < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
-	}
-	if cfg.WorkloadCPUs < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
-	}
-	if cfg.WorkloadPidsLimit < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
 	}
 
 	return container.ResourceLimits{

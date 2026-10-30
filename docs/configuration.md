@@ -541,8 +541,11 @@ hostname. `EXECUTION_WORKER_CONCURRENCY=0` means auto concurrency from
 `GOMAXPROCS`, which is adjusted by `automaxprocs` from the worker container CPU
 quota. Workload container memory, CPU, and PID settings apply to the Docker
 containers launched by the worker; they are separate from the worker process
-resource limit and from image pulls. Keep lease duration longer than the
-renewal interval. Container execution uses the runtime endpoint
+resource limit and from image pulls. A zero workload memory, CPU, or PID limit
+means that limit is not applied. `EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS`
+must otherwise be finite and round to at least one nanocpu, and must not exceed
+the runtime's nanocpu range. Keep lease duration longer than the renewal
+interval. Container execution uses the runtime endpoint
 returned by `ClaimJob`, not the worker pod's own Docker host. Before creating a
 container, the worker ensures the resolved image exists on that runtime daemon
 under a Redis lock scoped to runtime node plus exact image string.

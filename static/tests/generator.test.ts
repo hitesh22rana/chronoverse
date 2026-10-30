@@ -134,3 +134,19 @@ it("rejects page metadata that breaks published document blocks", async () => {
   await expect(generate()).rejects.toThrow("must contain every documentation page");
   expect(write).not.toHaveBeenCalled();
 });
+
+it("publishes a valid OpenAPI document without paths as an empty operation collection", async () => {
+  process.argv = originalArguments;
+  replaceFile("content/openapi.yaml", () => "openapi: 3.1.0\ninfo:\n  title: Webhook-only API\n  version: 1.0.0\nwebhooks:\n  event:\n    post:\n      responses:\n        '200':\n          description: Accepted\n");
+  await generate();
+  const full = write.mock.calls.find(([name]) => String(name).endsWith("llms-full.txt"))![1] as string;
+  expect(full).toContain("all 0 generated HTTP operations");
+});
+
+it("rejects root-relative links introduced through page metadata", async () => {
+  const groups = structuredClone(docsConfig);
+  groups[0].pages[0].title = "[Unrewritten](/docs/quickstart)";
+  vi.doMock("../docs.config", () => ({ docsConfig: groups }));
+  await expect(generate()).rejects.toThrow("contains a root-relative documentation link");
+  expect(write).not.toHaveBeenCalled();
+});

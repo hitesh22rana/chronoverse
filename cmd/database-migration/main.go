@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"syscall"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	_ "go.uber.org/automaxprocs"
@@ -35,13 +33,6 @@ func main() {
 func run() int {
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		cancel()
-	}()
 
 	cfg, err := config.InitDatabaseMigrationConfig()
 	if err != nil {

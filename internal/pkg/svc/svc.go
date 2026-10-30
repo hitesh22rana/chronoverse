@@ -107,6 +107,14 @@ func initSvcInfo() {
 func Init() (context.Context, func()) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
+	shutdown := &serviceShutdown{stopSignals: stopSignals}
+	initialized := false
+	defer func() {
+		if !initialized {
+			shutdown.close()
+		}
+	}()
+
 	initSvcInfo()
 
 	res, err := otelpkg.InitResource(ctx, svc.GetName(), svc.GetVersion())
@@ -114,13 +122,11 @@ func Init() (context.Context, func()) {
 		panic(err)
 	}
 
-	shutdownFuncs := []func(context.Context) error{}
-
 	tp, err := otelpkg.InitTracerProvider(ctx, res)
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+	shutdown.funcs = append(shutdown.funcs, func(shutdownCtx context.Context) error {
 		return tp.Shutdown(shutdownCtx)
 	})
 
@@ -128,7 +134,7 @@ func Init() (context.Context, func()) {
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+	shutdown.funcs = append(shutdown.funcs, func(shutdownCtx context.Context) error {
 		return mp.Shutdown(shutdownCtx)
 	})
 
@@ -136,25 +142,35 @@ func Init() (context.Context, func()) {
 	if err != nil {
 		panic(err)
 	}
-	shutdownFuncs = append(shutdownFuncs, func(shutdownCtx context.Context) error {
+	shutdown.funcs = append(shutdown.funcs, func(shutdownCtx context.Context) error {
 		return lp.Shutdown(shutdownCtx)
 	})
 
 	ctx, logger := loggerpkg.Init(ctx, svc.GetName(), lp)
-	shutdownFuncs = append(shutdownFuncs, func(context.Context) error {
+	shutdown.funcs = append(shutdown.funcs, func(context.Context) error {
 		return logger.Sync()
 	})
 
-	var shutdownOnce sync.Once
-	return ctx, func() {
-		shutdownOnce.Do(func() {
-			stopSignals()
-			shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancelShutdown()
-			for _, shutdownFunc := range shutdownFuncs {
-				//nolint:errcheck // Ignore errors from shutdown functions
-				_ = shutdownFunc(shutdownCtx)
-			}
-		})
-	}
+	initialized = true
+	return ctx, shutdown.close
+}
+
+// serviceShutdown owns signal registration and acquired telemetry resources.
+type serviceShutdown struct {
+	once        sync.Once
+	stopSignals func()
+	funcs       []func(context.Context) error
+}
+
+func (s *serviceShutdown) close() {
+	s.once.Do(func() {
+		s.stopSignals()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for i := len(s.funcs) - 1; i >= 0; i-- {
+			// Release dependants before their providers, even when a close fails.
+			//nolint:errcheck // Continue releasing remaining resources after a shutdown error.
+			_ = s.funcs[i](ctx)
+		}
+	})
 }

@@ -147,6 +147,33 @@ func TestExecutionWorkerAcceptsValidWorkloadEnvironment(t *testing.T) {
 	}
 }
 
+func TestExecutionWorkerKeepsConfiguredWorkerID(t *testing.T) {
+	clearExecutionWorkerEnvironment(t)
+	setExecutionWorkerRequiredEnvironment(t)
+
+	t.Setenv("EXECUTION_WORKER_ID", "worker-a")
+
+	cfg, err := InitExecutionJobConfig()
+	if err != nil {
+		t.Fatalf("InitExecutionJobConfig() error = %v", err)
+	}
+	if cfg.WorkerID != "worker-a" {
+		t.Fatalf("WorkerID = %q, want %q", cfg.WorkerID, "worker-a")
+	}
+}
+
+func TestExecutionWorkerRejectsInvalidEnvironment(t *testing.T) {
+	clearExecutionWorkerEnvironment(t)
+	setExecutionWorkerRequiredEnvironment(t)
+
+	t.Setenv("EXECUTION_WORKER_CONCURRENCY", "not-an-int")
+
+	_, err := InitExecutionJobConfig()
+	if err == nil || !strings.Contains(err.Error(), "EXECUTION_WORKER_CONCURRENCY") {
+		t.Fatalf("error = %v, want EXECUTION_WORKER_CONCURRENCY parse error", err)
+	}
+}
+
 func setExecutionWorkerRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("KAFKA_BROKERS", "localhost:9092")

@@ -64,10 +64,9 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 		return nil, err
 	}
 	if cfg.ExecutionWorkerConfig.WorkerID == "" {
+		cfg.ExecutionWorkerConfig.WorkerID = "execution-worker"
 		if hostname, err := os.Hostname(); err == nil && hostname != "" {
 			cfg.ExecutionWorkerConfig.WorkerID = hostname
-		} else {
-			cfg.ExecutionWorkerConfig.WorkerID = "execution-worker"
 		}
 	}
 	return &cfg, nil

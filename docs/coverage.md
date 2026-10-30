@@ -2,7 +2,7 @@
 
 This describes how coverage reports become CRAP scores and pull-request feedback.
 CI reports existing debt and checks changed functions for regressions. The scope is
-application code; each exclusion below explains which sources remain outside it.
+handwritten application and repository tooling code; unsupported formats remain explicitly unscored.
 
 The sources of truth for this pipeline are [`.github/workflows/ci.yaml`](../.github/workflows/ci.yaml),
 [`scripts/coverage/crap_report.py`](../scripts/coverage/crap_report.py),
@@ -19,7 +19,8 @@ read the output and decide what to do about it, see
 | `test` | `make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out` | `coverage-unit` |
 | `integration` | `make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out` | `coverage-integration` |
 | `dashboard` | `cd dashboard && npm run test:coverage` | `coverage-dashboard` |
-| `coverage` | `python scripts/coverage/crap_report.py ...` | `crap-report` |
+| `static-site` | `cd static && npm run test:coverage` when that script exists | `coverage-static` |
+| `coverage` | `make coverage/tooling`, then `python scripts/coverage/crap_report.py ...` | `crap-report`, including raw Python LCOV/JSON |
 
 Coverage rides along with the test runs that already gate the build. The `COVERPROFILE`
 variable adds `-covermode=atomic -coverprofile=... -coverpkg=<application packages>` to the
@@ -56,7 +57,11 @@ make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.o
 # 3. Dashboard coverage.
 cd dashboard && npm ci && npm run test:coverage && cd ..
 
-# 4. Merge, root, and score, using an interpreter that has the pinned crapper:
+# 4. Tooling coverage (coverage.py is pinned in CI).
+make coverage/tooling PYTHON=/path/to/venv/bin/python
+
+# 5. Run static test:coverage when installed; absent input is reported unmeasured.
+# 6. Merge, root, and score, using an interpreter that has the pinned crapper:
 #    make coverage/crap PYTHON=/path/to/venv/bin/python
 ```
 
@@ -97,6 +102,7 @@ otherwise local runs and CI silently score different code.
 | `.metrics/crap-report.txt` | crapper's own table, worst CRAP first |
 | `.metrics/crap.edn` | crapper's snapshot in the shape `uml-viewer` reads |
 | `.metrics/inventory.csv` | one row per function, with source lines and whether a coverage record matched |
+| `.metrics/scope.json` | scored source list, all other tracked files, missing measurements and supplied suite inputs |
 
 The inventory has a `coverage_recorded` column with `yes` or `no`, and its stdout summary
 separates the functions that matched a record from the functions no report mentions.
@@ -186,10 +192,14 @@ regression look identical from the number alone.
 
 ## What the score covers, and what it does not
 
-Scope is the tracked application sources crapper can parse, minus the static site, tests,
+Scope is the tracked handwritten sources crapper can parse, including the static site and
+Python tooling, minus tests,
 and generated code: files carrying Go's generated-code marker (`// Code generated ... DO NOT
 EDIT.`) and everything under `pkg/proto/` are left out. crapper's own skip list removes
-build output, dependency trees, and report directories, and `git ls-files` is the starting
+build output, dependency trees, and report directories. The source directories
+`scripts/coverage/` and `scripts/test/` are explicitly distinguished from generated
+coverage output and test suites; test filenames and nested test/output directories remain excluded.
+`git ls-files` is the starting
 set, so untracked output never enters. The snapshot and the inventory are built from that
 one list, so they always describe the same scope.
 
@@ -211,10 +221,13 @@ Limits worth stating plainly:
 - crapper recognises named functions and methods, plus top-level arrow functions in
   TypeScript. Other nested callbacks stay inside the enclosing function, so one entry can
   stand for a lot of decisions.
-- The static site is outside this scope by choice: it is published documentation, not
-  application code. Its own evidence is the `static-site` job, where `npm run check`
-  validates MDX pages, OpenAPI operations, and generated documents. Do not add tests there
-  to move a denominator this report no longer contains.
+- Static-site functions remain in the inventory even when their coverage suite is absent.
+  CI collects `static/coverage/lcov.info` once `test:coverage` is present; missing suite input
+  means unmeasured, not measured zero or full coverage. Its build/document checks still run.
+- Python tooling uses pinned coverage.py with branch tracking and repository-rooted LCOV.
+  Its raw JSON preserves statement and branch totals separately; Crapper uses branch records
+  when available. Subprocesses need their own instrumentation: an uninstrumented launcher
+  remains visible at zero coverage instead of being dropped.
 - Not assessed at all: SQL, YAML and Compose/Kubernetes configuration, shell scripts,
   protobuf definitions, MDX content, and CSS.
 - Not assessed: runtime performance. Nothing here measures latency, throughput, memory, or
@@ -276,3 +289,13 @@ Comment publication is best-effort: GitHub API failures cannot turn a successful
 comparison into a failed gate. The job summary and artifact retain the results.
 New PR runs cancel older runs for that PR; main-branch reports use separate
 concurrency groups per commit so later pushes do not cancel baseline collection.
+
+## Expanding measurement scope
+
+Report metadata versions the measured scope. A scope or scorer change invalidates older
+baselines rather than treating newly inventoried functions as previously tested or untested.
+The first compatible main report establishes the new baseline; an unavailable comparison
+is reported explicitly and does not prove absence of regressions. Full coverage and a global
+CRAP limit remain goals under remediation, not claims made by the changed-function gate.
+`.metrics/scope.json` keeps unsupported configuration, content, shell and generated/test
+files visible for separate contract validation; those files do not acquire a fabricated CRAP score.

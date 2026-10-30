@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 import subprocess
 import sys
@@ -36,6 +37,8 @@ CRAPPER_REVISION = "9f1bead298b5a9d576bdd6319289fcf426e5b18a"
 # `--use-existing-coverage` finds them with no extra flags.
 GO_PROFILE = Path("target/coverage/go/coverage.out")
 DASHBOARD_LCOV = Path("target/coverage/typescript/dashboard/lcov.info")
+STATIC_LCOV = Path("target/coverage/typescript/static/lcov.info")
+TOOLING_LCOV = Path("target/coverage/python/tooling/lcov.info")
 
 # The reports crapper's loader reads, as the globs it scans. Only these are cleared:
 # CI stages its inputs under INPUT_DIR, which a wholesale delete would destroy.
@@ -59,8 +62,8 @@ COVER_MODES = ("set", "count", "atomic")
 GENERATED_MARKER = re.compile(r"^// Code generated .* DO NOT EDIT\.$")
 # The project's declared generated-code location, kept as a second net.
 GENERATED_TREES = ("pkg/proto/",)
-# The static site is outside application coverage and CRAP scope.
-EXCLUDED_TREES = ("static/",)
+# These tracked tool directories contain sources, not generated coverage/test output.
+TOOL_SOURCE_TREES = ("scripts/coverage/", "scripts/test/")
 
 # Enough for that leading comment block, so no source is read in full.
 HEADER_BYTES = 512
@@ -241,7 +244,7 @@ def root_lcov_path(value: str, prefix: str) -> str:
     """
 
     path = normalize_path(value)
-    if path.startswith(f"{prefix}/") or path.startswith("/"):
+    if not prefix or path.startswith(f"{prefix}/") or path.startswith("/"):
         return path
     return f"{prefix}/{path}"
 
@@ -313,16 +316,20 @@ def handwritten_sources(root: Path, paths: list[str]) -> list[Path]:
     """The tracked application sources crapper can score and a person wrote.
 
     `git ls-files` starts the scope; crapper's extension, skip-directory and test-name
-    rules drop what it cannot usefully score, and the generated marker drops protoc-gen-go
-    and MockGen output whose complexity would drown the report. The static site is excluded.
+    rules drop what it cannot score, and the generated marker drops protoc-gen-go
+    and MockGen output. Named tool-source directories are not mistaken for reports.
     """
 
     found: list[Path] = []
     for relative in sorted(paths):
-        if language_of(relative) is None or is_test_file(relative) or is_output_path(relative):
-            continue
         text = Path(relative).as_posix()
-        if any(text.startswith(tree) for tree in GENERATED_TREES + EXCLUDED_TREES):
+        tool_source = text.startswith(TOOL_SOURCE_TREES)
+        scoped_path = next((text[len(tree):] for tree in TOOL_SOURCE_TREES if text.startswith(tree)), relative)
+        test_path = scoped_path if tool_source else relative
+        output_path = scoped_path if tool_source else relative
+        if language_of(relative) is None or is_test_file(test_path) or is_output_path(output_path):
+            continue
+        if any(text.startswith(tree) for tree in GENERATED_TREES):
             continue
         path = root / relative
         if not path.is_file():
@@ -512,6 +519,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="lcov.info from the dashboard `npm run test:coverage`",
     )
+    parser.add_argument("--static-lcov", type=Path, help="LCOV from static-site tests")
+    parser.add_argument("--tooling-lcov", type=Path, help="repository-rooted Python tooling LCOV")
     parser.add_argument(
         "--dashboard-prefix",
         default="dashboard",
@@ -564,8 +573,8 @@ def main(argv: list[str] | None = None) -> int:
     if not metrics.is_absolute():
         metrics = root / metrics
 
-    go_unit, go_integration, dashboard_lcov = resolve_inputs(
-        root, [args.go_unit, args.go_integration, args.dashboard_lcov]
+    go_unit, go_integration, dashboard_lcov, static_lcov, tooling_lcov = resolve_inputs(
+        root, [args.go_unit, args.go_integration, args.dashboard_lcov, args.static_lcov, args.tooling_lcov]
     )
     removed = clear_stale_reports(root)
     if removed:
@@ -583,6 +592,11 @@ def main(argv: list[str] | None = None) -> int:
         prefix_lcov_report(dashboard_lcov, root / DASHBOARD_LCOV, args.dashboard_prefix)
         print(f"Wrote {DASHBOARD_LCOV} with SF: paths rooted at {args.dashboard_prefix}/")
 
+    if static_lcov:
+        prefix_lcov_report(static_lcov, root / STATIC_LCOV, "static")
+    if tooling_lcov:
+        prefix_lcov_report(tooling_lcov, root / TOOLING_LCOV, "")
+
     files = handwritten_sources(root, tracked)
     bundle = load_bundle(root)
     entries, rows = measure(files, root, bundle)
@@ -592,6 +606,14 @@ def main(argv: list[str] | None = None) -> int:
     snapshot = write_report(metrics / "crap.edn", render_edn(entries))
     report = write_report(metrics / "crap-report.txt", format_report(entries))
     inventory = write_inventory(metrics / "inventory.csv", rows)
+    write_report(metrics / "scope.json", json.dumps({
+        "sources": [file.relative_to(root).as_posix() for file in files],
+        "unscored_tracked_files": sorted(set(tracked) - {file.relative_to(root).as_posix() for file in files}),
+        "unmeasured_functions": [row for row in rows if row["coverage_recorded"] == "no"],
+        "inputs": {"go_unit": bool(go_unit), "go_integration": bool(go_integration),
+                   "dashboard": bool(dashboard_lcov), "static": bool(static_lcov),
+                   "tooling": bool(tooling_lcov)},
+    }, indent=2) + "\n")
 
     print(format_report(entries), end="")
     print(summarise(rows, files, root))

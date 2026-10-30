@@ -78,8 +78,8 @@ function HeartbeatHeaders() {
     const headerFields = useWatch({ control: form.control, name: "heartbeatPayload.headers" }) ?? []
     return (
         <>
-            <div className="flex flex-col gap-2">
-                <FormLabel>
+            <fieldset className="flex min-w-0 flex-col gap-2">
+                <legend className="text-sm font-medium">
                     Headers (optional)
                     <Button
                         type="button"
@@ -95,10 +95,10 @@ function HeartbeatHeaders() {
                     >
                         <Plus className="mr-1 h-3 w-3" /> Add header
                     </Button>
-                </FormLabel>
-                <FormDescription>
+                </legend>
+                <p className="text-muted-foreground text-sm">
                     Optional HTTP headers to include with the request
-                </FormDescription>
+                </p>
 
                 {headerFields.map((header: HeaderFormValue, index: number) => (
                     <div key={header.id} className="flex items-center gap-2 mt-2">
@@ -151,7 +151,7 @@ function HeartbeatHeaders() {
                         </Button>
                     </div>
                 ))}
-            </div>
+            </fieldset>
         </>
     )
 }

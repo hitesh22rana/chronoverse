@@ -134,13 +134,14 @@ const sequences = () =>
     [...screen.getAllByRole("listitem")].map((row) => row.getAttribute("data-sequence"))
 
 function JobLogsHarness({ jobStatus }: { jobStatus: string }) {
-    const { logs, isLoading, error, updateSearchQuery, downloadLogsMutation, isDownloadLogsMutationLoading } =
+    const { logs, isLoading, error, updateSearchQuery, downloadLogsMutation, isDownloadLogsMutationLoading, fetchNextPage } =
         useJobLogs("w1", "j1", jobStatus)
     return (
         <div>
             <p data-testid="loading">{String(isLoading)}</p>
             <p data-testid="error">{error ? error.message : "none"}</p>
             <p data-testid="downloading">{String(isDownloadLogsMutationLoading)}</p>
+            <button type="button" onClick={() => { void fetchNextPage() }}>load more</button>
             <button type="button" onClick={() => updateSearchQuery("timeout")}>search timeout</button>
             <button type="button" onClick={() => updateSearchQuery("")}>clear search</button>
             <button type="button" onClick={() => downloadLogsMutation.mutate({ filename: "job-logs.txt", format: "json" })}>
@@ -484,3 +485,15 @@ it("reports a failed download and clears the pending state", async () => {
 })
 
 
+
+it("keeps pagination inert before the job has any logs", async () => {
+    renderJobLogs("PENDING")
+    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalledWith("/workflows/w1", "failed to fetch workflow details"))
+    expect(mocks.fetchApiJson.mock.calls.some(([url]) => String(url).includes("/logs"))).toBe(false)
+    mocks.fetchApiJson.mockClear()
+    await act(async () => { screen.getByText("load more").click() })
+    expect(mocks.fetchApiJson).not.toHaveBeenCalled()
+    expect(mocks.sources).toHaveLength(0)
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0)
+    expect(screen.getByTestId("error").textContent).toBe("none")
+})

@@ -130,7 +130,6 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 		gzipWriter := &gzipResponseWriter{
 			ResponseWriter: w,
 			gzipWriter:     gz,
-			status:         http.StatusOK,
 		}
 
 		next.ServeHTTP(gzipWriter, r)

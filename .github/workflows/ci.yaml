@@ -96,10 +96,14 @@ jobs:
           from pathlib import Path
 
           lines = Path("target/unit-tests.log").read_text(errors="replace").splitlines()
+          lines = [re.sub(r"\s+coverage:.*", "", line)
+                   if re.match(r"^(?:ok|FAIL|\s*github\.com/)", line) else line for line in lines]
           failures = [i for i, line in enumerate(lines)
-                      if re.search(r"--- FAIL:|^FAIL\s|^panic:|^fatal error:|^# ", line)]
+                      if re.search(r"--- FAIL:|^panic:|^fatal error:", line)]
+          if not failures:
+              failures = [i for i, line in enumerate(lines) if re.search(r"^FAIL\s|^# ", line)]
           for i in (failures[:20] or [len(lines) - 1]):
-              excerpt = "\n".join(lines[max(0, i - 30):i + 7])[-4000:]
+              excerpt = "\n".join(line[:500] for line in lines[max(0, i - 5):i + 21])[:4000]
               escaped = excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
               print("::error title=Unit test failure::" + escaped)
           PYTHON

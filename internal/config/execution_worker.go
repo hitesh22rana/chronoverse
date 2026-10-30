@@ -79,8 +79,9 @@ func (c *ExecutionWorkerConfig) validate() error {
 	if err != nil {
 		return fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
 	}
-	if memoryBytes < 0 {
-		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
+	// The RAM parser's overflowing float-to-int conversion can wrap or saturate.
+	if memoryBytes < 0 || memoryBytes == math.MaxInt64 {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: exceeds supported byte range")
 	}
 	if math.IsNaN(c.WorkloadCPUs) || math.IsInf(c.WorkloadCPUs, 0) {
 		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be finite")

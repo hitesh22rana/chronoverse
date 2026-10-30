@@ -918,5 +918,58 @@ class InventoryFileTest(unittest.TestCase):
             self.assertIn("src/a.go,1,2,go,app,A,1,100.0000,yes,1.0", lines[1])
 
 
+class OperationalEdgeContracts(unittest.TestCase):
+    def test_profile_blank_lines_duplicate_header_and_no_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = root / "coverage.out"
+            profile.write_text("\nmode: atomic\n\n")
+            self.assertEqual(crap_report._read_go_profile(profile), ("atomic", {}))
+            profile.write_text("mode: atomic\nmode: atomic\n")
+            with self.assertRaisesRegex(crap_report.CoverageError, "second mode"):
+                crap_report._read_go_profile(profile)
+            with self.assertRaisesRegex(crap_report.CoverageError, "no Go coverprofile"):
+                crap_report.merge_go_profiles([], root / "out", MODULE)
+            (root / "go.mod").write_text("// module declaration not yet present\n")
+            self.assertEqual(crap_report.module_paths(root, ["go.mod"]), ())
+            self.assertFalse(crap_report.is_generated("// handwritten comment\n\n"))
+
+    def test_missing_git_executable_is_a_clear_operational_error(self):
+        import os
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"PATH": directory}):
+            with self.assertRaisesRegex(crap_report.CoverageError, "git is required"):
+                crap_report.tracked_files(Path(directory))
+
+    def test_executable_no_inputs_remains_unmeasured_and_failure_preserves_report(self):
+        import csv
+        import runpy
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / "go.mod").write_text("module example.com/app\n")
+            (root / "app.go").write_text("package app\nfunc Run() int { return 1 }\n")
+            subprocess.run(["git", "-C", str(root), "add", "go.mod", "app.go"], check=True)
+            args = ["crap_report.py", "--repo-root", str(root)]
+            with mock.patch("sys.argv", args), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_module("crap_report", run_name="__main__")
+            self.assertEqual(result.exception.code, 0)
+            inventory = root / ".metrics/inventory.csv"
+            with inventory.open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([(row["name"], row["coverage_recorded"], row["coverage"]) for row in rows],
+                             [("Run", "no", "")])
+            before = inventory.read_bytes()
+            stderr = io.StringIO()
+            with mock.patch("sys.argv", args + ["--go-unit", "missing.out"]), contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_module("crap_report", run_name="__main__")
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("input not found", stderr.getvalue())
+            self.assertEqual(inventory.read_bytes(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

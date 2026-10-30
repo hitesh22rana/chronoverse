@@ -301,6 +301,11 @@ jobs:
             echo '::endgroup::'
           }
 
+      - name: Report absolute coverage completion debt
+        run: |
+          python scripts/coverage/completion_report.py
+          cat target/coverage/completion.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Record report provenance
         run: python scripts/coverage/ci_report.py prepare
 

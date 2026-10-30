@@ -1,9 +1,13 @@
 package config
 
 import (
+	"errors"
+	"fmt"
+	"math"
 	"os"
 	"time"
 
+	"github.com/docker/go-units"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -56,6 +60,9 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err
 	}
+	if err := cfg.ExecutionWorkerConfig.validate(); err != nil {
+		return nil, err
+	}
 	if cfg.ExecutionWorkerConfig.WorkerID == "" {
 		if hostname, err := os.Hostname(); err == nil && hostname != "" {
 			cfg.ExecutionWorkerConfig.WorkerID = hostname
@@ -64,4 +71,36 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 		}
 	}
 	return &cfg, nil
+}
+
+// validate rejects workload container limits that the Docker runtime would
+// silently ignore or misinterpret.
+func (c *ExecutionWorkerConfig) validate() error {
+	memoryBytes, err := units.RAMInBytes(c.WorkloadMemory)
+	if err != nil {
+		return fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
+	}
+	if memoryBytes < 0 {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
+	}
+	if math.IsNaN(c.WorkloadCPUs) || math.IsInf(c.WorkloadCPUs, 0) {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be finite")
+	}
+	if c.WorkloadCPUs < 0 {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
+	}
+	if c.WorkloadPidsLimit < 0 {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
+	}
+
+	nanoCPUs := math.Round(c.WorkloadCPUs * 1e9)
+	// float64(math.MaxInt64) rounds up to 2^63, so values below this boundary
+	// always convert to int64 without overflowing.
+	if nanoCPUs >= float64(math.MaxInt64) {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: exceeds supported nanocpu range")
+	}
+	if c.WorkloadCPUs > 0 && nanoCPUs == 0 {
+		return errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: positive limits must round to at least one nanocpu")
+	}
+	return nil
 }

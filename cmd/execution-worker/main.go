@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -216,6 +215,9 @@ func executionWorkerRetryConfig() *grpcclient.RetryConfig {
 	}
 }
 
+// workloadResourceLimits converts the validated execution worker configuration
+// into container limits. ExecutionWorkerConfig.validate rejects out-of-range
+// values before startup reaches this point.
 func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.ResourceLimits, error) {
 	if cfg == nil {
 		return container.ResourceLimits{}, nil
@@ -225,31 +227,10 @@ func workloadResourceLimits(cfg *config.ExecutionWorkerConfig) (container.Resour
 	if err != nil {
 		return container.ResourceLimits{}, fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)
 	}
-	if memoryBytes < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: must be non-negative")
-	}
-	if math.IsNaN(cfg.WorkloadCPUs) || math.IsInf(cfg.WorkloadCPUs, 0) {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be finite")
-	}
-	if cfg.WorkloadCPUs < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: must be non-negative")
-	}
-	if cfg.WorkloadPidsLimit < 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT: must be non-negative")
-	}
-
-	nanoCPUs := math.Round(cfg.WorkloadCPUs * 1e9)
-	if nanoCPUs >= float64(math.MaxInt64) {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: exceeds supported nanocpu range")
-	}
-
-	if cfg.WorkloadCPUs > 0 && nanoCPUs == 0 {
-		return container.ResourceLimits{}, errors.New("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS: positive limits must round to at least one nanocpu")
-	}
 
 	return container.ResourceLimits{
 		MemoryBytes: memoryBytes,
-		NanoCPUs:    int64(nanoCPUs),
+		NanoCPUs:    int64(math.Round(cfg.WorkloadCPUs * 1e9)),
 		PidsLimit:   cfg.WorkloadPidsLimit,
 	}, nil
 }

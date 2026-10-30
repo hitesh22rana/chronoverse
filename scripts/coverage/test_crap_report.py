@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import shutil
 import subprocess
 import tempfile
@@ -441,15 +442,26 @@ class HandwrittenSourcesTest(unittest.TestCase):
             ],
         )
 
-    def test_static_sources_are_outside_application_scope(self):
+    def test_static_sources_are_in_scope(self):
         path = self.root / "static/src/search.ts"
         path.parent.mkdir(parents=True)
         path.write_text("export function search() { return 1; }\n", encoding="utf-8")
-        self.assertEqual(self.select(["static/src/search.ts"]), [])
+        self.assertEqual(self.select(["static/src/search.ts"]), ["static/src/search.ts"])
         application = self.root / "internal/static/search.go"
         application.parent.mkdir(parents=True)
         application.write_text("package static\nfunc Search() int { return 1 }\n", encoding="utf-8")
         self.assertEqual(self.select(["internal/static/search.go"]), ["internal/static/search.go"])
+
+    def test_tool_sources_are_not_confused_with_test_or_report_directories(self):
+        names = ["scripts/coverage/crap_report.py", "scripts/test/integration_exec.py",
+                 "scripts/coverage/test_crap_report.py", "scripts/coverage/__pycache__/cached.py",
+                 "scripts/coverage/tests/helper.py", "coverage/generated.py"]
+        for name in names:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("def work(): return 1\n", encoding="utf-8")
+        self.assertEqual(self.select(names),
+                         ["scripts/coverage/crap_report.py", "scripts/test/integration_exec.py"])
 
     def test_generated_trees_are_excluded(self):
         self.assertNotIn("pkg/proto/go/users/users.pb.go", self.select())
@@ -630,6 +642,40 @@ class MainTest(unittest.TestCase):
         )
         dashboard = self.write("dashboard/coverage/lcov.info", MAIN_LCOV)
         return unit, integration, dashboard
+
+    def test_static_and_tooling_reports_match_only_their_own_sources(self):
+        self.write("static/src/lib/utils.ts", MAIN_UTILS_TS)
+        self.write("scripts/coverage/tool.py", "def tool(flag):\n    if flag:\n        return 1\n    return 0\n")
+        subprocess.run(["git", "-C", str(self.root), "add", "static", "scripts"], check=True)
+        static = self.write("static/coverage/lcov.info", "SF:src/lib/utils.ts\nDA:1,0\nDA:2,0\nBRDA:2,0,0,0\nend_of_record\n")
+        tooling = self.write("target/coverage-inputs/tooling/lcov.info", "SF:scripts/coverage/tool.py\nDA:1,1\nDA:2,1\nDA:3,1\nDA:4,1\nBRDA:2,0,0,1\nBRDA:2,0,1,1\nend_of_record\n")
+        self.run_main("--static-lcov", str(static), "--tooling-lcov", str(tooling))
+        with (self.root / ".metrics/inventory.csv").open() as handle:
+            import csv
+            rows = {row["path"]: row for row in csv.DictReader(handle)}
+        self.assertEqual(float(rows["static/src/lib/utils.ts"]["coverage"]), 0)
+        self.assertEqual(float(rows["dashboard/src/lib/utils.ts"]["coverage"]), 100)
+        self.assertEqual(float(rows["scripts/coverage/tool.py"]["coverage"]), 100)
+        scope = json.loads((self.root / ".metrics/scope.json").read_text())
+        self.assertTrue(scope["inputs"]["static"])
+        self.assertTrue(scope["inputs"]["tooling"])
+        self.assertIn("go.mod", scope["unscored_tracked_files"])
+        self.assertIn("static/src/lib/utils.ts", scope["sources"])
+
+    def test_inventory_without_suite_inputs_does_not_claim_measurement(self):
+        self.assertEqual(crap_report.main(["--repo-root", str(self.root)]), 0)
+        scope = json.loads((self.root / ".metrics/scope.json").read_text())
+        self.assertTrue(all(not present for present in scope["inputs"].values()))
+        self.assertEqual(len(scope["unmeasured_functions"]), 4)
+
+    def test_missing_optional_suite_is_visible_as_unmeasured(self):
+        self.write("static/src/lib/utils.ts", MAIN_UTILS_TS)
+        subprocess.run(["git", "-C", str(self.root), "add", "static"], check=True)
+        self.run_main()
+        scope = json.loads((self.root / ".metrics/scope.json").read_text())
+        self.assertFalse(scope["inputs"]["static"])
+        missing = {row["path"] for row in scope["unmeasured_functions"]}
+        self.assertIn("static/src/lib/utils.ts", missing)
 
     def run_main(self, *extra: str) -> int:
         unit, integration, dashboard = self.stage()

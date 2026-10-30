@@ -91,7 +91,8 @@ class MakeCoverageTests(unittest.TestCase):
         self.log.write_text("", encoding="utf-8")
         env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
         # The defaults under test must come from the Makefile, not the caller's shell.
-        env.pop("INTEGRATION_PARALLELISM", None)
+        for name in ("INTEGRATION_PARALLELISM", "PYTHON", "MAKEFLAGS", "MAKEOVERRIDES"):
+            env.pop(name, None)
         env.update(fake)
         return subprocess.run(
             args, cwd=self.root, text=True, capture_output=True, env=env,
@@ -139,6 +140,13 @@ class MakeCoverageTests(unittest.TestCase):
             self.assertIn(package, command)
         unit = self.run_make("test/short")
         self.assertNotIn("-p", self.go_test_command(unit).split())
+
+    def test_integration_uses_the_selected_python_interpreter(self):
+        result = self.run_make("test/integration", PYTHON="/opt/coverage/bin/python")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tokens = shlex.split(self.go_test_command(result))
+        launcher = shlex.split(tokens[tokens.index("-exec") + 1])
+        self.assertEqual(launcher, ["/opt/coverage/bin/python", str(self.root / "scripts/test/integration_exec.py")])
 
     def test_integration_parallelism_can_be_bounded_by_the_caller(self):
         result = self.run_make("test/integration", INTEGRATION_PARALLELISM="2")

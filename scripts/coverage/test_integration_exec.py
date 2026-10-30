@@ -53,6 +53,35 @@ class IntegrationExecTests(unittest.TestCase):
         child.communicate(timeout=10)
         self.assertEqual(child.returncode, -signal.SIGTERM)
 
+    def test_exec_boundary_receives_fresh_session_and_preserved_process_inputs(self):
+        import runpy
+        from unittest import mock
+        args = [str(LAUNCHER), "/real/test binary", "space in argument", "--flag=value", ""]
+        inherited = {"TESTCONTAINERS_SESSION_ID": "shared-parent", "UNCHANGED": "preserved"}
+        with mock.patch.dict(os.environ, inherited, clear=True), mock.patch.object(sys, "argv", args):
+            with mock.patch.object(os, "execvpe") as execute:
+                runpy.run_path(str(LAUNCHER), run_name="__main__")
+                execute.assert_called_once()
+                executable, argv, environment = execute.call_args.args
+                self.assertEqual(executable, args[1])
+                self.assertEqual(argv, args[1:])
+                self.assertEqual(environment["UNCHANGED"], "preserved")
+                session = environment["TESTCONTAINERS_SESSION_ID"]
+                self.assertEqual(len(session), 32)
+                self.assertEqual(uuid.UUID(hex=session).version, 4)
+                self.assertNotEqual(session, inherited["TESTCONTAINERS_SESSION_ID"])
+
+    def test_no_binary_exits_before_replacing_process_or_environment(self):
+        import runpy
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"TESTCONTAINERS_SESSION_ID": "parent"}, clear=True):
+            with mock.patch.object(sys, "argv", [str(LAUNCHER)]), mock.patch.object(os, "execvpe") as execute:
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_path(str(LAUNCHER), run_name="__main__")
+                self.assertEqual(str(result.exception), "usage: integration_exec.py TEST_BINARY [ARG ...]")
+                execute.assert_not_called()
+                self.assertEqual(dict(os.environ), {"TESTCONTAINERS_SESSION_ID": "parent"})
+
     def test_missing_binary_fails(self):
         result = subprocess.run([sys.executable, str(LAUNCHER)], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)

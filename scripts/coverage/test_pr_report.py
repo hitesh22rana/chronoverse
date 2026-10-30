@@ -1,5 +1,6 @@
 """Behavioral tests for changed-function coverage/CRAP reporting."""
 
+import base64
 import csv
 import contextlib
 import io
@@ -8,6 +9,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import zlib
 
 from pr_report import Function, compare, changed_files, debt_markdown, escape, inventory_annotations, inventory_debt, main, markdown, read_inventory
 
@@ -59,7 +61,9 @@ class ChangedFunctionReportTests(unittest.TestCase):
         result = compare(functions, None, "", head_sha="b" * 40, tested_sha="c" * 40)
         annotations = inventory_annotations(result)
         pages = annotations[1:]
-        self.assertGreater(len(pages), 2)
+        self.assertGreater(len(pages), 1)
+        self.assertLessEqual(len(annotations), 10)
+        self.assertIn("Human summary truncated", annotations[0])
         chunks = []
         for index, annotation in enumerate(pages, 1):
             self.assertLessEqual(len(annotation.encode("utf-8")), 16384)
@@ -67,17 +71,34 @@ class ChangedFunctionReportTests(unittest.TestCase):
             title, encoded = annotation.split("::", 2)[1:]
             self.assertEqual(title, f"notice title=Whole-scope inventory JSON {index}/{len(pages)}")
             message = encoded.replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+            self.assertLessEqual(len(message.encode("utf-8")), 4096)
             revision, page, data = message.split("\n", 2)
             self.assertEqual(revision, "Tested revision: " + "c" * 40)
             self.assertIn(f"JSON chunk {index}/{len(pages)};", page)
             chunks.append(data)
-        payload = json.loads("".join(chunks))
+        envelope = json.loads("".join(chunks))
+        self.assertEqual(envelope["encoding"], "zlib-base64")
+        payload = json.loads(zlib.decompress(base64.b64decode(envelope["payload"], validate=True)))
         self.assertEqual(payload["provenance"], result["provenance"])
         self.assertEqual(payload["totals"], result["totals"]["head"])
         self.assertEqual(payload["inventory_debt"], result["inventory_debt"])
         self.assertEqual(len(payload["inventory_debt"]["partial"]), 474)
         self.assertEqual(len(payload["inventory_debt"]["unmeasured"]), 1)
         self.assertEqual(inventory_annotations(result), annotations)
+
+    def test_oversized_inventory_is_explicitly_unavailable_not_silently_partial(self):
+        import random
+        import string
+        randomizer = random.Random(0)
+        functions = [function("f" + "".join(randomizer.choices(string.ascii_letters, k=96)),
+                              coverage="99", crap="35.001225", complexity=35)
+                     for _ in range(1000)]
+        result = compare(functions, None, "", tested_sha="c" * 40)
+        annotations = inventory_annotations(result)
+        self.assertEqual(len(annotations), 2)
+        self.assertIn("Full inventory export unavailable", annotations[1])
+        self.assertNotIn("Whole-scope inventory JSON", annotations[1])
+        self.assertIn("No partial JSON export was emitted", annotations[1])
 
     def test_inventory_annotations_are_revision_bound_and_cannot_inject_commands(self):
         result = compare([function("x%0A::error::forged\nname", coverage="50")], [], "", tested_sha="abc123")

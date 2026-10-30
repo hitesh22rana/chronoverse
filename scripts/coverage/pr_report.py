@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import csv
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -12,6 +13,7 @@ import html
 import json
 from pathlib import Path
 import re
+import zlib
 from collections import defaultdict
 
 SCHEMA_VERSION = 1
@@ -344,16 +346,24 @@ def inventory_annotations(report: dict) -> list[str]:
     revision = escape(report["provenance"]["tested_sha"])
     text = "\n".join(debt_markdown(report["inventory_debt"]))
     message = f"Tested revision: {revision}\n{text}"
+    if len(message.encode("utf-8")) > 3800:
+        message = message.encode("utf-8")[:3600].decode("utf-8", errors="ignore") + (
+            "\nHuman summary truncated; use the complete JSON export or report artifact.")
     encoded = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
     annotations = ["::notice title=Whole-scope coverage inventory::" + encoded]
-    # Each page is a slice of one canonical ASCII JSON document. Concatenating
-    # page bodies reconstructs all debt rows, including identities split across
-    # pages. Keep the human summary bounded independently of this export.
+    # GitHub retains ten notices per step: reserve one for the human summary.
     payload = json.dumps({"provenance": report["provenance"],
                           "totals": report["totals"]["head"],
                           "inventory_debt": report["inventory_debt"]},
                          ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-    chunks = [payload[offset:offset + 4000] for offset in range(0, len(payload), 4000)]
+    envelope = json.dumps({"encoding": "zlib-base64", "payload": base64.b64encode(
+        zlib.compress(payload.encode("ascii"), level=9)).decode("ascii")}, separators=(",", ":"))
+    chunks = [envelope[offset:offset + 3900] for offset in range(0, len(envelope), 3900)]
+    if len(chunks) > 9:
+        annotations.append("::notice title=Full inventory export unavailable::"
+                           "Compressed inventory exceeds the nine-page annotation limit; "
+                           "use the complete report artifact. No partial JSON export was emitted.")
+        return annotations
     for index, chunk in enumerate(chunks, 1):
         message = (f"Tested revision: {report['provenance']['tested_sha']}\n"
                    f"JSON chunk {index}/{len(chunks)}; concatenate page bodies in order.\n{chunk}")

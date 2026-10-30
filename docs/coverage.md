@@ -306,16 +306,20 @@ CRAP limit remain goals under remediation, not claims made by the changed-functi
 `.metrics/scope.json` keeps unsupported configuration, content, shell and generated/test
 files visible for separate contract validation; those files do not acquire a fabricated CRAP score.
 
-The check annotations include a bounded human debt summary and paginated JSON
-for the complete current debt inventory. Pages titled `Whole-scope inventory JSON
-N/M` carry the tested revision and page position. Retrieve all annotation pages
-through the GitHub check-run annotations API, order them by their numeric page
-position, and concatenate the body after each two-line header before parsing JSON.
-Require the same exact tested revision on every page and each index from 1 through
-N exactly once. Reject partial exports, duplicate pages and mixed revisions before
-parsing the document or using its numbers. Follow API pagination when retrieving
-annotations; the first API response may contain only part of the export.
-The document includes provenance, totals and every high-CRAP, partial-coverage and
-unmeasured row; categories may overlap. Identities can cross page boundaries, so
-parse only the reconstructed document. This export leaves the human PR comment
-bounded and makes no comparison or repository completion claim.
+The check annotations include a bounded human debt summary and a compressed,
+paginated JSON envelope for the complete current debt inventory. GitHub retains
+ten notices per step, so at most nine machine pages follow the human summary.
+Pages titled `Whole-scope inventory JSON N/M` carry the tested revision and page
+position. Fetch every API pagination page, require the same tested revision on
+all chunks and every position from 1 through M exactly once, and reject partial,
+duplicate or mixed-revision exports before using any numbers. Concatenate the
+body after each two-line header and parse the JSON envelope. Its `encoding` is
+`zlib-base64`: base64-decode its `payload`, decompress it with zlib, then parse
+the resulting JSON document. Verify the document's provenance and totals.
+
+The decoded document contains every high-CRAP, partial-coverage and unmeasured
+row; categories can overlap. Compression preserves identities and metrics.
+If an export cannot fit nine bounded pages, CI explicitly reports it unavailable
+and retains the complete report artifact instead of emitting partial JSON.
+This export leaves the human PR comment bounded and makes no comparison or
+repository completion claim.

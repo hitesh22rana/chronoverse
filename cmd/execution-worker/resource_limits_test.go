@@ -33,9 +33,29 @@ func TestWorkloadResourceLimits(t *testing.T) {
 			want: container.ResourceLimits{MemoryBytes: 1610612736, NanoCPUs: 250000000, PidsLimit: 17},
 		},
 		{
+			name: "CPU rounds up at half a nanocpu",
+			cfg:  &config.ExecutionWorkerConfig{WorkloadMemory: "1", WorkloadCPUs: 0.0000000005},
+			want: container.ResourceLimits{MemoryBytes: 1, NanoCPUs: 1},
+		},
+		{
 			name: "CPU rounds up above half a nanocpu",
 			cfg:  &config.ExecutionWorkerConfig{WorkloadMemory: "1", WorkloadCPUs: 0.0000000006},
 			want: container.ResourceLimits{MemoryBytes: 1, NanoCPUs: 1},
+		},
+		{
+			name: "CPU rounds down below the next half nanocpu",
+			cfg:  &config.ExecutionWorkerConfig{WorkloadMemory: "1", WorkloadCPUs: 0.0000000014},
+			want: container.ResourceLimits{MemoryBytes: 1, NanoCPUs: 1},
+		},
+		{
+			name: "CPU below overflow boundary",
+			cfg:  &config.ExecutionWorkerConfig{WorkloadMemory: "1", WorkloadCPUs: 9223372036.854774},
+			want: container.ResourceLimits{MemoryBytes: 1, NanoCPUs: 9223372036854774784},
+		},
+		{
+			name: "memory below overflow boundary",
+			cfg:  &config.ExecutionWorkerConfig{WorkloadMemory: "9223372036854774784"},
+			want: container.ResourceLimits{MemoryBytes: 9223372036854774784},
 		},
 		{
 			name:    "malformed memory",

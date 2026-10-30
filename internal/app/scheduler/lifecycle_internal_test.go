@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"go.uber.org/zap"
@@ -131,4 +132,46 @@ func TestRunEnforcesAttemptDeadline(t *testing.T) {
 	if parent.Err() != nil || calls < 1 {
 		t.Fatalf("parent=%v calls=%d", parent.Err(), calls)
 	}
+}
+
+func TestRunCancelsActiveAttemptWithParent(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		started := make(chan struct{})
+		release := make(chan struct{})
+		defer close(release)
+		app := New(ctx, &Config{PollInterval: time.Second, ContextTimeout: time.Hour}, schedulerServiceFunc(func(attempt context.Context) (int, error) {
+			close(started)
+			select {
+			case <-attempt.Done():
+			case <-release:
+				return 0, nil
+			}
+			if !errors.Is(attempt.Err(), context.Canceled) {
+				t.Errorf("active attempt error=%v, want parent cancellation", attempt.Err())
+			}
+			return 0, attempt.Err()
+		}))
+		done := make(chan error, 1)
+		go func() { done <- app.Run(ctx) }()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		select {
+		case <-started:
+		default:
+			t.Fatal("service attempt did not start")
+		}
+		cancel()
+		synctest.Wait()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Run()=%v", err)
+			}
+		default:
+			t.Fatal("Run did not return after canceling the active attempt")
+		}
+	})
 }

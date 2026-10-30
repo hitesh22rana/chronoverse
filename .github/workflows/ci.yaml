@@ -338,7 +338,7 @@ jobs:
             args+=(--base .metrics/base-inventory.csv)
           fi
           reason=$(python -c 'import json; print(json.load(open(".metrics/baseline-status.json"))["reason"])')
-          python scripts/coverage/pr_report.py \
+          python scripts/coverage/pr_report.py --annotations \
             --head .metrics/inventory.csv "${args[@]}" \
             --diff .metrics/changes.diff \
             --summary target/coverage/pr-summary.md \

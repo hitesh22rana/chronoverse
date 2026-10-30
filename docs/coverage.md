@@ -290,6 +290,12 @@ comparison into a failed gate. The job summary and artifact retain the results.
 New PR runs cancel older runs for that PR; main-branch reports use separate
 concurrency groups per commit so later pushes do not cancel baseline collection.
 
+Whole-scope debt tables list high-CRAP, partially covered and unmeasured functions,
+including unchanged code. The PR comment and job summary show bounded tables with total
+counts; the JSON artifact retains all rows. CI emits the same bounded inventory as a
+revision-bound check annotation, readable through the GitHub API when artifact downloads
+are unavailable. These debt tables do not change the regression gate.
+
 ## Expanding measurement scope
 
 Report metadata versions the measured scope. A scope or scorer change invalidates older

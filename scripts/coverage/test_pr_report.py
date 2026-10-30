@@ -1,13 +1,15 @@
 """Behavioral tests for changed-function coverage/CRAP reporting."""
 
 import csv
+import contextlib
+import io
 from decimal import Decimal
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from pr_report import Function, compare, changed_files, escape, main, markdown, read_inventory
+from pr_report import Function, compare, changed_files, debt_markdown, escape, inventory_annotations, inventory_debt, main, markdown, read_inventory
 
 
 def function(name="run", coverage="80", crap="10", complexity=4, start=10, end=20,
@@ -23,6 +25,41 @@ def patch(old="12,1", new="12,1", path="internal/service.go"):
 
 
 class ChangedFunctionReportTests(unittest.TestCase):
+    def test_whole_inventory_debt_includes_unchanged_and_missing_functions(self):
+        head = [function("complete", coverage="100", crap="4"),
+                function("high", coverage="90", crap="40", start=30, end=40),
+                function("zero", coverage="0", crap="8", start=50, end=60),
+                function("missing", coverage=None, start=70, end=80)]
+        result = compare(head, head, "")
+        self.assertEqual(result["gate"], "passed")
+        self.assertEqual(result["rows"], [])
+        self.assertEqual([r["name"] for r in result["inventory_debt"]["high_crap"]], ["high"])
+        self.assertEqual([r["name"] for r in result["inventory_debt"]["partial"]], ["zero", "high"])
+        self.assertEqual([r["name"] for r in result["inventory_debt"]["unmeasured"]], ["missing"])
+        summary = markdown(result)
+        self.assertIn("Measured CRAP ≥ 30: 1", summary)
+        self.assertIn("Measured coverage below 100%: 2", summary)
+        self.assertIn("Functions without a coverage record: 1", summary)
+        self.assertIn("unmeasured", summary)
+
+    def test_inventory_debt_summary_bounds_output_and_escapes_identity(self):
+        functions = [function(f"unsafe|<tag>@{n}", coverage="50") for n in range(22)]
+        text = "\n".join(debt_markdown(inventory_debt(functions)))
+        self.assertIn("Showing 20 of 22", text)
+        self.assertEqual(text.count("| 4 | 50.00% | 10.00 |"), 20)
+        self.assertIn("unsafe\\|&lt;tag&gt;&#64;", text)
+        self.assertIn("Measured CRAP ≥ 30: 0", text)
+        self.assertIn("None.", text)
+
+    def test_inventory_annotations_are_revision_bound_and_cannot_inject_commands(self):
+        result = compare([function("x%0A::error::forged\nname", coverage="50")], [], "", tested_sha="abc123")
+        annotations = inventory_annotations(result)
+        self.assertEqual(len(annotations), 1)
+        self.assertTrue(annotations[0].startswith("::notice title=Whole-scope coverage inventory::"))
+        self.assertIn("Tested revision: abc123", annotations[0])
+        self.assertIn("%250A::error::forged", annotations[0])
+        self.assertNotIn("\n", annotations[0])
+
     def test_only_changed_function_is_gated(self):
         base = [function("changed"), function("unrelated", start=30, end=40)]
         head = [function("changed", coverage="90", crap="8"),
@@ -264,7 +301,12 @@ class InventoryAndCliTests(unittest.TestCase):
                     "--diff", str(root/"diff.patch"), "--summary", str(root/"summary.md"),
                     "--result", str(root/"result.json"), "--base-sha", "base", "--head-sha", "head",
                     "--tested-sha", "merge"]
-            self.assertEqual(main(args), 1)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(main(args + ["--annotations"]), 1)
+            self.assertIn("::notice title=Whole-scope coverage inventory::", output.getvalue())
+            self.assertIn("Tested revision: merge", output.getvalue())
+            self.assertIn("50.00%25", output.getvalue())
             result = json.loads((root/"result.json").read_text())
             self.assertEqual(result["gate"], "failed")
             self.assertIn("80.00%", (root/"summary.md").read_text())

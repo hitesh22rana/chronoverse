@@ -486,10 +486,7 @@ func (s *Server) serve(ctx context.Context, listener net.Listener, shutdownTimeo
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
-	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
-		return err
-	}
-	return nil
+	return s.httpServer.Shutdown(shutdownCtx)
 }

@@ -1,3 +1,4 @@
+//nolint:testpackage // Exercises private lifecycle helpers with real listeners.
 package server
 
 import (
@@ -18,7 +19,7 @@ func TestStartReturnsListenerFailure(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = listener.Close() })
-	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{Addr: listener.Addr().String()}}
+	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{Addr: listener.Addr().String(), ReadHeaderTimeout: time.Second}}
 	done := make(chan error, 1)
 	go func() { done <- s.Start() }()
 	select {
@@ -32,7 +33,7 @@ func TestStartReturnsListenerFailure(t *testing.T) {
 }
 
 func TestStartTreatsClosedServerAsNormalStop(t *testing.T) {
-	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{Addr: "127.0.0.1:0"}}
+	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{Addr: "127.0.0.1:0", ReadHeaderTimeout: time.Second}}
 	require.NoError(t, s.httpServer.Close())
 	require.NoError(t, s.start(context.Background(), time.Second))
 }
@@ -40,7 +41,7 @@ func TestStartTreatsClosedServerAsNormalStop(t *testing.T) {
 func TestServeReturnsClosedListenerError(t *testing.T) {
 	listener := newLifecycleListener(t)
 	require.NoError(t, listener.Close())
-	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{}}
+	s := &Server{logger: zap.NewNop(), httpServer: &http.Server{ReadHeaderTimeout: time.Second}}
 	require.ErrorIs(t, s.serve(context.Background(), listener, time.Second), net.ErrClosed)
 }
 
@@ -60,11 +61,14 @@ func TestServeShutdown(t *testing.T) {
 			finish := func() { finishOnce.Do(func() { close(finishRequest) }) }
 			t.Cleanup(finish)
 			listener := newLifecycleListener(t)
+			writeError := make(chan error, 1)
 			s := &Server{logger: zap.NewNop(), httpServer: &http.Server{
-				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ReadHeaderTimeout: time.Second,
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					close(requestStarted)
 					<-finishRequest
-					_, _ = io.WriteString(w, "drained")
+					_, err := io.WriteString(w, "drained")
+					writeError <- err
 				}),
 			}}
 			t.Cleanup(func() { _ = s.httpServer.Close() })
@@ -107,6 +111,7 @@ func TestServeShutdown(t *testing.T) {
 				require.NoError(t, awaitLifecycleError(t, done))
 			}
 			require.NoError(t, awaitLifecycleError(t, response))
+			require.NoError(t, awaitLifecycleError(t, writeError))
 		})
 	}
 }

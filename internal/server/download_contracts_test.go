@@ -1,8 +1,10 @@
+//nolint:testpackage // Exercises private download handlers and writers.
 package server
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -134,5 +136,13 @@ func TestDownloadReportsFetchFailureWithoutClosingAsSuccess(t *testing.T) {
 	require.True(t, response.Flushed)
 	require.Contains(t, response.Body.String(), `"error":{"message":"stream failed"}`)
 	require.NotContains(t, response.Body.String(), "private backend failure")
-	require.NotContains(t, response.Body.String(), "}}]}")
+	var body struct {
+		Logs  []json.RawMessage `json:"logs"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+	require.Empty(t, body.Logs)
+	require.Equal(t, "stream failed", body.Error.Message)
 }

@@ -1,3 +1,4 @@
+//nolint:testpackage // Exercises private compression and request logging helpers.
 package server
 
 import (
@@ -45,7 +46,8 @@ func TestCompressionKeepsStreamingAndPlainResponsesUnchanged(t *testing.T) {
 			s := &Server{logger: zap.NewNop()}
 			handler := s.withCompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusAccepted)
-				_, _ = io.WriteString(w, "plain")
+				_, err := io.WriteString(w, "plain")
+				require.NoError(t, err)
 			}))
 			request := httptest.NewRequest(http.MethodGet, test.path, http.NoBody)
 			request.Header.Set("Accept-Encoding", test.encoding)
@@ -134,13 +136,15 @@ func TestCompressionRejectsBodyWritesForBodylessStatus(t *testing.T) {
 }
 
 func TestCompressionKeepsFirstFinalStatusAfterInformationalHeader(t *testing.T) {
+	writeError := make(chan error, 1)
 	s := &Server{logger: zap.NewNop()}
 	handler := s.withCompressionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusEarlyHints)
 		w.WriteHeader(http.StatusAccepted)
 		w.WriteHeader(http.StatusEarlyHints)
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = io.WriteString(w, "accepted")
+		_, err := io.WriteString(w, "accepted")
+		writeError <- err
 	}))
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -158,4 +162,5 @@ func TestCompressionKeepsFirstFinalStatusAfterInformationalHeader(t *testing.T) 
 	body, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	require.Equal(t, "accepted", string(body))
+	require.NoError(t, awaitLifecycleError(t, writeError))
 }

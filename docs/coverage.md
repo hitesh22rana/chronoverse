@@ -305,3 +305,17 @@ is reported explicitly and does not prove absence of regressions. Full coverage 
 CRAP limit remain goals under remediation, not claims made by the changed-function gate.
 `.metrics/scope.json` keeps unsupported configuration, content, shell and generated/test
 files visible for separate contract validation; those files do not acquire a fabricated CRAP score.
+
+The check annotations include a bounded human debt summary and paginated JSON
+for the complete current debt inventory. Pages titled `Whole-scope inventory JSON
+N/M` carry the tested revision and page position. Retrieve all annotation pages
+through the GitHub check-run annotations API, order them by their numeric page
+position, and concatenate the body after each two-line header before parsing JSON.
+Require the same exact tested revision on every page and each index from 1 through
+N exactly once. Reject partial exports, duplicate pages and mixed revisions before
+parsing the document or using its numbers. Follow API pagination when retrieving
+annotations; the first API response may contain only part of the export.
+The document includes provenance, totals and every high-CRAP, partial-coverage and
+unmeasured row; categories may overlap. Identities can cross page boundaries, so
+parse only the reconstructed document. This export leaves the human PR comment
+bounded and makes no comparison or repository completion claim.

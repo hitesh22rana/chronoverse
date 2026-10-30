@@ -345,7 +345,21 @@ def inventory_annotations(report: dict) -> list[str]:
     text = "\n".join(debt_markdown(report["inventory_debt"]))
     message = f"Tested revision: {revision}\n{text}"
     encoded = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    return ["::notice title=Whole-scope coverage inventory::" + encoded]
+    annotations = ["::notice title=Whole-scope coverage inventory::" + encoded]
+    # Each page is a slice of one canonical ASCII JSON document. Concatenating
+    # page bodies reconstructs all debt rows, including identities split across
+    # pages. Keep the human summary bounded independently of this export.
+    payload = json.dumps({"provenance": report["provenance"],
+                          "totals": report["totals"]["head"],
+                          "inventory_debt": report["inventory_debt"]},
+                         ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+    chunks = [payload[offset:offset + 4000] for offset in range(0, len(payload), 4000)]
+    for index, chunk in enumerate(chunks, 1):
+        message = (f"Tested revision: {report['provenance']['tested_sha']}\n"
+                   f"JSON chunk {index}/{len(chunks)}; concatenate page bodies in order.\n{chunk}")
+        encoded = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        annotations.append(f"::notice title=Whole-scope inventory JSON {index}/{len(chunks)}::" + encoded)
+    return annotations
 
 
 def main(argv: list[str] | None = None) -> int:

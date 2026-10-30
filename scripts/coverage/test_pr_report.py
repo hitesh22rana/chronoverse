@@ -51,10 +51,38 @@ class ChangedFunctionReportTests(unittest.TestCase):
         self.assertIn("Measured CRAP ≥ 30: 0", text)
         self.assertIn("None.", text)
 
+    def test_full_inventory_annotations_reconstruct_every_row_with_bounded_safe_pages(self):
+        functions = [function(f"fn{i:04d}-%\n::error::雪-" + "x" * 40,
+                              coverage="99", crap="31", start=i * 10 + 1, end=i * 10 + 3)
+                     for i in range(474)]
+        functions.append(function("missing", coverage=None, start=5000, end=5003))
+        result = compare(functions, None, "", head_sha="b" * 40, tested_sha="c" * 40)
+        annotations = inventory_annotations(result)
+        pages = annotations[1:]
+        self.assertGreater(len(pages), 2)
+        chunks = []
+        for index, annotation in enumerate(pages, 1):
+            self.assertLessEqual(len(annotation.encode("utf-8")), 16384)
+            self.assertNotIn("\n", annotation)
+            title, encoded = annotation.split("::", 2)[1:]
+            self.assertEqual(title, f"notice title=Whole-scope inventory JSON {index}/{len(pages)}")
+            message = encoded.replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+            revision, page, data = message.split("\n", 2)
+            self.assertEqual(revision, "Tested revision: " + "c" * 40)
+            self.assertIn(f"JSON chunk {index}/{len(pages)};", page)
+            chunks.append(data)
+        payload = json.loads("".join(chunks))
+        self.assertEqual(payload["provenance"], result["provenance"])
+        self.assertEqual(payload["totals"], result["totals"]["head"])
+        self.assertEqual(payload["inventory_debt"], result["inventory_debt"])
+        self.assertEqual(len(payload["inventory_debt"]["partial"]), 474)
+        self.assertEqual(len(payload["inventory_debt"]["unmeasured"]), 1)
+        self.assertEqual(inventory_annotations(result), annotations)
+
     def test_inventory_annotations_are_revision_bound_and_cannot_inject_commands(self):
         result = compare([function("x%0A::error::forged\nname", coverage="50")], [], "", tested_sha="abc123")
         annotations = inventory_annotations(result)
-        self.assertEqual(len(annotations), 1)
+        self.assertEqual(len(annotations), 2)
         self.assertTrue(annotations[0].startswith("::notice title=Whole-scope coverage inventory::"))
         self.assertIn("Tested revision: abc123", annotations[0])
         self.assertIn("%250A::error::forged", annotations[0])

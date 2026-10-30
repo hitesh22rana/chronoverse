@@ -106,7 +106,7 @@ func (s *Server) withCORSMiddleware(next http.Handler) http.Handler {
 // withCompressionMiddleware adds HTTP gzip compression for JSON responses.
 func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
+		if r.Method == http.MethodHead || strings.Contains(r.URL.Path, "/logs/raw") || strings.Contains(r.URL.Path, "/events") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -122,7 +122,6 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		defer gz.Close()
 
 		// Set Vary header to indicate response varies based on Accept-Encoding
 		w.Header().Set("Vary", "Accept-Encoding")
@@ -131,6 +130,12 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 			ResponseWriter: w,
 			gzipWriter:     gz,
 		}
+
+		defer func() {
+			if gzipWriter.canWriteBody() {
+				_ = gz.Close()
+			}
+		}()
 
 		next.ServeHTTP(gzipWriter, r)
 	})

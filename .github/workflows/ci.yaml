@@ -85,7 +85,25 @@ jobs:
       # job below, so this gate stays fast and Docker-independent.
       # COVERPROFILE records application packages and their cross-package calls.
       - name: Run tests
-        run: make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out
+        shell: bash
+        run: |
+          mkdir -p target
+          if make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out 2>&1 | tee target/unit-tests.log; then
+            exit 0
+          fi
+          python - <<'PYTHON'
+          import re
+          from pathlib import Path
+
+          lines = Path("target/unit-tests.log").read_text(errors="replace").splitlines()
+          failures = [i for i, line in enumerate(lines)
+                      if re.search(r"--- FAIL:|^FAIL\s|^panic:|^fatal error:|^# ", line)]
+          for i in (failures[:20] or [len(lines) - 1]):
+              excerpt = "\n".join(lines[max(0, i - 30):i + 7])[-4000:]
+              escaped = excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::error title=Unit test failure::" + escaped)
+          PYTHON
+          exit 1
 
       - name: Upload unit coverage profile
         uses: actions/upload-artifact@v7.0.2

@@ -29,7 +29,7 @@ func TestRunRejectsInvalidConfiguration(t *testing.T) {
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		if !strings.HasPrefix(key, "OTEL_") && key != "CHRONOVERSE_COMMAND_CONFIG_CHILD" &&
-			key != "CRYPTO_SECRET" && key != "SERVER_CSRF_HMAC_SECRET" && key != "POSTGRES_PORT" {
+			key != "CRYPTO_SECRET" && key != "SERVER_CSRF_HMAC_SECRET" && key != "REDIS_PORT" {
 			child.Env = append(child.Env, entry)
 		}
 	}
@@ -37,7 +37,7 @@ func TestRunRejectsInvalidConfiguration(t *testing.T) {
 		"CHRONOVERSE_COMMAND_CONFIG_CHILD=1",
 		"CRYPTO_SECRET="+strings.Repeat("a", 32),
 		"SERVER_CSRF_HMAC_SECRET="+strings.Repeat("b", 32),
-		"POSTGRES_PORT=not-a-port",
+		"REDIS_PORT=not-a-port",
 		"OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:1",
 		"OTEL_EXPORTER_OTLP_TIMEOUT=1",
 		"OTEL_METRIC_EXPORT_INTERVAL=3600000",
@@ -46,7 +46,7 @@ func TestRunRejectsInvalidConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configuration rejection subprocess failed: %v\n%s", err, output)
 	}
-	if !strings.Contains(string(output), "POSTGRES_PORT") {
+	if !strings.Contains(string(output), "REDIS_PORT") {
 		t.Fatalf("startup lost original configuration error: %s", output)
 	}
 }

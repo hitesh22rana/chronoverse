@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
@@ -84,6 +85,7 @@ func TestIntegrationNativeKafkaWorkerLifecycle(t *testing.T) {
 	dependencies := append(postgresEnv(t), redisEnv(t)...)
 	dependencies = append(dependencies, searchStoreEnv(t)...)
 	dependencies = append(dependencies, "KAFKA_BROKERS="+testkit.KafkaSeed(t))
+	client := testkit.Kafka(t)
 	for _, worker := range []struct{ name, topic string }{
 		{"joblogs-processor", kafka.TopicJobLogs},
 		{"workflow-worker", kafka.TopicWorkflows},
@@ -93,20 +95,20 @@ func TestIntegrationNativeKafkaWorkerLifecycle(t *testing.T) {
 			group := "native-" + worker.name + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 			changes := append(append([]string{}, dependencies...), "KAFKA_CONSUMER_GROUP="+group)
 			runNativeLifecycle(t, bin, keys(t, worker.name), cover, changes, func(ctx context.Context, done <-chan error, output *outputBuffer) {
-				waitReady(ctx, t, done, output, func() bool { return assignedNativeWorker(ctx, t, group, worker.topic) })
+				waitReady(ctx, t, done, output, func() bool { return assignedNativeWorker(ctx, t, client, group, worker.topic) })
 			})
 			assertCoverage(t, cover, worker.name)
 		})
 	}
 }
 
-func assignedNativeWorker(ctx context.Context, t *testing.T, group, topic string) bool {
+func assignedNativeWorker(ctx context.Context, t *testing.T, client *kgo.Client, group, topic string) bool {
 	t.Helper()
 	callCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	request := kmsg.NewPtrDescribeGroupsRequest()
 	request.Groups = []string{group}
-	response, err := request.RequestWith(callCtx, testkit.Kafka(t))
+	response, err := request.RequestWith(callCtx, client)
 	if err != nil || len(response.Groups) != 1 {
 		return false
 	}

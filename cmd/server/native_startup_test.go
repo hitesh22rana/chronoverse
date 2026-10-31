@@ -52,7 +52,8 @@ func build(t *testing.T, name string) (binary, coverage string) {
 	ld := "-X " + svc + "name=" + name + " -X " + svc + "authPrivateKeyPath=auth.ed -X " + svc + "authPublicKeyPath=auth.ed.pub"
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-cover", "-covermode=atomic", "-coverpkg="+module+"/cmd/...,"+module+"/internal/...,"+module+"/pkg/...", "-ldflags", ld, "-o", bin, "./cmd/"+name)
+	cmd := exec.CommandContext(ctx, "go", "build", "-race", "-cover", "-covermode=atomic",
+		"-coverpkg="+module+"/cmd/...,"+module+"/internal/...,"+module+"/pkg/...", "-ldflags", ld, "-o", bin, "./cmd/"+name)
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build %s: %v\n%s", name, err, out)
@@ -115,14 +116,14 @@ func keys(t *testing.T, name string) string {
 	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
 	write := func(path string, data []byte) {
 		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, path), data, 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(filepath.Join(dir, path), data, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 	}
 	write("auth.ed", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
 	write("auth.ed.pub", pubPEM)
-	if err := os.MkdirAll(filepath.Join(dir, "certs", "issuers"), 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.MkdirAll(filepath.Join(dir, "certs", "issuers"), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
 	bundle, err := json.Marshal(map[string]map[string]string{"startup-key": {"iss": name, "pub": string(pubPEM)}})
 	if err != nil {
@@ -136,7 +137,6 @@ func reject(t *testing.T, bin, dir, cover, want string, changes ...string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	//nolint:gosec // Runs a binary built from this checkout in an isolated fixture directory.
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
 	cmd.Env = environment(cover, changes...)
@@ -238,8 +238,8 @@ func assertCoverage(t *testing.T, cover, name string) {
 	profile := filepath.Join(cover, "coverage.out")
 	//nolint:gosec // Fixed conversion command with separate validated coverage-path arguments.
 	cmd = exec.CommandContext(t.Context(), "go", "tool", "covdata", "textfmt", "-i="+cover, "-o="+profile)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("convert native profile: %v\n%s", err, out)
+	if converted, convertErr := cmd.CombinedOutput(); convertErr != nil {
+		t.Fatalf("convert native profile: %v\n%s", convertErr, converted)
 	}
 	t.Logf("native command coverage: %s\n%s", profile, out)
 }
@@ -282,7 +282,6 @@ func TestIntegrationNativePostgresLifecycle(t *testing.T) {
 			port := availableCommandPort(t, name, bin, dir, cover, dependencies)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			//nolint:gosec // Runs a binary built from this checkout in an isolated fixture directory.
 			cmd := exec.CommandContext(ctx, bin)
 			cmd.Dir = dir
 			changes := append(append([]string{}, dependencies...), commandPortSetting(name)+"="+strconv.Itoa(port), "SCHEDULING_WORKER_POLL_INTERVAL=50ms")
@@ -300,7 +299,7 @@ func TestIntegrationNativePostgresLifecycle(t *testing.T) {
 					t.Errorf("stop native command during cleanup: %v", err)
 				}
 			}()
-			waitNativeReady(t, name, port, ctx, done, &output)
+			waitNativeReady(ctx, t, name, port, done, &output)
 			if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 				t.Fatal(err)
 			}
@@ -362,7 +361,7 @@ func TestIntegrationNativePartialAcquisitionFailure(t *testing.T) {
 	}
 }
 
-func waitReady(t *testing.T, ctx context.Context, done <-chan error, out *outputBuffer, ready func() bool) {
+func waitReady(ctx context.Context, t *testing.T, done <-chan error, out *outputBuffer, ready func() bool) {
 	t.Helper()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -396,16 +395,16 @@ func redisEnv(t *testing.T) []string {
 	return []string{"REDIS_HOST=" + host, "REDIS_PORT=" + port}
 }
 
-func waitNativeReady(t *testing.T, name string, port int, ctx context.Context, done <-chan error, output *outputBuffer) {
+func waitNativeReady(ctx context.Context, t *testing.T, name string, port int, done <-chan error, output *outputBuffer) {
 	t.Helper()
 	if name == "scheduling-worker" {
-		waitReady(t, ctx, done, output, func() bool { return strings.Contains(output.String(), "successfully scheduled jobs") })
+		waitReady(ctx, t, done, output, func() bool { return strings.Contains(output.String(), "successfully scheduled jobs") })
 		return
 	}
 	if name == "server" {
 		client := &http.Client{Timeout: 200 * time.Millisecond}
 		t.Cleanup(client.CloseIdleConnections)
-		waitReady(t, ctx, done, output, func() bool {
+		waitReady(ctx, t, done, output, func() bool {
 			response, err := client.Get("http://127.0.0.1:" + strconv.Itoa(port) + "/auth/login")
 			if err != nil {
 				return false
@@ -426,7 +425,7 @@ func waitNativeReady(t *testing.T, name string, port int, ctx context.Context, d
 		}
 	})
 	client := grpc_health_v1.NewHealthClient(conn)
-	waitReady(t, ctx, done, output, func() bool {
+	waitReady(ctx, t, done, output, func() bool {
 		callCtx, stop := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer stop()
 		response, err := client.Check(callCtx, &grpc_health_v1.HealthCheckRequest{Service: name})

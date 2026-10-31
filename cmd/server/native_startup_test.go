@@ -38,11 +38,14 @@ func TestMain(m *testing.M) { testkit.Run(m, testkit.WithPostgres(), testkit.Wit
 
 // Each build is removed before the next one, keeping the integration suite's
 // disk use bounded. Instrument main and its application dependencies, including os.Exit.
-func build(t *testing.T, name string) (string, string) {
+func build(t *testing.T, name string) (binary, coverage string) {
 	t.Helper()
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name {
+		t.Fatal("command name must be a single source directory")
 	}
 	bin := filepath.Join(t.TempDir(), name)
 	svc := module + "/internal/pkg/svc."
@@ -56,7 +59,11 @@ func build(t *testing.T, name string) (string, string) {
 	}
 	cover := t.TempDir()
 	if base := os.Getenv("CHRONOVERSE_COMMAND_COVERAGE_DIR"); base != "" {
+		if !filepath.IsAbs(base) {
+			t.Fatal("native coverage directory must be absolute")
+		}
 		cover = filepath.Join(base, name)
+		// #nosec G703 -- The runner explicitly selects the output directory; name is validated above.
 		if err := os.MkdirAll(cover, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +121,7 @@ func keys(t *testing.T, name string) string {
 	}
 	write("auth.ed", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
 	write("auth.ed.pub", pubPEM)
-	if err := os.MkdirAll(filepath.Join(dir, "certs/issuers"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "certs", "issuers"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	bundle, err := json.Marshal(map[string]map[string]string{"startup-key": {"iss": name, "pub": string(pubPEM)}})
@@ -206,6 +213,7 @@ func commandUsesAuth(name string) bool {
 // artifacts explicitly, so a green subprocess test cannot silently lose them.
 func assertCoverage(t *testing.T, cover, name string) {
 	t.Helper()
+	//nolint:gosec // Fixed Go subcommand; the coverage directory is a separate, runner-selected argument.
 	cmd := exec.CommandContext(t.Context(), "go", "tool", "covdata", "func", "-i="+cover)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -228,6 +236,7 @@ func assertCoverage(t *testing.T, cover, name string) {
 		t.Fatalf("native %s main/run missing execution counters:\n%s", name, out)
 	}
 	profile := filepath.Join(cover, "coverage.out")
+	//nolint:gosec // Fixed conversion command with separate validated coverage-path arguments.
 	cmd = exec.CommandContext(t.Context(), "go", "tool", "covdata", "textfmt", "-i="+cover, "-o="+profile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("convert native profile: %v\n%s", err, out)
@@ -321,7 +330,11 @@ func availableCommandPort(t *testing.T, name, bin, dir, cover string, pg []strin
 			t.Errorf("close reserved socket: %v", err)
 		}
 	}()
-	port := listener.Addr().(*net.TCPAddr).Port
+	address, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("TCP listener returned a different address type")
+	}
+	port := address.Port
 	if name != "scheduling-worker" {
 		message := "failed to create listener"
 		if name == "server" {

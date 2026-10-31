@@ -42,7 +42,7 @@ func run() int {
 		return ExitError
 	}
 
-	pgDSN := postgresMigrationDSN(cfg.Postgres)
+	pgDSN := postgresMigrationDSN(&cfg.Postgres)
 
 	clickhouseClient, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
@@ -89,7 +89,7 @@ func run() int {
 }
 
 // postgresMigrationDSN preserves credentials and certificate paths as URL values.
-func postgresMigrationDSN(cfg config.Postgres) string {
+func postgresMigrationDSN(cfg *config.Postgres) string {
 	dsn := url.URL{
 		Scheme: "postgresql",
 		User:   url.UserPassword(cfg.User, cfg.Password),

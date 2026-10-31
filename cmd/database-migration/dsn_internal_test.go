@@ -15,6 +15,7 @@ func TestPostgresMigrationDSN(t *testing.T) {
 	for _, host := range []string{"localhost", "2001:db8::1"} {
 		for _, tlsMode := range []string{"disabled", "enabled", "certificates"} {
 			t.Run(host+"/"+tlsMode, func(t *testing.T) {
+				// #nosec G101 -- Synthetic credentials exercise URL escaping, not authentication.
 				cfg := config.Postgres{Host: host, Port: 5432, User: "migration user+@:/", Password: "secret +@:/?#%", Database: "database name"}
 				cfg.TLS.Enabled = tlsMode != "disabled"
 				if tlsMode == "certificates" {
@@ -22,18 +23,18 @@ func TestPostgresMigrationDSN(t *testing.T) {
 					cfg.TLS.CertFile = "/certs/client +&?.pem"
 					cfg.TLS.KeyFile = "/certs/client +&?.key"
 				}
-				got, err := url.Parse(postgresMigrationDSN(cfg))
+				got, err := url.Parse(postgresMigrationDSN(&cfg))
 				if err != nil {
 					t.Fatal(err)
 				}
-				assertPostgresDSNAddress(t, cfg, got)
-				assertPostgresDSNTLS(t, cfg, got.Query())
+				assertPostgresDSNAddress(t, &cfg, got)
+				assertPostgresDSNTLS(t, &cfg, got.Query())
 			})
 		}
 	}
 }
 
-func assertPostgresDSNAddress(t *testing.T, cfg config.Postgres, got *url.URL) {
+func assertPostgresDSNAddress(t *testing.T, cfg *config.Postgres, got *url.URL) {
 	t.Helper()
 	password, hasPassword := got.User.Password()
 	if got.Scheme != "postgresql" || got.User.Username() != cfg.User || !hasPassword || password != cfg.Password {
@@ -53,7 +54,7 @@ func assertPostgresDSNAddress(t *testing.T, cfg config.Postgres, got *url.URL) {
 	}
 }
 
-func assertPostgresDSNTLS(t *testing.T, cfg config.Postgres, query url.Values) {
+func assertPostgresDSNTLS(t *testing.T, cfg *config.Postgres, query url.Values) {
 	t.Helper()
 	wantMode := "disable"
 	if cfg.TLS.Enabled {

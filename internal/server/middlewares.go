@@ -116,12 +116,7 @@ func (s *Server) withCompressionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
-		if err != nil {
-			s.logger.Error("failed to create gzip writer", zap.Error(err))
-			next.ServeHTTP(w, r)
-			return
-		}
+		gz, _ := gzip.NewWriterLevel(w, gzip.BestSpeed) //nolint:errcheck // BestSpeed is always a valid level.
 
 		// Set Vary header to indicate response varies based on Accept-Encoding
 		w.Header().Set("Vary", "Accept-Encoding")

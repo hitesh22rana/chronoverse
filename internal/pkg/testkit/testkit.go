@@ -88,6 +88,7 @@ type suite struct {
 	ch        *clickhousepkg.Client
 	chAddr    string
 	rdb       *redispkg.Store
+	redisAddr string
 	ms        meilisearch.ServiceManager
 	kfk       *kgo.Client
 	kafkaSeed string
@@ -152,6 +153,13 @@ func Redis(t *testing.T) *redispkg.Store {
 	t.Helper()
 	shared.start(t, serviceRedis)
 	return shared.rdb
+}
+
+// RedisAddr returns the ready fixture endpoint for native process tests.
+func RedisAddr(t *testing.T) string {
+	t.Helper()
+	shared.start(t, serviceRedis)
+	return shared.redisAddr
 }
 
 // Meilisearch returns the shared Meilisearch client, starting the container and

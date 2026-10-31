@@ -89,7 +89,7 @@ func run() int {
 		zap.String("docker_advertised_endpoint", cfg.RuntimeAgentConfig.DockerEndpoint),
 		zap.Duration("heartbeat_interval", cfg.RuntimeAgentConfig.HeartbeatInterval),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
-		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
 	if err := startRuntimeHeartbeats(ctx, repo, combinedHealthChecker{checkers: []dockerHealthChecker{

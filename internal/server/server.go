@@ -456,6 +456,9 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 func (s *Server) Start() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Restore default signal handling as soon as shutdown starts so a second
+	// signal can force exit while active requests drain.
+	context.AfterFunc(ctx, stop)
 	return s.start(ctx, serverShutdownTimeout)
 }
 
@@ -471,7 +474,7 @@ func (s *Server) serve(ctx context.Context, listener net.Listener, shutdownTimeo
 	serveError := make(chan error, 1)
 	go func() {
 		s.logger.Info("starting HTTP server",
-			zap.String("addr", s.httpServer.Addr),
+			zap.String("addr", listener.Addr().String()),
 			zap.Bool("http_compression_enabled", true),
 		)
 		serveError <- s.httpServer.Serve(listener)
@@ -479,14 +482,24 @@ func (s *Server) serve(ctx context.Context, listener net.Listener, shutdownTimeo
 
 	select {
 	case err := <-serveError:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
+		return normalizeServeError(err)
 	case <-ctx.Done():
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
-	return s.httpServer.Shutdown(shutdownCtx)
+	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+
+	// Serve may have failed just as cancellation won the select above.
+	return normalizeServeError(<-serveError)
+}
+
+// normalizeServeError treats net/http's shutdown sentinel as a clean stop.
+func normalizeServeError(err error) error {
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }

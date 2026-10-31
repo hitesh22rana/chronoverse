@@ -116,6 +116,11 @@ func TestServeShutdown(t *testing.T) {
 	}
 }
 
+func TestNormalizeServeError(t *testing.T) {
+	require.NoError(t, normalizeServeError(http.ErrServerClosed))
+	require.ErrorIs(t, normalizeServeError(net.ErrClosed), net.ErrClosed)
+}
+
 func newLifecycleListener(t *testing.T) net.Listener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

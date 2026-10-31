@@ -276,3 +276,16 @@ Comment publication is best-effort: GitHub API failures cannot turn a successful
 comparison into a failed gate. The job summary and artifact retain the results.
 New PR runs cancel older runs for that PR; main-branch reports use separate
 concurrency groups per commit so later pushes do not cancel baseline collection.
+
+The job also publishes an absolute completion readiness report in
+`target/coverage/completion.json` and the job summary. It evaluates all inventory
+functions, including unchanged functions, against measured 100% coverage and CRAP
+strictly below 30. Missing scope metadata, missing required measurement inputs,
+and empty inventories remain explicit blockers. This stage is report-only:
+existing debt does not fail CI and the changed-function gate still applies.
+
+Function percentages cannot establish repository statement/line or branch totals.
+The readiness report therefore marks those totals and infrastructure/unsupported
+language contract evidence unavailable. Even a clean function inventory does not
+establish repository completion. A strict global gate must wait for complete
+measurement and eliminated debt; this stage does not enable it.

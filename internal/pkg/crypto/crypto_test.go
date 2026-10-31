@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
 )
 
@@ -118,5 +121,26 @@ func TestDecryptRejectsTampering(t *testing.T) {
 
 	if _, err := c.Decrypt(base64.StdEncoding.EncodeToString(cipherText)); err == nil {
 		t.Fatal("expected decryption to reject modified ciphertext")
+	}
+}
+
+func TestNewRejectsInvalidKeyLengths(t *testing.T) {
+	for _, secret := range []string{"", "short", "012345678901234567890123456789012"} {
+		c, err := crypto.New(secret)
+		if c != nil || status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("New(%d bytes) = %v, %v; want nil and InvalidArgument", len(secret), c, err)
+		}
+	}
+}
+
+func TestZeroValueRejectsEncryptionAndDecryption(t *testing.T) {
+	var c crypto.Crypto
+	encrypted, err := c.Encrypt("private data")
+	if encrypted != "" || status.Code(err) != codes.Internal {
+		t.Fatalf("Encrypt() = %q, %v; want empty output and Internal", encrypted, err)
+	}
+	decrypted, err := c.Decrypt("anything")
+	if decrypted != "" || status.Code(err) != codes.Internal {
+		t.Fatalf("Decrypt() = %q, %v; want empty output and Internal", decrypted, err)
 	}
 }

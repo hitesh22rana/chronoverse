@@ -226,12 +226,12 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 }
 
 func parseBearerToken(data []string) (string, error) {
-	if len(data) == 0 {
+	if len(data) != 1 {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
 
 	parts := strings.Split(data[0], " ")
-	if len(parts) < 2 || parts[0] != "Bearer" {
+	if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
 

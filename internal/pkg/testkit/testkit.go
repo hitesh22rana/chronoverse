@@ -90,6 +90,7 @@ type suite struct {
 	rdb       *redispkg.Store
 	redisAddr string
 	ms        meilisearch.ServiceManager
+	meiliURI  string
 	kfk       *kgo.Client
 	kafkaSeed string
 }
@@ -168,6 +169,13 @@ func Meilisearch(t *testing.T) meilisearch.ServiceManager {
 	t.Helper()
 	shared.start(t, serviceMeilisearch)
 	return shared.ms
+}
+
+// MeilisearchEndpoint returns the ready fixture URI and its test-only master key.
+func MeilisearchEndpoint(t *testing.T) (uri, masterKey string) {
+	t.Helper()
+	shared.start(t, serviceMeilisearch)
+	return shared.meiliURI, meilisearchKey
 }
 
 // KafkaSeed returns the broker address (host:port) of the shared Kafka broker.

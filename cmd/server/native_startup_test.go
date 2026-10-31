@@ -34,7 +34,9 @@ import (
 
 const module = "github.com/hitesh22rana/chronoverse"
 
-func TestMain(m *testing.M) { testkit.Run(m, testkit.WithPostgres(), testkit.WithRedis()) }
+func TestMain(m *testing.M) {
+	testkit.Run(m, testkit.WithPostgres(), testkit.WithRedis(), testkit.WithClickHouse(), testkit.WithMeilisearch(), testkit.WithKafka())
+}
 
 // Each build is removed before the next one, keeping the integration suite's
 // disk use bounded. Instrument main and its application dependencies, including os.Exit.

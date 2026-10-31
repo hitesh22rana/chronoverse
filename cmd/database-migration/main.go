@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"os"
-	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"syscall"
+	"strconv"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	_ "go.uber.org/automaxprocs"
@@ -36,42 +36,13 @@ func run() int {
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		cancel()
-	}()
-
 	cfg, err := config.InitDatabaseMigrationConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
-	pgDSN := fmt.Sprintf(
-		"postgresql://%s:%s@%s:%d/%s",
-		url.QueryEscape(cfg.Postgres.User),
-		url.QueryEscape(cfg.Postgres.Password),
-		cfg.Postgres.Host,
-		cfg.Postgres.Port,
-		cfg.Postgres.Database,
-	)
-	if cfg.Postgres.TLS.Enabled {
-		pgDSN += fmt.Sprintf("?sslmode=%s", "verify-full")
-
-		if cfg.Postgres.TLS.CAFile != "" {
-			pgDSN += fmt.Sprintf("&sslrootcert=%s", url.QueryEscape(cfg.Postgres.TLS.CAFile))
-		}
-		if cfg.Postgres.TLS.CertFile != "" {
-			pgDSN += fmt.Sprintf("&sslcert=%s", url.QueryEscape(cfg.Postgres.TLS.CertFile))
-		}
-		if cfg.Postgres.TLS.KeyFile != "" {
-			pgDSN += fmt.Sprintf("&sslkey=%s", url.QueryEscape(cfg.Postgres.TLS.KeyFile))
-		}
-	} else {
-		pgDSN += fmt.Sprintf("?sslmode=%s", "disable")
-	}
+	pgDSN := postgresMigrationDSN(cfg.Postgres)
 
 	clickhouseClient, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
@@ -106,7 +77,7 @@ func run() int {
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("environment", cfg.Environment.Env),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
-		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
 	if err := app.Run(ctx); err != nil {
@@ -115,4 +86,27 @@ func run() int {
 	}
 
 	return ExitOk
+}
+
+// postgresMigrationDSN preserves credentials and certificate paths as URL values.
+func postgresMigrationDSN(cfg config.Postgres) string {
+	dsn := url.URL{
+		Scheme: "postgresql",
+		User:   url.UserPassword(cfg.User, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		Path:   "/" + cfg.Database,
+	}
+	query := url.Values{}
+	if cfg.TLS.Enabled {
+		query.Set("sslmode", "verify-full")
+		for key, value := range map[string]string{"sslrootcert": cfg.TLS.CAFile, "sslcert": cfg.TLS.CertFile, "sslkey": cfg.TLS.KeyFile} {
+			if value != "" {
+				query.Set(key, value)
+			}
+		}
+	} else {
+		query.Set("sslmode", "disable")
+	}
+	dsn.RawQuery = query.Encode()
+	return dsn.String()
 }

@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"syscall"
 	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
@@ -34,13 +32,6 @@ func main() {
 func run() int {
 	ctx, cancel := svcpkg.Init()
 	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		cancel()
-	}()
 
 	cfg, err := config.InitRuntimeAgentConfig()
 	if err != nil {
@@ -98,7 +89,7 @@ func run() int {
 		zap.String("docker_advertised_endpoint", cfg.RuntimeAgentConfig.DockerEndpoint),
 		zap.Duration("heartbeat_interval", cfg.RuntimeAgentConfig.HeartbeatInterval),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
-		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
 	if err := startRuntimeHeartbeats(ctx, repo, combinedHealthChecker{checkers: []dockerHealthChecker{

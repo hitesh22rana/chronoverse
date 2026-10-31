@@ -507,6 +507,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="coverprofile from `make test/integration COVERPROFILE=...`",
     )
+    parser.add_argument("--go-native", type=Path, action="append", default=[],
+                        help="atomic coverprofile from a native command process; repeatable")
     parser.add_argument(
         "--dashboard-lcov",
         type=Path,
@@ -564,16 +566,18 @@ def main(argv: list[str] | None = None) -> int:
     if not metrics.is_absolute():
         metrics = root / metrics
 
-    go_unit, go_integration, dashboard_lcov = resolve_inputs(
-        root, [args.go_unit, args.go_integration, args.dashboard_lcov]
+    resolved = resolve_inputs(
+        root, [args.go_unit, args.go_integration, args.dashboard_lcov, *args.go_native]
     )
+    go_unit, go_integration, dashboard_lcov = resolved[:3]
+    native_profiles = resolved[3:]
     removed = clear_stale_reports(root)
     if removed:
         print(f"Removed stale reports: {', '.join(removed)}")
 
     tracked = tracked_files(root)
-    if go_unit or go_integration:
-        profiles = [path for path in (go_unit, go_integration) if path]
+    if go_unit or go_integration or native_profiles:
+        profiles = [path for path in (go_unit, go_integration, *native_profiles) if path]
         merged = merge_go_profiles(profiles, root / GO_PROFILE, module_paths(root, tracked))
         print(
             f"Merged {len(profiles)} Go profile(s) into {GO_PROFILE} "

@@ -654,6 +654,41 @@ class MainTest(unittest.TestCase):
         self.assertIn(":entries", (metrics / "crap.edn").read_text())
         self.assertIn("Chosen", printed)
 
+    def test_native_profiles_add_execution_without_losing_parent_blocks(self):
+        native = self.write(f"{crap_report.INPUT_DIR}/native/one/coverage.out",
+                            "mode: atomic\n" +
+                            "github.com/acme/app/service/audit.go:3.1,5.2 1 1\n")
+        other = self.write(f"{crap_report.INPUT_DIR}/native/two/coverage.out",
+                           "mode: atomic\n" +
+                           "github.com/acme/app/service/user.go:6.2,7.2 1 1\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main("--go-native", str(native), "--go-native", str(other)), 0)
+        profile = (self.root / crap_report.GO_PROFILE).read_text()
+        self.assertIn("service/audit.go:3.1,5.2 1 1", profile)
+        self.assertIn("service/user.go:3.14,5.2 2 7", profile)
+        self.assertIn("service/user.go:6.2,7.2 1 1", profile)
+        self.assertIn("service/order.go:9.1,10.2 1 1", profile)
+        import csv
+        with (self.root / ".metrics/inventory.csv").open() as handle:
+            rows = {row["name"]: row for row in csv.DictReader(handle)}
+        self.assertEqual(rows["Audit"]["coverage"], "100.0000")
+        self.assertEqual(rows["Chosen"]["coverage"], "100.0000")
+
+    def test_missing_native_profile_does_not_clear_existing_reports(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.run_main()
+        output = self.root / crap_report.GO_PROFILE
+        original = output.read_bytes()
+        with self.assertRaisesRegex(crap_report.CoverageError, "input not found"):
+            self.run_main("--go-native", "missing-native.out")
+        self.assertEqual(output.read_bytes(), original)
+
+    def test_native_profile_cannot_be_one_the_report_will_clear(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.run_main()
+        with self.assertRaisesRegex(crap_report.CoverageError, "would destroy"):
+            self.run_main("--go-native", str(self.root / crap_report.GO_PROFILE))
+
     def test_merged_and_prefixed_reports_land_where_crapper_reads_them(self):
         self.run_main()
         go_profile = self.root / crap_report.GO_PROFILE

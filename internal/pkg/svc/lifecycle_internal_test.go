@@ -202,8 +202,8 @@ func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
 
 func runInitFailureHelper(t *testing.T, stage string) {
 	t.Helper()
-	// Init panics before returning its signal cleanup on invalid startup config.
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	// Leave time for the bounded provider rollback before collecting the panic.
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
 	args := []string{"-test.run=^TestInitRejectsInvalidTelemetryConfiguration$"}
 	if directory := flag.Lookup("test.gocoverdir").Value.String(); directory != "" {

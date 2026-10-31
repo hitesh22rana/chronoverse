@@ -104,6 +104,22 @@ class MakeCoverageTests(unittest.TestCase):
         """Every `go list` the last make run made, in order."""
         return [line for line in self.log.read_text(encoding="utf-8").splitlines() if line]
 
+    def test_native_profile_directory_is_exported_only_with_coverage(self):
+        script = FAKE_GO.replace('case "$*" in\n',
+            'case "$*" in\n' +
+            "'test '*) printf '%s\\n' \"${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}\" > \"$(dirname \"$0\")/native-env.log\"; exit 0 ;;\n", 1)
+        self.go.write_text(script)
+        env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
+        env.pop("CHRONOVERSE_COMMAND_COVERAGE_DIR", None)
+        for coverage in (True, False):
+            args = ["make", "-o", "dependencies", "test/integration"]
+            if coverage:
+                args.append("COVERPROFILE=target/coverage-inputs/test.out")
+            result = subprocess.run(args, cwd=self.root, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            actual = (self.root / "native-env.log").read_text().strip()
+            self.assertEqual(actual, str(self.root / "target/coverage-inputs/command-native") if coverage else "")
+
     def test_both_jobs_measure_identical_application_dependencies(self):
         for target in ("test/short", "test/integration"):
             with self.subTest(target=target):

@@ -3,6 +3,8 @@ package testkit
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
@@ -25,6 +27,7 @@ func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {
 		return nil, fmt.Errorf("redis: %w", err)
 	}
 
+	s.redisAddr = net.JoinHostPort(host, strconv.Itoa(portNum))
 	rdb, err := redispkg.New(ctx, &redispkg.Config{
 		Host:         host,
 		Port:         portNum,

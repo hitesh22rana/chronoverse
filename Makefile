@@ -52,18 +52,21 @@ COVERAGE_INPUTS=target/coverage-inputs
 UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
 INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
 INTEGRATION_PARALLELISM?=1
+COMMAND_COVERAGE_DIR=$(abspath $(COVERAGE_INPUTS)/command-native)
+COMMAND_PROFILES=$(wildcard $(COMMAND_COVERAGE_DIR)/*/coverage.out)
 DASHBOARD_LCOV=dashboard/coverage/lcov.info
 
 # Interpreter that has the pinned crapper installed (see docs/coverage.md).
 PYTHON?=python3
 
 # Merges the profiles the test jobs wrote and scores the handwritten sources.
-# Needs all three reports on disk; no suite is rerun here.
+# Native process profiles supplement the test-driver profiles; no suite is rerun here.
 .PHONY: coverage/crap
 coverage/crap:
 	@$(PYTHON) scripts/coverage/crap_report.py \
 		--go-unit $(UNIT_COVERPROFILE) \
 		--go-integration $(INTEGRATION_COVERPROFILE) \
+		$(foreach profile,$(COMMAND_PROFILES),--go-native "$(profile)") \
 		--dashboard-lcov $(DASHBOARD_LCOV)
 
 # Runs every unit suite with the race detector. Docker-backed integration
@@ -82,6 +85,7 @@ test/short: dependencies
 # limit: the joblogs suite boots five containers plus sequential Eventually
 # windows.
 .PHONY: test/integration
+test/integration: export CHRONOVERSE_COMMAND_COVERAGE_DIR=$(if $(COVERPROFILE),$(COMMAND_COVERAGE_DIR))
 test/integration: dependencies
 	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
 	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi

@@ -118,7 +118,14 @@ class MakeCoverageTests(unittest.TestCase):
             result = subprocess.run(args, cwd=self.root, env=env, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             actual = (self.root / "native-env.log").read_text().strip()
-            self.assertEqual(actual, str(self.root / "target/coverage-inputs/command-native") if coverage else "")
+            if coverage:
+                # macOS exposes temp dirs as both /var and /private/var.
+                self.assertEqual(
+                    Path(actual).resolve(),
+                    (self.root / "target/coverage-inputs/command-native").resolve(),
+                )
+            else:
+                self.assertEqual(actual, "")
 
     def test_both_jobs_measure_identical_application_dependencies(self):
         for target in ("test/short", "test/integration"):
@@ -148,7 +155,10 @@ class MakeCoverageTests(unittest.TestCase):
         self.assertIn("-exec", tokens)
         launcher = shlex.split(tokens[tokens.index("-exec") + 1])
         self.assertEqual(launcher[0], "python3")
-        self.assertEqual(Path(launcher[1]), self.root / "scripts/test/integration_exec.py")
+        self.assertEqual(
+            Path(launcher[1]).resolve(),
+            (self.root / "scripts/test/integration_exec.py").resolve(),
+        )
         for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
             self.assertIn(flag, command)
         for package in self.PACKAGES:

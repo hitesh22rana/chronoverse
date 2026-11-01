@@ -137,7 +137,8 @@ func keys(t *testing.T, name string) string {
 
 func reject(t *testing.T, bin, dir, cover, want string, changes ...string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	// Leave headroom over the ten-second bounded telemetry shutdown inside svc.Init.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
@@ -228,9 +229,10 @@ func assertCoverage(t *testing.T, cover, name string) {
 		t.Fatalf("covdata: %v\n%s", err, out)
 	}
 	mainFound, runFound := false, false
+	commandMain := "/cmd/" + name + "/main.go:"
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 3 {
+		if len(fields) < 3 || !strings.Contains(fields[0], commandMain) {
 			continue
 		}
 		switch fields[len(fields)-2] {

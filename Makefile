@@ -53,7 +53,6 @@ UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
 INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
 INTEGRATION_PARALLELISM?=1
 COMMAND_COVERAGE_DIR=$(abspath $(COVERAGE_INPUTS)/command-native)
-COMMAND_PROFILES=$(wildcard $(COMMAND_COVERAGE_DIR)/*/coverage.out)
 DASHBOARD_LCOV=dashboard/coverage/lcov.info
 
 # Interpreter that has the pinned crapper installed (see docs/coverage.md).
@@ -63,10 +62,17 @@ PYTHON?=python3
 # Native process profiles supplement the test-driver profiles; no suite is rerun here.
 .PHONY: coverage/crap
 coverage/crap:
-	@$(PYTHON) scripts/coverage/crap_report.py \
+	@set --; \
+	if [ -d "$(COMMAND_COVERAGE_DIR)" ]; then \
+		for profile in "$(COMMAND_COVERAGE_DIR)"/*/coverage.out; do \
+			[ -f "$$profile" ] || continue; \
+			set -- "$$@" --go-native "$$profile"; \
+		done; \
+	fi; \
+	$(PYTHON) scripts/coverage/crap_report.py \
 		--go-unit $(UNIT_COVERPROFILE) \
 		--go-integration $(INTEGRATION_COVERPROFILE) \
-		$(foreach profile,$(COMMAND_PROFILES),--go-native "$(profile)") \
+		"$$@" \
 		--dashboard-lcov $(DASHBOARD_LCOV)
 
 # Runs every unit suite with the race detector. Docker-backed integration

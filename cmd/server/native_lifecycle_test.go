@@ -48,12 +48,22 @@ func TestIntegrationNativeOutboxRelayLifecycle(t *testing.T) {
 		t.Skip("real Kafka integration")
 	}
 	dependencies := append(postgresEnv(t), "KAFKA_BROKERS="+testkit.KafkaSeed(t))
-	changes := append(append([]string{}, dependencies...), "OUTBOX_RELAY_CLEANUP_ENABLED=false")
+	changes := append(append([]string{}, dependencies...),
+		"OUTBOX_RELAY_CLEANUP_ENABLED=false",
+		"OUTBOX_RELAY_POLL_INTERVAL=50ms",
+	)
+	eventKey := "native-outbox-relay-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	if _, err := testkit.Postgres(t).Exec(t.Context(),
+		`INSERT INTO outbox_events (topic, kafka_key, event_key, payload) VALUES ($1, $2, $3, $4::jsonb)`,
+		kafka.TopicAnalytics, "native-outbox-relay", eventKey, "{}",
+	); err != nil {
+		t.Fatalf("seed outbox event: %v", err)
+	}
 	bin, cover := build(t, "outbox-relay")
 	dir := keys(t, "outbox-relay")
 	runNativeLifecycle(t, bin, dir, cover, changes, func(ctx context.Context, done <-chan error, output *outputBuffer) {
 		waitReady(ctx, t, done, output, func() bool {
-			return strings.Contains(output.String(), "starting outbox relay")
+			return strings.Contains(output.String(), "published outbox events")
 		})
 	})
 	reject(t, bin, dir, cover, "missing-client.pem", append(append([]string{}, dependencies...),
@@ -99,7 +109,10 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 		t.Skip("real PostgreSQL integration")
 	}
 	docker := fakeDockerPing(t)
+	runtimeID := "native-runtime-agent-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	changes := append(postgresEnv(t),
+		"RUNTIME_AGENT_ID="+runtimeID,
+		"RUNTIME_AGENT_NODE_NAME="+runtimeID,
 		"RUNTIME_AGENT_DOCKER_ENDPOINT="+docker,
 		"RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT="+docker,
 		"RUNTIME_AGENT_HEARTBEAT_INTERVAL=50ms",
@@ -109,6 +122,20 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 	runNativeLifecycle(t, bin, dir, cover, changes, func(ctx context.Context, done <-chan error, output *outputBuffer) {
 		waitReady(ctx, t, done, output, func() bool {
 			return strings.Contains(output.String(), "starting runtime agent")
+		})
+		var firstHeartbeat time.Time
+		waitReady(ctx, t, done, output, func() bool {
+			var heartbeat time.Time
+			if err := testkit.Postgres(t).QueryRow(ctx,
+				`SELECT last_heartbeat_at FROM runtime_nodes WHERE id = $1`, runtimeID,
+			).Scan(&heartbeat); err != nil {
+				return false
+			}
+			if firstHeartbeat.IsZero() {
+				firstHeartbeat = heartbeat
+				return false
+			}
+			return heartbeat.After(firstHeartbeat)
 		})
 	})
 	reject(t, bin, dir, cover, "failed to ping runtime Docker endpoint", append(postgresEnv(t),

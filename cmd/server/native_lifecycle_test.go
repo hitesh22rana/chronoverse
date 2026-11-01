@@ -88,6 +88,9 @@ func TestIntegrationNativeDatabaseMigrationLifecycle(t *testing.T) {
 		"MEILISEARCH_TLS_CERT_FILE=missing-client.pem",
 		"MEILISEARCH_TLS_KEY_FILE=missing-client.key",
 	)...)
+	reject(t, bin, dir, cover, "meilisearch setup failed", append(append([]string{}, dependencies...),
+		"MEILISEARCH_URI=http://127.0.0.1:1",
+	)...)
 	assertCoverage(t, cover, "database-migration")
 }
 
@@ -111,6 +114,13 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 	reject(t, bin, dir, cover, "failed to ping runtime Docker endpoint", append(postgresEnv(t),
 		"RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT=tcp://127.0.0.1:1",
 	)...)
+	reject(t, bin, dir, cover, "workload firewall not ready", append(postgresEnv(t),
+		"RUNTIME_AGENT_DOCKER_ENDPOINT="+docker,
+		"RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT="+docker,
+		"RUNTIME_AGENT_FIREWALL_READY_FILE=missing-firewall-ready",
+	)...)
+	reject(t, bin, dir, cover, "runtime agent id, node name",
+		"RUNTIME_AGENT_DOCKER_ENDPOINT=", "RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT=")
 	assertCoverage(t, cover, "runtime-agent")
 }
 

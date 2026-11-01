@@ -189,10 +189,16 @@ func TestIntegrationNativeStartupFailures(t *testing.T) {
 				for _, service := range []string{"USERS", "WORKFLOWS", "JOBS", "NOTIFICATIONS", "ANALYTICS"} {
 					reject(t, bin, dir, cover, "missing-ca.pem", service+"_SERVICE_TLS_ENABLED=true", service+"_SERVICE_TLS_CA_FILE=missing-ca.pem")
 				}
+				reject(t, bin, dir, cover, "missing-client.pem", "REDIS_TLS_ENABLED=true", "REDIS_TLS_CERT_FILE=missing-client.pem", "REDIS_TLS_KEY_FILE=missing-client.key")
 			case "execution-worker":
 				reject(t, bin, dir, cover, "missing-client.pem", "KAFKA_TLS_ENABLED=true", "KAFKA_TLS_CERT_FILE=missing-client.pem", "KAFKA_TLS_KEY_FILE=missing-client.key")
+				reject(t, bin, dir, cover, "invalid NAT64 prefix", "EXECUTION_WORKER_HEARTBEAT_NAT64_PREFIXES=10.0.0.0/8")
+				reject(t, bin, dir, cover, "missing-client.pem", "REDIS_TLS_ENABLED=true", "REDIS_TLS_CERT_FILE=missing-client.pem", "REDIS_TLS_KEY_FILE=missing-client.key")
 			default:
 				reject(t, bin, dir, cover, "missing-ca.pem", "POSTGRES_TLS_ENABLED=true", "POSTGRES_TLS_CA_FILE=missing-ca.pem")
+			}
+			if name == "notifications-service" {
+				reject(t, bin, dir, cover, "missing-ca.pem", "USERS_SERVICE_TLS_ENABLED=true", "USERS_SERVICE_TLS_CA_FILE=missing-ca.pem")
 			}
 			if commandUsesAuth(name) {
 				reject(t, bin, t.TempDir(), cover, "failed to read private key")

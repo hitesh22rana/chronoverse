@@ -119,6 +119,7 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 	)
 	bin, cover := build(t, "runtime-agent")
 	dir := keys(t, "runtime-agent")
+	pg := testkit.Postgres(t)
 	runNativeLifecycle(t, bin, dir, cover, changes, func(ctx context.Context, done <-chan error, output *outputBuffer) {
 		waitReady(ctx, t, done, output, func() bool {
 			return strings.Contains(output.String(), "starting runtime agent")
@@ -126,7 +127,7 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 		var firstHeartbeat time.Time
 		waitReady(ctx, t, done, output, func() bool {
 			var heartbeat time.Time
-			if err := testkit.Postgres(t).QueryRow(ctx,
+			if err := pg.QueryRow(ctx,
 				`SELECT last_heartbeat_at FROM runtime_nodes WHERE id = $1`, runtimeID,
 			).Scan(&heartbeat); err != nil {
 				return false

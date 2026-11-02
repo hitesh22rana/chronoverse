@@ -330,7 +330,12 @@ func TestIntegrationNativePostgresLifecycle(t *testing.T) {
 // failure. Closing it then allows the same command to prove successful startup.
 func availableCommandPort(t *testing.T, name, bin, dir, cover string, pg []string) int {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listenAddress := ":0"
+	if name == "server" {
+		listenAddress = "127.0.0.1:0"
+	}
+	// #nosec G102 -- Match production binds so occupied-port checks work for IPv4 and IPv6.
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		t.Fatal(err)
 	}

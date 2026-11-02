@@ -139,6 +139,15 @@ func TestIntegrationNativeRuntimeAgentLifecycle(t *testing.T) {
 			return heartbeat.After(firstHeartbeat)
 		})
 	})
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	var nodeStatus string
+	if err := pg.QueryRow(ctx, `SELECT status FROM runtime_nodes WHERE id = $1`, runtimeID).Scan(&nodeStatus); err != nil {
+		t.Fatalf("read runtime node after shutdown: %v", err)
+	}
+	if nodeStatus != "DRAINING" {
+		t.Fatalf("runtime node status after SIGTERM = %q, want DRAINING", nodeStatus)
+	}
 	reject(t, bin, dir, cover, "failed to ping runtime Docker endpoint", append(postgresEnv(t),
 		"RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT=tcp://127.0.0.1:1",
 	)...)

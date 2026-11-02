@@ -94,7 +94,7 @@ test/short: dependencies
 test/integration: export CHRONOVERSE_COMMAND_COVERAGE_DIR=$(if $(COVERPROFILE),$(COMMAND_COVERAGE_DIR))
 test/integration: dependencies
 	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
-	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
+	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); rm -rf "$(COMMAND_COVERAGE_DIR)"; fi
 	@go test -p $(INTEGRATION_PARALLELISM) -race -v -count=1 -timeout=20m -exec '$(PYTHON) "$(abspath scripts/test/integration_exec.py)"' -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 .PHONY: k8s/setup

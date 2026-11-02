@@ -44,7 +44,9 @@ other cases verify real configuration and dependency errors.
 
 With `COVERPROFILE` enabled, the integration target exports
 `CHRONOVERSE_COMMAND_COVERAGE_DIR` as the absolute
-`target/coverage-inputs/command-native` directory. Each command writes an atomic
+`target/coverage-inputs/command-native` directory. The target clears that directory
+before the run, so profiles describe only the current execution while tests for the
+same command still accumulate their counters together. Each command writes an atomic
 `<command>/coverage.out` using `go tool covdata textfmt`. CI retains those profiles
 separately and requires one for every tracked `cmd/*/main.go` before scoring.
 Repeat `--go-native <profile>` when invoking the scorer directly; `make coverage/crap`

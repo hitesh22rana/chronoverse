@@ -104,14 +104,28 @@ class MakeCoverageTests(unittest.TestCase):
         """Every `go list` the last make run made, in order."""
         return [line for line in self.log.read_text(encoding="utf-8").splitlines() if line]
 
-    def test_native_profile_directory_is_exported_only_with_coverage(self):
+    def test_native_profile_directory_is_exported_and_cleared_only_with_coverage(self):
+        run_tests = """'test '*)
+    printf '%s\\n' "${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}" > "$(dirname "$0")/native-env.log"
+    if [ -n "${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}" ]; then
+        native="$CHRONOVERSE_COMMAND_COVERAGE_DIR/server"
+        [ ! -e "$native/covcounters.stale" ] || exit 42
+        mkdir -p "$native"
+        printf 'current run' > "$native/covcounters.current"
+    fi
+    exit 0 ;;
+"""
         script = FAKE_GO.replace('case "$*" in\n',
-            'case "$*" in\n' +
-            "'test '*) printf '%s\\n' \"${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}\" > \"$(dirname \"$0\")/native-env.log\"; exit 0 ;;\n", 1)
+            'case "$*" in\n' + run_tests, 1)
         self.go.write_text(script)
         env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
         env.pop("CHRONOVERSE_COMMAND_COVERAGE_DIR", None)
-        for coverage in (True, False):
+        native = self.root / "target/coverage-inputs/command-native"
+        stale = native / "server" / "covcounters.stale"
+        for coverage in (True, True, False):
+            # A profile left by an earlier run must not survive into this one.
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("previous run", encoding="utf-8")
             args = ["make", "-o", "dependencies", "test/integration"]
             if coverage:
                 args.append("COVERPROFILE=target/coverage-inputs/test.out")
@@ -122,10 +136,13 @@ class MakeCoverageTests(unittest.TestCase):
                 # macOS exposes temp dirs as both /var and /private/var.
                 self.assertEqual(
                     Path(actual).resolve(),
-                    (self.root / "target/coverage-inputs/command-native").resolve(),
+                    native.resolve(),
                 )
+                self.assertFalse(stale.exists())
+                self.assertEqual((native / "server/covcounters.current").read_text(), "current run")
             else:
                 self.assertEqual(actual, "")
+                self.assertTrue(stale.exists())
 
     def test_both_jobs_measure_identical_application_dependencies(self):
         for target in ("test/short", "test/integration"):

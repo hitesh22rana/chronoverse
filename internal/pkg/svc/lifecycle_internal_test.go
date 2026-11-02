@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	collectorlog "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectormetric "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -177,6 +178,7 @@ func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
 		}
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
 		t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "60000")
+		t.Setenv("OTEL_TRACES_SAMPLER", "always_on")
 		operation := "failed to create resource"
 		if stage == "resource" {
 			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "missing-value")
@@ -193,6 +195,21 @@ func TestInitRejectsInvalidTelemetryConfiguration(t *testing.T) {
 		}()
 		// Assert only the svc-level operation: the library cause is not part of this package's contract.
 		require.Contains(t, fmt.Sprint(got), operation)
+		if stage == "metrics" || stage == "logs" {
+			provider, ok := otel.GetTracerProvider().(*sdktrace.TracerProvider)
+			require.True(t, ok, "trace provider must have been acquired before the failure")
+			_, span := provider.Tracer("startup-rollback-test").Start(t.Context(), "after-failed-init")
+			defer span.End()
+			require.False(t, span.IsRecording(), "failed initialization must shut down the acquired trace provider")
+		}
+		if stage == "logs" {
+			provider, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+			require.True(t, ok, "meter provider must have been acquired before the failure")
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.ErrorIs(t, provider.ForceFlush(ctx), sdkmetric.ErrReaderShutdown,
+				"failed initialization must shut down the acquired meter reader")
+		}
 		return
 	}
 	for _, stage := range []string{"resource", "traces", "metrics", "logs"} {

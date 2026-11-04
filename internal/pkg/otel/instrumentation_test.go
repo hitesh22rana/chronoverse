@@ -362,3 +362,32 @@ func assertRPCMethods(t *testing.T, points []metricdata.HistogramDataPoint[float
 		}
 	}
 }
+
+func TestHTTPHandlerUsesAlreadyMatchedOuterRoute(t *testing.T) {
+	t.Parallel()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("provider cleanup: %v", err)
+		}
+	})
+	mux := http.NewServeMux()
+	mux.Handle("GET /mounted/{id}", otelpkg.HTTPHandler(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.PathValue("id") != "item-1" {
+				t.Errorf("outer route values lost: %q", r.PathValue("id"))
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}), "mounted", otelhttp.WithTracerProvider(provider),
+	))
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/mounted/item-1", http.NoBody))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status: %d", response.Code)
+	}
+	spans := recorder.Ended()
+	if len(spans) != 1 || spans[0].Name() != "GET /mounted/{id}" {
+		t.Fatalf("outer route span: %#v", spans)
+	}
+}

@@ -42,5 +42,6 @@ func startMeilisearch(ctx context.Context, s *suite) (meilisearch.ServiceManager
 		return nil, fmt.Errorf("setup meilisearch indexes: %w", err)
 	}
 
+	s.meiliURI = addr
 	return client, nil
 }

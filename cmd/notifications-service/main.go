@@ -109,7 +109,7 @@ func run() int {
 		zap.String("environment", cfg.Environment.Env),
 		zap.Bool("tls_enabled", cfg.Grpc.TLS.Enabled),
 		zap.Int("gomaxprocs", runtime.GOMAXPROCS(0)),
-		zap.Int64("gomemlimit", debug.SetMemoryLimit(0)),
+		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
 	if err := app.Serve(listener); err != nil {

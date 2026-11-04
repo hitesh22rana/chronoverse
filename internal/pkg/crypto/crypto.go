@@ -36,14 +36,17 @@ func (c *Crypto) decode(s string) ([]byte, error) {
 	return data, nil
 }
 
+func newAEAD(secret string) (cipher.AEAD, error) {
+	block, err := aes.NewCipher([]byte(secret))
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCMWithRandomNonce(block)
+}
+
 // Encrypt encrypts data with AES-256-GCM and returns base64 ciphertext.
 func (c *Crypto) Encrypt(data string) (string, error) {
-	block, err := aes.NewCipher([]byte(c.secret))
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
-	}
-
-	aead, err := cipher.NewGCMWithRandomNonce(block)
+	aead, err := newAEAD(c.secret)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
 	}
@@ -55,12 +58,7 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 
 // Decrypt verifies and decrypts base64 AES-256-GCM ciphertext.
 func (c *Crypto) Decrypt(data string) (string, error) {
-	block, err := aes.NewCipher([]byte(c.secret))
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
-	}
-
-	aead, err := cipher.NewGCMWithRandomNonce(block)
+	aead, err := newAEAD(c.secret)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
 	}

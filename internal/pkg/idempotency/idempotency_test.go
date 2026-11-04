@@ -72,14 +72,23 @@ func TestClaimCommandID(t *testing.T) {
 	t.Parallel()
 
 	first := idempotency.ClaimCommandID("process-1", "job-1", 2)
-	if len(first) != 64 {
-		t.Fatalf("ClaimCommandID() length = %d", len(first))
+	if first != "e1c9fb523fe53733dcf75b6241f2663c75183b208978cb93a83c80648d8ff02f" {
+		t.Fatalf("ClaimCommandID() = %q, want SHA-256 of the NUL-framed claim identity", first)
 	}
 	if replay := idempotency.ClaimCommandID("process-1", "job-1", 2); replay != first {
 		t.Fatalf("ClaimCommandID() is not deterministic")
 	}
-	if restarted := idempotency.ClaimCommandID("process-2", "job-1", 2); restarted == first {
-		t.Fatalf("ClaimCommandID() must bind process identity")
+	for _, tc := range []struct {
+		name, process, job string
+		attempt            int32
+	}{
+		{"process", "process-2", "job-1", 2},
+		{"job", "process-1", "job-2", 2},
+		{"dispatch attempt", "process-1", "job-1", 3},
+	} {
+		if changed := idempotency.ClaimCommandID(tc.process, tc.job, tc.attempt); changed == first {
+			t.Errorf("ClaimCommandID() must bind %s identity", tc.name)
+		}
 	}
 }
 

@@ -226,12 +226,12 @@ func ExtractAuthorizationTokenFromHeaders(headers metadata.MD) (string, error) {
 }
 
 func parseBearerToken(data []string) (string, error) {
-	if len(data) == 0 {
+	if len(data) != 1 {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
 
 	parts := strings.Split(data[0], " ")
-	if len(parts) < 2 || parts[0] != "Bearer" {
+	if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
 
@@ -284,14 +284,9 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to read public key: %v", err)
 	}
 
-	publicKey, err := jwt.ParseEdPublicKeyFromPEM(publicKeyBytes)
+	edPub, err := parseEd25519PublicKey(publicKeyBytes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to parse public key: %v", err)
-	}
-
-	edPub, ok := publicKey.(ed25519.PublicKey)
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
 	}
 	// Verify private and public correspond — prevents signer restart with
 	// a mismatched pair (e.g. rotation replaced auth.ed but not auth.ed.pub).
@@ -327,7 +322,7 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	return &Auth{
 		issuer:     issuer,
 		privateKey: privateKey,
-		publicKey:  publicKey,
+		publicKey:  edPub,
 		kid:        kid,
 		bundle:     bundle,
 		bundlePath: bundlePath,
@@ -455,8 +450,10 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	}
 
 	var kidFromHeader string
-	parsed, perr := jwt.Parse(
+	claims := jwt.MapClaims{}
+	parsed, perr := jwt.ParseWithClaims(
 		tokenString,
+		claims,
 		func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
@@ -483,13 +480,6 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	expired := isOnlyTokenExpired(perr)
 	if perr != nil && !expired {
 		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
-	}
-	if parsed == nil {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
-	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
 	}
 	issuer, issuerErr := claims.GetIssuer()
 	if issuerErr != nil || !TrustedIssuer(issuer) {

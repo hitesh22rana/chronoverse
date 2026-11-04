@@ -76,9 +76,9 @@ export function UserAnalyticsDrawer() {
                                 </CardAction>
                             </CardHeader>
                         </Card>
-                    ) : analyticsQuery.data ? (
+                    ) : (
                         <UserAnalyticsOverview analytics={analyticsQuery.data} />
-                    ) : null}
+                    )}
                 </div>
             </DrawerContent>
         </Drawer>

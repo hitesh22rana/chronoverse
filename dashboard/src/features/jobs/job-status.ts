@@ -162,7 +162,7 @@ export function normalizeStatus(input?: string | null): StatusKey {
 
 export function getStatusMeta(input?: string | null): StatusMeta {
     const key = normalizeStatus(input)
-    return STATUS_META[key] ?? STATUS_META.UNKNOWN
+    return STATUS_META[key]
 }
 
 export function getStatusLabel(input?: string | null, context?: StatusContext): string {

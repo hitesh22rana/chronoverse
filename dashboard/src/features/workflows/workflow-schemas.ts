@@ -49,11 +49,11 @@ const containerPayloadSchema = z.object({
     cmd: z.array(z.string().trim())
         .optional()
         .default([])
-        .transform(val => val?.filter(item => item !== "") || []),
+        .transform(val => val.filter(item => item !== "")),
     env: z.array(z.string().trim())
         .optional()
         .default([])
-        .transform(val => val?.filter(item => item !== "") || []),
+        .transform(val => val.filter(item => item !== "")),
     timeout: z.string().default("")
         .refine(val => {
             if (!val) return true

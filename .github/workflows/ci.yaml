@@ -85,7 +85,29 @@ jobs:
       # job below, so this gate stays fast and Docker-independent.
       # COVERPROFILE records application packages and their cross-package calls.
       - name: Run tests
-        run: make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out
+        shell: bash
+        run: |
+          mkdir -p target
+          if make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out 2>&1 | tee target/unit-tests.log; then
+            exit 0
+          fi
+          python - <<'PYTHON'
+          import re
+          from pathlib import Path
+
+          lines = Path("target/unit-tests.log").read_text(errors="replace").splitlines()
+          lines = [re.sub(r"\s+coverage:.*", "", line)
+                   if re.match(r"^(?:ok|FAIL|\s*github\.com/)", line) else line for line in lines]
+          failures = [i for i, line in enumerate(lines)
+                      if re.search(r"--- FAIL:|^panic:|^fatal error:", line)]
+          if not failures:
+              failures = [i for i, line in enumerate(lines) if re.search(r"^FAIL\s|^# ", line)]
+          for i in (failures[:20] or [len(lines) - 1]):
+              excerpt = "\n".join(line[:500] for line in lines[max(0, i - 5):i + 21])[:4000]
+              escaped = excerpt.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::error title=Unit test failure::" + escaped)
+          PYTHON
+          exit 1
 
       - name: Upload unit coverage profile
         uses: actions/upload-artifact@v7.0.2
@@ -172,6 +194,14 @@ jobs:
               if not slowest:
                   summary.write("\nNo completed package timings were available.\n")
           PYTHON
+
+      - name: Upload native command coverage profiles
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: coverage-command-native
+          path: target/coverage-inputs/command-native/*/coverage.out
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload integration coverage profile
         uses: actions/upload-artifact@v7.0.2
@@ -282,6 +312,12 @@ jobs:
           name: coverage-integration
           path: target/coverage-inputs/integration
 
+      - name: Download native command coverage profiles
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: coverage-command-native
+          path: target/coverage-inputs/command-native
+
       - name: Download dashboard coverage report
         uses: actions/download-artifact@v8.0.2
         with:
@@ -291,7 +327,14 @@ jobs:
       # Score tracked application sources using the merged coverage profiles.
       - name: Score complexity against coverage
         run: |
-          python scripts/coverage/crap_report.py \
+          native_args=()
+          for source in cmd/*/main.go; do
+            command=$(basename "$(dirname "$source")")
+            profile="target/coverage-inputs/command-native/$command/coverage.out"
+            test -s "$profile" || { echo "Missing native coverage for $command" >&2; exit 1; }
+            native_args+=(--go-native "$profile")
+          done
+          python scripts/coverage/crap_report.py "${native_args[@]}" \
             --go-unit target/coverage-inputs/unit/coverage.out \
             --go-integration target/coverage-inputs/integration/coverage.out \
             --dashboard-lcov dashboard/coverage/lcov.info > /tmp/crap.log
@@ -300,6 +343,28 @@ jobs:
             cat /tmp/crap.log
             echo '::endgroup::'
           }
+
+      - name: Publish command coverage details
+        run: |
+          python - <<'PYTHON'
+          import base64
+          import csv
+          import json
+          import os
+          import zlib
+          from pathlib import Path
+
+          with Path(".metrics/inventory.csv").open() as handle:
+              rows = [row for row in csv.DictReader(handle)
+                      if row["path"].startswith(("cmd/", "internal/pkg/otel/"))]
+          payload = json.dumps({"tested_sha": os.environ["GITHUB_SHA"], "functions": rows},
+                               ensure_ascii=True, separators=(",", ":")).encode("ascii")
+          encoded = base64.b64encode(zlib.compress(payload, 9)).decode("ascii")
+          if len(encoded) > 3500:
+              print("::notice title=Command coverage details unavailable::Use the complete inventory artifact; the API summary exceeds its size limit.")
+          else:
+              print("::notice title=Command coverage details (zlib-base64)::" + encoded)
+          PYTHON
 
       - name: Record report provenance
         run: python scripts/coverage/ci_report.py prepare

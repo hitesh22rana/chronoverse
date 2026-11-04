@@ -2,7 +2,9 @@ package otel
 
 import (
 	"context"
+	"errors"
 	"os"
+	"time"
 
 	hostmetrics "go.opentelemetry.io/contrib/instrumentation/host"
 	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
@@ -77,16 +79,32 @@ func InitMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exporter)),
 	)
+	return registerMeterProvider(ctx, mp,
+		func(mp *sdkmetric.MeterProvider) error {
+			return hostmetrics.Start(hostmetrics.WithMeterProvider(mp))
+		},
+		func(mp *sdkmetric.MeterProvider) error {
+			return runtimemetrics.Start(runtimemetrics.WithMeterProvider(mp))
+		},
+	)
+}
+
+// registerMeterProvider owns the provider until both instrumentation libraries
+// have registered successfully. Failed startup closes its reader/exporter without
+// publishing a partially initialized provider to the rest of the process.
+func registerMeterProvider(ctx context.Context, mp *sdkmetric.MeterProvider, startHost, startRuntime func(*sdkmetric.MeterProvider) error) (*sdkmetric.MeterProvider, error) {
+	rollback := func(err error) (*sdkmetric.MeterProvider, error) {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return nil, errors.Join(err, mp.Shutdown(shutdownCtx))
+	}
+	if err := startHost(mp); err != nil {
+		return rollback(status.Errorf(codes.Internal, "failed to start hostmetrics: %v", err))
+	}
+	if err := startRuntime(mp); err != nil {
+		return rollback(status.Errorf(codes.Internal, "failed to start runtime: %v", err))
+	}
 	otel.SetMeterProvider(mp)
-
-	if err := hostmetrics.Start(hostmetrics.WithMeterProvider(mp)); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to start hostmetrics: %v", err)
-	}
-
-	if err := runtimemetrics.Start(runtimemetrics.WithMeterProvider(mp)); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to start runtime: %v", err)
-	}
-
 	return mp, nil
 }
 

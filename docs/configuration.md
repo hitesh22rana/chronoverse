@@ -412,6 +412,11 @@ backpressure instead of starting another workload.
 - `RUNTIME_AGENT_MAX_CONCURRENCY`
 - `DOCKER_HOST`
 
+The command refuses to start when both the advertised endpoint and the health
+endpoint resolve to empty. Set `RUNTIME_AGENT_DOCKER_ENDPOINT`,
+`RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT`, or `DOCKER_HOST`; an empty advertised
+endpoint would otherwise register a runtime node that workers cannot dial.
+
 `runtime-agent` pings its local Docker endpoint, upserts a `READY` row into
 PostgreSQL, then heartbeats Docker endpoint health and capacity. In Compose
 there is one runtime named `local-docker` pointing at `tcp://docker-proxy:2376`.

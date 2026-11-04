@@ -158,9 +158,18 @@ type gzipResponseWriter struct {
 }
 
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	if w.status != 0 {
+		return
+	}
+	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
 	w.status = statusCode
-	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Del("Content-Length") // Will change after compression
+	if w.canWriteBody() {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length")
+	}
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
@@ -168,7 +177,14 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
+	if !w.canWriteBody() {
+		return w.ResponseWriter.Write(b)
+	}
 	return w.gzipWriter.Write(b)
+}
+
+func (w *gzipResponseWriter) canWriteBody() bool {
+	return w.status >= 200 && w.status != http.StatusNoContent && w.status != http.StatusNotModified
 }
 
 // isValidValue reports whether value belongs to the valid set.

@@ -21,7 +21,7 @@ func Do(ctx context.Context, attempts int, backoff time.Duration, fn func() erro
 		attempts = 1
 	}
 
-	for attempt := 1; attempt <= attempts; attempt++ {
+	for attempt := 1; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -37,8 +37,6 @@ func Do(ctx context.Context, attempts int, backoff time.Duration, fn func() erro
 			return ctx.Err()
 		}
 	}
-
-	return nil
 }
 
 func isRetryable(err error, retryableCodes ...codes.Code) bool {

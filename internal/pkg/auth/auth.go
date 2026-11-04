@@ -475,9 +475,16 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		jwt.WithAudience(expectedAudience),
 		jwt.WithExpirationRequired(),
 	)
-	claims, expired, claimErr := interpretParsedToken(parsed, perr)
-	if claimErr != nil {
-		return ctx, nil, claimErr
+	expired := isOnlyTokenExpired(perr)
+	if perr != nil && !expired {
+		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
+	}
+	if parsed == nil {
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
 	}
 	issuer, issuerErr := claims.GetIssuer()
 	if issuerErr != nil || !TrustedIssuer(issuer) {
@@ -503,24 +510,6 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	outCtx = WithRole(outCtx, roleVal)
 	outCtx = WithSubject(outCtx, subVal)
 	return outCtx, parsed, nil
-}
-
-// interpretParsedToken classifies parser errors and extracts map claims from a
-// parsed token. The token is non-nil whenever parsing succeeds or fails only
-// because it expired.
-func interpretParsedToken(parsed *jwt.Token, parseErr error) (jwt.MapClaims, bool, error) {
-	expired := isOnlyTokenExpired(parseErr)
-	if parseErr != nil && !expired {
-		return nil, expired, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", parseErr)
-	}
-	if parsed == nil {
-		return nil, expired, status.Error(codes.Unauthenticated, "invalid token")
-	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, expired, status.Error(codes.Unauthenticated, "invalid token claims")
-	}
-	return claims, expired, nil
 }
 
 // Gateway JWTs are per-service, never broad. New services need an entry here.

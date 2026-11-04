@@ -41,10 +41,6 @@ func newAEAD(secret string) (cipher.AEAD, error) {
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
 	}
-	return newGCM(block)
-}
-
-func newGCM(block cipher.Block) (cipher.AEAD, error) {
 	aead, err := cipher.NewGCMWithRandomNonce(block)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)

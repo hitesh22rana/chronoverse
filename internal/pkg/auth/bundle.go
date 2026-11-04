@@ -63,10 +63,6 @@ func parseEd25519PublicKey(data []byte) (ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asEd25519PublicKey(pub)
-}
-
-func asEd25519PublicKey(pub crypto.PublicKey) (ed25519.PublicKey, error) {
 	edPub, ok := pub.(ed25519.PublicKey)
 	if !ok {
 		return nil, fmt.Errorf("not ed25519 public key: %T", pub)

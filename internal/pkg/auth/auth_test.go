@@ -358,15 +358,6 @@ func TestIssueTokenReportsSigningFailure(t *testing.T) {
 	}
 }
 
-func TestInterpretParsedTokenRejectsMissingTokenAndClaims(t *testing.T) {
-	if _, _, err := interpretParsedToken(nil, nil); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("nil token: %v", err)
-	}
-	if _, _, err := interpretParsedToken(&jwt.Token{Claims: jwt.RegisteredClaims{}}, nil); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("unsupported claims: %v", err)
-	}
-}
-
 func TestTrustedIssuerKnownService(t *testing.T) {
 	for _, iss := range []string{"server", "users-service", "scheduling-worker"} {
 		if !TrustedIssuer(iss) {

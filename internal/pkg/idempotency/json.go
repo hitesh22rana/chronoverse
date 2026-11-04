@@ -15,10 +15,6 @@ func DecodeUniqueJSON(reader io.Reader, destination any) error {
 	if err != nil {
 		return err
 	}
-	return decodeParsedJSON(value, destination)
-}
-
-func decodeParsedJSON(value, destination any) error {
 	canonical, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -79,10 +75,6 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 	if !composite {
 		return token, nil
 	}
-	return decodeUniqueComposite(decoder, delimiter, depth)
-}
-
-func decodeUniqueComposite(decoder *json.Decoder, delimiter json.Delim, depth int) (any, error) {
 	if depth >= maxJSONNestingDepth {
 		return nil, fmt.Errorf("JSON nesting exceeds maximum depth of %d", maxJSONNestingDepth)
 	}

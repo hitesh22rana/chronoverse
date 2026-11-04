@@ -5,7 +5,9 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,10 +109,39 @@ func TestKidForKeyRejectsTruncatedPublicKeys(t *testing.T) {
 	}
 }
 
-func TestAsEd25519PublicKeyRejectsOtherKeyTypes(t *testing.T) {
+func TestKeyLoadingRejectsNonEd25519PEM(t *testing.T) {
 	t.Parallel()
-	if _, err := asEd25519PublicKey(rsa.PublicKey{}); err == nil || !strings.Contains(err.Error(), "not ed25519 public key") {
-		t.Fatalf("asEd25519PublicKey() error = %v, want non-ed25519 rejection", err)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	root := t.TempDir()
+	keyPath := filepath.Join(root, "rsa.pem")
+	writeContractFile(t, keyPath, data)
+	if pub, raw, err := loadPublicKeyFromPEM(keyPath); pub != nil || raw != nil || err == nil {
+		t.Fatalf("non-Ed25519 key: pub=%v raw=%q err=%v", pub, raw, err)
+	}
+	for _, tc := range []struct{ name, pub string }{
+		{"file", "rsa.pem"},
+		{"inline", string(data)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			contents, err := json.Marshal(map[string]bundleFileEntry{"rsa-key": {Iss: "server", Pub: tc.pub}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundlePath := filepath.Join(root, tc.name+".json")
+			writeContractFile(t, bundlePath, contents)
+			if bundle, err := loadBundle(bundlePath); bundle != nil || err == nil || !strings.Contains(err.Error(), "not a valid Ed25519 public key") {
+				t.Fatalf("non-Ed25519 bundle: bundle=%v err=%v", bundle, err)
+			}
+		})
 	}
 }
 

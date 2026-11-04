@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -102,16 +103,21 @@ func TestDoWithCustomRetryableCodes(t *testing.T) {
 
 func TestDoBackoff(t *testing.T) {
 	t.Parallel()
-
-	start := time.Now()
-	//nolint:errcheck // We are only interested in the backoff behavior, not the error
-	_ = retry.Do(t.Context(), 2, time.Millisecond, func() error {
-		return status.Error(codes.Internal, "database unavailable")
+	synctest.Test(t, func(t *testing.T) {
+		failure := status.Error(codes.Unavailable, "service unavailable")
+		calls := 0
+		start := time.Now()
+		err := retry.Do(t.Context(), 3, time.Second, func() error {
+			if elapsed, want := time.Since(start), time.Duration(calls)*time.Second; elapsed != want {
+				t.Errorf("attempt %d started after %v, want %v", calls+1, elapsed, want)
+			}
+			calls++
+			return failure
+		})
+		if !errors.Is(err, failure) || calls != 3 || time.Since(start) != 2*time.Second {
+			t.Fatalf("Do() = %v with %d calls over %v; want original error, 3 calls and 2 backoffs", err, calls, time.Since(start))
+		}
 	})
-
-	if time.Since(start) < time.Millisecond {
-		t.Fatal("Do() did not wait for backoff duration")
-	}
 }
 
 func TestDoRetriesConfiguredAttempts(t *testing.T) {

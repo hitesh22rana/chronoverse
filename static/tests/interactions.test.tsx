@@ -78,6 +78,7 @@ it("shows twelve initial entries, ranks real Fuse matches, trims search and clos
   fireEvent.change(screen.getByRole("textbox", { name: "Search query" }), { target: { value: "  job  " } });
   await waitFor(() => expect(screen.queryByText("Guide 0")).toBeNull());
   const titles = screen.getAllByRole("link").map((node) => node.querySelector("strong")?.textContent);
+  expect(titles).toEqual(expect.arrayContaining(["Job creation", "Replay job", "Worker"]));
   expect(titles.indexOf("Job creation")).toBeLessThan(titles.indexOf("Replay job"));
   expect(titles.indexOf("Replay job")).toBeLessThan(titles.indexOf("Worker"));
   fireEvent.click(screen.getAllByRole("link")[0]);
@@ -96,12 +97,16 @@ it("caps matching results at sixteen and orders exact title before prefix", asyn
 });
 
 it("handles a rejected index response without retries or phantom results", async () => {
+  vi.useFakeTimers();
   const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 503 }); vi.stubGlobal("fetch", fetcher);
-  render(<SWRConfig value={{ provider: () => new Map() }}><SearchPanel onOpenChange={vi.fn()} /></SWRConfig>);
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  render(<SWRConfig value={{ provider: () => new Map(), errorRetryInterval: 100, errorRetryCount: 1 }}><SearchPanel onOpenChange={vi.fn()} /></SWRConfig>);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(fetcher).toHaveBeenCalledTimes(1);
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "job" } });
-  await screen.findByText(/No documentation matched/);
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(screen.getByText(/No documentation matched/)).toBeTruthy();
   expect(screen.queryAllByRole("link")).toHaveLength(0);
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
 it.each(["missing", "NaN", "120"])("restores only finite sidebar positions (%s) and remembers user scroll", (value) => {

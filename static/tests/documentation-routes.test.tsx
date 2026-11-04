@@ -1,6 +1,11 @@
 // @vitest-environment node
+/// <reference types="vite/client" />
 import { expect, it, vi } from "vitest";
-import type { ReactElement } from "react";
+import type { ComponentType, ReactElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import { MDXProvider } from "@mdx-js/react";
+import { useMDXComponents } from "../mdx-components";
 import DocumentationPage, { generateMetadata, generateStaticParams, dynamicParams } from "@/app/docs/[...slug]/page";
 import DocsIndex from "@/app/docs/page";
 import { docPages } from "../docs.config";
@@ -11,6 +16,7 @@ vi.setConfig({ testTimeout: 30000 });
 
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("not-found"); } }));
 const params = (slug: string) => ({ params: Promise.resolve({ slug: slug.split("/") }) });
+const contentModules = import.meta.glob<{ default: ComponentType }>("../content/docs/**/*.mdx");
 
 it("generates every configured source and API route exactly once", () => {
   expect(dynamicParams).toBe(false);
@@ -20,11 +26,14 @@ it("generates every configured source and API route exactly once", () => {
 });
 
 it("loads every actual MDX module and returns matching navigation and metadata", async () => {
+  const components = useMDXComponents();
   for (const page of docPages) {
     const result = await DocumentationPage(params(page.slug));
     expect(result.props.activeSlug).toBe(page.slug);
     expect(result.props.title).toBe(page.title);
     expect(typeof (result.props.children as ReactElement).type).toBe("function");
+    const expectedContent = await contentModules[`../content/docs/${page.source}.mdx`]();
+    expect(renderToStaticMarkup(<MDXProvider components={components}>{result.props.children}</MDXProvider>)).toBe(renderToStaticMarkup(<MDXProvider components={components}>{createElement(expectedContent.default)}</MDXProvider>));
     expect(await generateMetadata(params(page.slug))).toMatchObject({
       title: `${page.title} | Docs`, description: page.description, alternates: { canonical: sitePageUrl(`/docs/${page.slug}`) },
     });

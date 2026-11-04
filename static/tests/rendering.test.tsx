@@ -50,7 +50,7 @@ describe("API operation rendering", () => {
     expect(screen.getByText("Payload")).toBeTruthy();
     expect(screen.getByText("No response schema.")).toBeTruthy();
     expect(screen.getByText("Accepted")).toBeTruthy();
-    expect(Array.from(document.querySelectorAll("pre code"), (node) => JSON.parse(node.textContent!))).toContainEqual({ type: "object" });
+    expect(Array.from(document.querySelectorAll("pre code"), (node) => JSON.parse(node.textContent!))).toEqual([{ type: "object" }, { type: "boolean" }]);
   });
 
   it("distinguishes an explicitly declared body without content", () => {

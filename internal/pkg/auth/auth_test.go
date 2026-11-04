@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -256,7 +257,7 @@ func TestIsOnlyTokenExpiredRejectsEmptyJoinedErrors(t *testing.T) {
 
 func TestNewFailsClosedWithoutServiceKeyConfiguration(t *testing.T) {
 	instance, err := New()
-	if instance != nil || status.Code(err) != codes.Internal {
+	if instance != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to read private key") {
 		t.Fatalf("New() = %v, %v; want nil and Internal without configured key paths", instance, err)
 	}
 }

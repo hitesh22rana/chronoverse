@@ -125,7 +125,7 @@ func TestDecryptRejectsTampering(t *testing.T) {
 }
 
 func TestNewRejectsInvalidKeyLengths(t *testing.T) {
-	for _, secret := range []string{"", "short", "012345678901234567890123456789012"} {
+	for _, secret := range []string{"", "short", "0123456789012345", "012345678901234567890123", "012345678901234567890123456789012"} {
 		c, err := crypto.New(secret)
 		if c != nil || status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("New(%d bytes) = %v, %v; want nil and InvalidArgument", len(secret), c, err)

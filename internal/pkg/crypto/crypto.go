@@ -41,11 +41,7 @@ func newAEAD(secret string) (cipher.AEAD, error) {
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
 	}
-	aead, err := cipher.NewGCMWithRandomNonce(block)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
-	}
-	return aead, nil
+	return cipher.NewGCMWithRandomNonce(block)
 }
 
 // Encrypt encrypts data with AES-256-GCM and returns base64 ciphertext.

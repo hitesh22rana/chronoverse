@@ -41,13 +41,13 @@ func TestCanonicalJSONObject(t *testing.T) {
 func TestCanonicalJSONRejectsDeepNesting(t *testing.T) {
 	t.Parallel()
 
-	deep := strings.Repeat("[", 1000) + strings.Repeat("]", 1000)
+	deep := strings.Repeat("[", 101) + strings.Repeat("]", 101)
 	if _, err := idempotency.CanonicalJSON(deep); err == nil {
 		t.Fatal("deeply nested payload was accepted")
 	}
 
-	shallow := strings.Repeat("[", 10) + strings.Repeat("]", 10)
-	if _, err := idempotency.CanonicalJSON(shallow); err != nil {
-		t.Fatalf("shallow payload was rejected: %v", err)
+	withinLimit := strings.Repeat("[", 100) + strings.Repeat("]", 100)
+	if _, err := idempotency.CanonicalJSON(withinLimit); err != nil {
+		t.Fatalf("payload at the nesting limit was rejected: %v", err)
 	}
 }

@@ -63,11 +63,7 @@ func parseEd25519PublicKey(data []byte) (ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	edPub, ok := pub.(ed25519.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("not ed25519 public key: %T", pub)
-	}
-	return edPub, nil
+	return pub.(ed25519.PublicKey), nil //nolint:errcheck,forcetypeassert // ParseEdPublicKeyFromPEM already rejects other key types.
 }
 
 func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {

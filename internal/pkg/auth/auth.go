@@ -450,8 +450,10 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	}
 
 	var kidFromHeader string
-	parsed, perr := jwt.Parse(
+	claims := jwt.MapClaims{}
+	parsed, perr := jwt.ParseWithClaims(
 		tokenString,
+		claims,
 		func(token *jwt.Token) (any, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
@@ -478,13 +480,6 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	expired := isOnlyTokenExpired(perr)
 	if perr != nil && !expired {
 		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
-	}
-	if parsed == nil {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
-	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
 	}
 	issuer, issuerErr := claims.GetIssuer()
 	if issuerErr != nil || !TrustedIssuer(issuer) {

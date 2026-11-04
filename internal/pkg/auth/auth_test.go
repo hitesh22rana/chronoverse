@@ -207,6 +207,12 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 		{name: "missing subject", mutate: func(claims jwt.MapClaims) {
 			delete(claims, jwtSubjectClaim)
 		}, wantCode: codes.Unauthenticated},
+		{name: "missing expiration", mutate: func(claims jwt.MapClaims) {
+			delete(claims, jwtExpiryClaim)
+		}, wantCode: codes.Unauthenticated},
+		{name: "invalid expiration", mutate: func(claims jwt.MapClaims) {
+			claims[jwtExpiryClaim] = "yesterday"
+		}, wantCode: codes.Unauthenticated},
 		{name: "not valid yet", mutate: func(claims jwt.MapClaims) {
 			claims[jwtNotBeforeClaim] = now.Add(time.Minute).Unix()
 		}, wantCode: codes.Unauthenticated},

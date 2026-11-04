@@ -3,6 +3,7 @@ package idempotency_test
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ import (
 
 func TestDecodeUniqueJSONRejectsMalformedAndAmbiguousPayloads(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{"", `{"a":`, `{"a":1`, `{"a":1,}`, `[1,`, `[1`, "[1 ", `[1}`, `{"a" 1}`, `{"a":1,"a":2}`, `{"a":[{"x":1,"x":2}]}`, `{} {}`, `{} !`, `[{"x":1]`} {
+	for _, raw := range []string{"", "]", "}", "[}", "{]", `{"a":`, `{"a":1`, `{"a":1,}`, `[1,`, `[1`, "[1 ", `[1}`, `{"a" 1}`, `{"a":1,"a":2}`, `{"a":[{"x":1,"x":2}]}`, `{} {}`, `{} !`, `[{"x":1]`} {
 		t.Run(raw, func(t *testing.T) {
 			t.Parallel()
 			destination := map[string]any{"preserved": true}
@@ -53,6 +54,19 @@ func TestDecodeUniqueJSONRejectsMalformedAndAmbiguousPayloads(t *testing.T) {
 	failure := errors.New("body interrupted")
 	if err := idempotency.DecodeUniqueJSON(failingReader{failure}, &object); !errors.Is(err, failure) {
 		t.Fatalf("reader failure=%v", err)
+	}
+}
+
+func TestDecodeUniqueJSONPreservesCanonicalValues(t *testing.T) {
+	t.Parallel()
+	var decoded json.RawMessage
+	err := idempotency.DecodeUniqueJSON(strings.NewReader(`{"z":[true,false,null,"ok",{},[]],"number":9007199254740993,"huge":1e9999,"fraction":1.0}`), &decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"fraction":1.0,"huge":1e9999,"number":9007199254740993,"z":[true,false,null,"ok",{},[]]}`
+	if string(decoded) != want {
+		t.Fatalf("decoded JSON = %s, want %s", decoded, want)
 	}
 }
 

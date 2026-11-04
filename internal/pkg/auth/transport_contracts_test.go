@@ -163,6 +163,11 @@ func TestTokenValidationRejectsUnsignedClaimsAndMismatchedIssuerBinding(t *testi
 	if _, parsed, err := a.ValidateToken(t.Context(), ServiceNameJobs); parsed != nil || status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("missing token: parsed=%v err=%v", parsed, err)
 	}
+	for _, raw := range []string{"not-a-token", signToken(t, private, nil)} {
+		if _, parsed, err := a.ValidateToken(WithAuthorizationToken(t.Context(), raw), ServiceNameJobs); parsed != nil || status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("malformed token or null claims: parsed=%v err=%v", parsed, err)
+		}
+	}
 	claims := jwt.MapClaims{
 		jwtIssuerClaim:   testIssuer,
 		jwtAudienceClaim: []string{ServiceNameJobs},

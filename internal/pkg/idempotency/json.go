@@ -11,11 +11,7 @@ import (
 // DecodeUniqueJSON decodes one JSON value while rejecting duplicate object
 // keys at every nesting level. Numbers retain their original lexical token.
 func DecodeUniqueJSON(reader io.Reader, destination any) error {
-	value, err := parseUniqueJSON(reader)
-	if err != nil {
-		return err
-	}
-	canonical, err := json.Marshal(value)
+	canonical, err := canonicalJSON(reader)
 	if err != nil {
 		return err
 	}
@@ -27,7 +23,7 @@ func DecodeUniqueJSON(reader io.Reader, destination any) error {
 // legitimate request or workflow payload shape.
 const maxJSONNestingDepth = 100
 
-func parseUniqueJSON(reader io.Reader) (any, error) {
+func canonicalJSON(reader io.Reader) ([]byte, error) {
 	decoder := json.NewDecoder(reader)
 	decoder.UseNumber()
 	value, err := decodeUniqueValue(decoder, 0)
@@ -40,30 +36,26 @@ func parseUniqueJSON(reader io.Reader) (any, error) {
 		}
 		return nil, err
 	}
-	return value, nil
+	return json.Marshal(value)
 }
 
 // CanonicalJSON returns JSON with recursively sorted object keys, preserved
 // array order, and lexically preserved numeric tokens.
 func CanonicalJSON(raw string) ([]byte, error) {
-	value, err := parseUniqueJSON(strings.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(value)
+	return canonicalJSON(strings.NewReader(raw))
 }
 
 // CanonicalJSONObject returns canonical JSON while requiring the top-level
 // value to be an object. Nested arrays and scalar values remain valid.
 func CanonicalJSONObject(raw string) ([]byte, error) {
-	value, err := parseUniqueJSON(strings.NewReader(raw))
+	canonical, err := CanonicalJSON(raw)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := value.(map[string]any); !ok {
+	if canonical[0] != '{' {
 		return nil, errors.New("top-level JSON value must be an object")
 	}
-	return json.Marshal(value)
+	return canonical, nil
 }
 
 func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
@@ -79,8 +71,8 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 		return nil, fmt.Errorf("JSON nesting exceeds maximum depth of %d", maxJSONNestingDepth)
 	}
 
-	switch delimiter {
-	case '{':
+	// At a value position, Decoder.Token only returns opening delimiters.
+	if delimiter == '{' {
 		object := make(map[string]any)
 		for decoder.More() {
 			keyToken, keyErr := decoder.Token()
@@ -102,20 +94,18 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 			return nil, err
 		}
 		return object, nil
-	case '[':
-		array := make([]any, 0)
-		for decoder.More() {
-			value, valueErr := decodeUniqueValue(decoder, depth+1)
-			if valueErr != nil {
-				return nil, valueErr
-			}
-			array = append(array, value)
-		}
-		if _, err := decoder.Token(); err != nil {
-			return nil, err
-		}
-		return array, nil
-	default:
-		return nil, fmt.Errorf("unexpected JSON delimiter %q", delimiter)
 	}
+
+	array := make([]any, 0)
+	for decoder.More() {
+		value, valueErr := decodeUniqueValue(decoder, depth+1)
+		if valueErr != nil {
+			return nil, valueErr
+		}
+		array = append(array, value)
+	}
+	if _, err := decoder.Token(); err != nil {
+		return nil, err
+	}
+	return array, nil
 }

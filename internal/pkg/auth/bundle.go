@@ -51,15 +51,27 @@ func loadPublicKeyFromPEM(path string) (ed25519.PublicKey, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	pub, err := jwt.ParseEdPublicKeyFromPEM(data)
+	pub, err := parseEd25519PublicKey(data)
 	if err != nil {
 		return nil, nil, err
 	}
+	return pub, data, nil
+}
+
+func parseEd25519PublicKey(data []byte) (ed25519.PublicKey, error) {
+	pub, err := jwt.ParseEdPublicKeyFromPEM(data)
+	if err != nil {
+		return nil, err
+	}
+	return asEd25519PublicKey(pub)
+}
+
+func asEd25519PublicKey(pub crypto.PublicKey) (ed25519.PublicKey, error) {
 	edPub, ok := pub.(ed25519.PublicKey)
 	if !ok {
-		return nil, nil, fmt.Errorf("not ed25519 public key: %T", pub)
+		return nil, fmt.Errorf("not ed25519 public key: %T", pub)
 	}
-	return edPub, data, nil
+	return edPub, nil
 }
 
 func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {

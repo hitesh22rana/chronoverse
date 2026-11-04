@@ -15,7 +15,7 @@ import (
 
 func TestDecodeUniqueJSONRejectsMalformedAndAmbiguousPayloads(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{"", `{"a":`, `{"a":1`, `[1,`, `[1`, "[1 ", `[1}`, `{"a" 1}`, `{"a":1,"a":2}`, `{"a":[{"x":1,"x":2}]}`, `{} {}`, `{} !`, `[{"x":1]`} {
+	for _, raw := range []string{"", `{"a":`, `{"a":1`, `{"a":1,}`, `[1,`, `[1`, "[1 ", `[1}`, `{"a" 1}`, `{"a":1,"a":2}`, `{"a":[{"x":1,"x":2}]}`, `{} {}`, `{} !`, `[{"x":1]`} {
 		t.Run(raw, func(t *testing.T) {
 			t.Parallel()
 			destination := map[string]any{"preserved": true}

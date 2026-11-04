@@ -284,14 +284,9 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 		return nil, status.Errorf(codes.Internal, "failed to read public key: %v", err)
 	}
 
-	publicKey, err := jwt.ParseEdPublicKeyFromPEM(publicKeyBytes)
+	edPub, err := parseEd25519PublicKey(publicKeyBytes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to parse public key: %v", err)
-	}
-
-	edPub, ok := publicKey.(ed25519.PublicKey)
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "public key is not ed25519")
 	}
 	// Verify private and public correspond — prevents signer restart with
 	// a mismatched pair (e.g. rotation replaced auth.ed but not auth.ed.pub).
@@ -327,7 +322,7 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	return &Auth{
 		issuer:     issuer,
 		privateKey: privateKey,
-		publicKey:  publicKey,
+		publicKey:  edPub,
 		kid:        kid,
 		bundle:     bundle,
 		bundlePath: bundlePath,
@@ -480,16 +475,9 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 		jwt.WithAudience(expectedAudience),
 		jwt.WithExpirationRequired(),
 	)
-	expired := isOnlyTokenExpired(perr)
-	if perr != nil && !expired {
-		return ctx, nil, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", perr)
-	}
-	if parsed == nil {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
-	}
-	claims, ok := parsed.Claims.(jwt.MapClaims)
-	if !ok {
-		return ctx, nil, status.Error(codes.Unauthenticated, "invalid token claims")
+	claims, expired, claimErr := interpretParsedToken(parsed, perr)
+	if claimErr != nil {
+		return ctx, nil, claimErr
 	}
 	issuer, issuerErr := claims.GetIssuer()
 	if issuerErr != nil || !TrustedIssuer(issuer) {
@@ -515,6 +503,24 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	outCtx = WithRole(outCtx, roleVal)
 	outCtx = WithSubject(outCtx, subVal)
 	return outCtx, parsed, nil
+}
+
+// interpretParsedToken classifies parser errors and extracts map claims from a
+// parsed token. The token is non-nil whenever parsing succeeds or fails only
+// because it expired.
+func interpretParsedToken(parsed *jwt.Token, parseErr error) (jwt.MapClaims, bool, error) {
+	expired := isOnlyTokenExpired(parseErr)
+	if parseErr != nil && !expired {
+		return nil, expired, status.Errorf(codes.Unauthenticated, "failed to parse token: %v", parseErr)
+	}
+	if parsed == nil {
+		return nil, expired, status.Error(codes.Unauthenticated, "invalid token")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, expired, status.Error(codes.Unauthenticated, "invalid token claims")
+	}
+	return claims, expired, nil
 }
 
 // Gateway JWTs are per-service, never broad. New services need an entry here.

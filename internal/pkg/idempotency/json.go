@@ -15,6 +15,10 @@ func DecodeUniqueJSON(reader io.Reader, destination any) error {
 	if err != nil {
 		return err
 	}
+	return decodeParsedJSON(value, destination)
+}
+
+func decodeParsedJSON(value, destination any) error {
 	canonical, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -75,6 +79,10 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 	if !composite {
 		return token, nil
 	}
+	return decodeUniqueComposite(decoder, delimiter, depth)
+}
+
+func decodeUniqueComposite(decoder *json.Decoder, delimiter json.Delim, depth int) (any, error) {
 	if depth >= maxJSONNestingDepth {
 		return nil, fmt.Errorf("JSON nesting exceeds maximum depth of %d", maxJSONNestingDepth)
 	}
@@ -87,10 +95,8 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 			if keyErr != nil {
 				return nil, keyErr
 			}
-			key, ok := keyToken.(string)
-			if !ok {
-				return nil, errors.New("JSON object key must be a string")
-			}
+			// encoding/json only returns string keys inside objects.
+			key := keyToken.(string) //nolint:errcheck,forcetypeassert // Object keys are always strings.
 			if _, duplicate := object[key]; duplicate {
 				return nil, fmt.Errorf("duplicate JSON key %q", key)
 			}
@@ -100,7 +106,7 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 			}
 			object[key] = value
 		}
-		if _, err = decoder.Token(); err != nil {
+		if _, err := decoder.Token(); err != nil {
 			return nil, err
 		}
 		return object, nil
@@ -113,7 +119,7 @@ func decodeUniqueValue(decoder *json.Decoder, depth int) (any, error) {
 			}
 			array = append(array, value)
 		}
-		if _, err = decoder.Token(); err != nil {
+		if _, err := decoder.Token(); err != nil {
 			return nil, err
 		}
 		return array, nil

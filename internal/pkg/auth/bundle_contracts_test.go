@@ -4,6 +4,7 @@ package auth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -103,6 +104,13 @@ func TestKidForKeyRejectsTruncatedPublicKeys(t *testing.T) {
 		if kid := kidForKey("server", pub); kid != "server:unknown" {
 			t.Fatalf("kidForKey(%d-byte key) = %q, want server:unknown", len(pub), kid)
 		}
+	}
+}
+
+func TestAsEd25519PublicKeyRejectsOtherKeyTypes(t *testing.T) {
+	t.Parallel()
+	if _, err := asEd25519PublicKey(rsa.PublicKey{}); err == nil || !strings.Contains(err.Error(), "not ed25519 public key") {
+		t.Fatalf("asEd25519PublicKey() error = %v, want non-ed25519 rejection", err)
 	}
 }
 

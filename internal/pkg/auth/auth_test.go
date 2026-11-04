@@ -3,9 +3,11 @@ package auth
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -335,6 +337,33 @@ func TestIssueTokenRequiresAudience(t *testing.T) {
 	_, err := authService.IssueToken(WithRole(t.Context(), RoleUser.String()), "user-42")
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("expected InvalidArgument, got %v", err)
+	}
+}
+
+type failingSigner struct{}
+
+func (failingSigner) Public() crypto.PublicKey {
+	return ed25519.PublicKey(make([]byte, ed25519.PublicKeySize))
+}
+
+func (failingSigner) Sign(io.Reader, []byte, crypto.SignerOpts) ([]byte, error) {
+	return nil, errors.New("signing failed")
+}
+
+func TestIssueTokenReportsSigningFailure(t *testing.T) {
+	authService := &Auth{issuer: testIssuer, privateKey: failingSigner{}, tp: otel.Tracer("auth-test")}
+	token, err := authService.IssueToken(WithRole(t.Context(), RoleUser.String()), "user-42", ServiceNameJobs)
+	if token != "" || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to sign token") {
+		t.Fatalf("IssueToken() = %q, %v; want signing failure", token, err)
+	}
+}
+
+func TestInterpretParsedTokenRejectsMissingTokenAndClaims(t *testing.T) {
+	if _, _, err := interpretParsedToken(nil, nil); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("nil token: %v", err)
+	}
+	if _, _, err := interpretParsedToken(&jwt.Token{Claims: jwt.RegisteredClaims{}}, nil); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("unsupported claims: %v", err)
 	}
 }
 

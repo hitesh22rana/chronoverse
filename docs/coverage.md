@@ -17,7 +17,7 @@ read the output and decide what to do about it, see
 | Job | Command | Uploads |
 | --- | --- | --- |
 | `test` | `make test/short COVERPROFILE=target/coverage-inputs/unit/coverage.out` | `coverage-unit` |
-| `integration` | `make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out` | `coverage-integration` |
+| `integration` | `make test/integration COVERPROFILE=target/coverage-inputs/integration/coverage.out` | `coverage-integration`, `coverage-command-native` |
 | `dashboard` | `cd dashboard && npm run test:coverage` | `coverage-dashboard` |
 | `static-site` | `cd static && npm run test:coverage` when that script exists | `coverage-static` |
 | `coverage` | `make coverage/tooling`, then `python scripts/coverage/crap_report.py ...` | `crap-report`, including raw Python LCOV/JSON |
@@ -27,7 +27,7 @@ variable adds `-covermode=atomic -coverprofile=... -coverpkg=<application packag
 same `go test` invocation; there is no second run of any suite. `npm run test:coverage` is
 `vitest run --coverage` with the JSON, LCOV, and text-summary reporters, so it is the
 existing `npm test` gate plus the LCOV report. The `coverage` job needs `test`,
-`integration`, and `dashboard`; it runs the script's own tests, downloads their three
+`integration`, and `dashboard`; it runs the script's own tests, downloads their test-driver, native-command and dashboard
 artifacts, and scores the profiles without a Go or Node toolchain.
 
 The integration launcher gives each package binary its own Testcontainers/Ryuk
@@ -36,6 +36,26 @@ reaper. Local runs default to one package at a time; CI uses four. Override
 `INTEGRATION_PARALLELISM` to select a bound suitable for the available Docker
 CPU and memory. Python is required for the launcher. Every selected package still
 runs with race detection and fresh execution; unit package parallelism is unchanged.
+
+Native command integration tests build instrumented real binaries and collect their
+`GOCOVERDIR` counters, including calls that terminate through `main` and `os.Exit`.
+They select the same application package trees as the test drivers. PostgreSQL-backed
+cases verify readiness, occupied ports, partial startup and signal-driven shutdown;
+other cases verify real configuration and dependency errors.
+
+With `COVERPROFILE` enabled, the integration target exports
+`CHRONOVERSE_COMMAND_COVERAGE_DIR` as the absolute
+`target/coverage-inputs/command-native` directory. The target clears that directory
+before the run, so profiles describe only the current execution while tests for the
+same command still accumulate their counters together. Each command writes an atomic
+`<command>/coverage.out` using `go tool covdata textfmt`. CI retains those profiles
+separately and requires one for every tracked `cmd/*/main.go` before scoring.
+Repeat `--go-native <profile>` when invoking the scorer directly; `make coverage/crap`
+includes available native profiles automatically. Native hits supplement, rather than
+replace, the unit and integration profiles. Missing files, incompatible block shapes
+and mismatched modes fail the merge; a passing subprocess cannot silently discard
+its coverage. Without coverage collection the tests still verify their temporary
+native counters and discard them when they finish.
 
 Both Go jobs must use the same `-covermode`: the Makefile defaults `COVERMODE` to `atomic`
 because the race detector needs atomic counters, and summing atomic hit counts is what the
@@ -323,3 +343,16 @@ If an export cannot fit nine bounded pages, CI explicitly reports it unavailable
 and retains the complete report artifact instead of emitting partial JSON.
 This export leaves the human PR comment bounded and makes no comparison or
 repository completion claim.
+
+The job also publishes an absolute completion readiness report in
+`target/coverage/completion.json` and the job summary. It evaluates all inventory
+functions, including unchanged functions, against measured 100% coverage and CRAP
+strictly below 30. Missing scope metadata, missing required measurement inputs,
+and empty inventories remain explicit blockers. This stage is report-only:
+existing debt does not fail CI and the changed-function gate still applies.
+
+Function percentages cannot establish repository statement/line or branch totals.
+The readiness report therefore marks those totals and infrastructure/unsupported
+language contract evidence unavailable. Even a clean function inventory does not
+establish repository completion. A strict global gate must wait for complete
+measurement and eliminated debt; this stage does not enable it.

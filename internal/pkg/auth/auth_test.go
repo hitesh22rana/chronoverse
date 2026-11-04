@@ -3,9 +3,12 @@ package auth
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,6 +207,12 @@ func TestValidateTokenClassifiesOnlyValidExpiredTokensAsExpired(t *testing.T) {
 		{name: "missing subject", mutate: func(claims jwt.MapClaims) {
 			delete(claims, jwtSubjectClaim)
 		}, wantCode: codes.Unauthenticated},
+		{name: "missing expiration", mutate: func(claims jwt.MapClaims) {
+			delete(claims, jwtExpiryClaim)
+		}, wantCode: codes.Unauthenticated},
+		{name: "invalid expiration", mutate: func(claims jwt.MapClaims) {
+			claims[jwtExpiryClaim] = "yesterday"
+		}, wantCode: codes.Unauthenticated},
 		{name: "not valid yet", mutate: func(claims jwt.MapClaims) {
 			claims[jwtNotBeforeClaim] = now.Add(time.Minute).Unix()
 		}, wantCode: codes.Unauthenticated},
@@ -237,6 +246,27 @@ func TestIsOnlyTokenExpiredRejectsAdditionalValidationErrors(t *testing.T) {
 	}
 	if isOnlyTokenExpired(errors.Join(jwt.ErrTokenInvalidClaims, jwt.ErrTokenExpired, jwt.ErrTokenInvalidAudience)) {
 		t.Fatal("additional validation errors must reject the expired-session exception")
+	}
+}
+
+type emptyJoinedExpirationError struct{}
+
+func (emptyJoinedExpirationError) Error() string { return jwt.ErrTokenExpired.Error() }
+
+func (emptyJoinedExpirationError) Is(target error) bool { return target == jwt.ErrTokenExpired }
+
+func (emptyJoinedExpirationError) Unwrap() []error { return nil }
+
+func TestIsOnlyTokenExpiredRejectsEmptyJoinedErrors(t *testing.T) {
+	if isOnlyTokenExpired(emptyJoinedExpirationError{}) {
+		t.Fatal("an expired error with no joined causes must not be classified as expired-only")
+	}
+}
+
+func TestNewFailsClosedWithoutServiceKeyConfiguration(t *testing.T) {
+	instance, err := New()
+	if instance != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to read private key") {
+		t.Fatalf("New() = %v, %v; want nil and Internal without configured key paths", instance, err)
 	}
 }
 
@@ -313,6 +343,24 @@ func TestIssueTokenRequiresAudience(t *testing.T) {
 	_, err := authService.IssueToken(WithRole(t.Context(), RoleUser.String()), "user-42")
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("expected InvalidArgument, got %v", err)
+	}
+}
+
+type failingSigner struct{}
+
+func (failingSigner) Public() crypto.PublicKey {
+	return ed25519.PublicKey(make([]byte, ed25519.PublicKeySize))
+}
+
+func (failingSigner) Sign(io.Reader, []byte, crypto.SignerOpts) ([]byte, error) {
+	return nil, errors.New("signing failed")
+}
+
+func TestIssueTokenReportsSigningFailure(t *testing.T) {
+	authService := &Auth{issuer: testIssuer, privateKey: failingSigner{}, tp: otel.Tracer("auth-test")}
+	token, err := authService.IssueToken(WithRole(t.Context(), RoleUser.String()), "user-42", ServiceNameJobs)
+	if token != "" || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), "failed to sign token") {
+		t.Fatalf("IssueToken() = %q, %v; want signing failure", token, err)
 	}
 }
 

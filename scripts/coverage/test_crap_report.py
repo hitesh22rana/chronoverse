@@ -193,7 +193,11 @@ class MergeGoProfilesTest(unittest.TestCase):
     def test_set_and_count_modes_are_accepted(self):
         for mode in ("set", "count"):
             with self.subTest(mode=mode):
-                self.merged(GO_UNIT.replace("mode: atomic", f"mode: {mode}"))
+                blocks = self.merged(GO_UNIT.replace("mode: atomic", f"mode: {mode}"))
+                written_mode, written_blocks = crap_report._read_go_profile(self.root / "out/coverage.out")
+                self.assertEqual(written_mode, mode)
+                self.assertEqual(len(blocks), 3)
+                self.assertEqual(written_blocks["github.com/acme/app/service/user.go:14.2,20.5"], (6, 3))
 
     def test_missing_mode_header_is_rejected(self):
         with self.assertRaisesRegex(crap_report.CoverageError, "no 'mode:' header"):
@@ -700,6 +704,41 @@ class MainTest(unittest.TestCase):
         self.assertIn(":entries", (metrics / "crap.edn").read_text())
         self.assertIn("Chosen", printed)
 
+    def test_native_profiles_add_execution_without_losing_parent_blocks(self):
+        native = self.write(f"{crap_report.INPUT_DIR}/native/one/coverage.out",
+                            "mode: atomic\n" +
+                            "github.com/acme/app/service/audit.go:3.1,5.2 1 1\n")
+        other = self.write(f"{crap_report.INPUT_DIR}/native/two/coverage.out",
+                           "mode: atomic\n" +
+                           "github.com/acme/app/service/user.go:6.2,7.2 1 1\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main("--go-native", str(native), "--go-native", str(other)), 0)
+        profile = (self.root / crap_report.GO_PROFILE).read_text()
+        self.assertIn("service/audit.go:3.1,5.2 1 1", profile)
+        self.assertIn("service/user.go:3.14,5.2 2 7", profile)
+        self.assertIn("service/user.go:6.2,7.2 1 1", profile)
+        self.assertIn("service/order.go:9.1,10.2 1 1", profile)
+        import csv
+        with (self.root / ".metrics/inventory.csv").open() as handle:
+            rows = {row["name"]: row for row in csv.DictReader(handle)}
+        self.assertEqual(rows["Audit"]["coverage"], "100.0000")
+        self.assertEqual(rows["Chosen"]["coverage"], "100.0000")
+
+    def test_missing_native_profile_does_not_clear_existing_reports(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.run_main()
+        output = self.root / crap_report.GO_PROFILE
+        original = output.read_bytes()
+        with self.assertRaisesRegex(crap_report.CoverageError, "input not found"):
+            self.run_main("--go-native", "missing-native.out")
+        self.assertEqual(output.read_bytes(), original)
+
+    def test_native_profile_cannot_be_one_the_report_will_clear(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.run_main()
+        with self.assertRaisesRegex(crap_report.CoverageError, "would destroy"):
+            self.run_main("--go-native", str(self.root / crap_report.GO_PROFILE))
+
     def test_merged_and_prefixed_reports_land_where_crapper_reads_them(self):
         self.run_main()
         go_profile = self.root / crap_report.GO_PROFILE
@@ -854,6 +893,8 @@ class SummariseTest(unittest.TestCase):
         self.assertIn("recorded:   2 functions matched a coverage record", text)
         self.assertIn("no record:  1 functions no report mentions", text)
         self.assertIn("zero:       1 of the matched functions measured 0%", text)
+        self.assertIn("CRAP >= 30: 1", text)
+        self.assertIn("CC > 10:    1", text)
 
 
 class MissingTrackedFileTest(unittest.TestCase):
@@ -933,10 +974,11 @@ class MeasureTest(unittest.TestCase):
             for index in (3, 1, 2):
                 path = root / "src" / f"file{index}.go"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(f"package src\n\nfunc F{index}() {{\n\treturn\n}}\n", encoding="utf-8")
+                path.write_text(f"package src\n\nfunc F{index}() {{\n\treturn\n}}\n\nfunc A{index}() {{}}\n", encoding="utf-8")
                 paths.append(path)
             rows = crap_report.measure(paths, root, crap_report.load_bundle(root))[1]
-            self.assertEqual([row["path"] for row in rows], sorted(row["path"] for row in rows))
+            self.assertEqual([(row["path"], row["name"]) for row in rows],
+                             [(f"src/file{i}.go", f"{name}{i}") for i in (1, 2, 3) for name in ("F", "A")])
 
 
 class InventoryFileTest(unittest.TestCase):
@@ -962,6 +1004,59 @@ class InventoryFileTest(unittest.TestCase):
             lines = path.read_text().splitlines()
             self.assertEqual(lines[0], ",".join(crap_report.INVENTORY_FIELDS))
             self.assertIn("src/a.go,1,2,go,app,A,1,100.0000,yes,1.0", lines[1])
+
+
+class OperationalEdgeContracts(unittest.TestCase):
+    def test_profile_blank_lines_duplicate_header_and_no_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = root / "coverage.out"
+            profile.write_text("\nmode: atomic\n\n")
+            self.assertEqual(crap_report._read_go_profile(profile), ("atomic", {}))
+            profile.write_text("mode: atomic\nmode: atomic\n")
+            with self.assertRaisesRegex(crap_report.CoverageError, "second mode"):
+                crap_report._read_go_profile(profile)
+            with self.assertRaisesRegex(crap_report.CoverageError, "no Go coverprofile"):
+                crap_report.merge_go_profiles([], root / "out", MODULE)
+            (root / "go.mod").write_text("// module declaration not yet present\n")
+            self.assertEqual(crap_report.module_paths(root, ["go.mod"]), ())
+            self.assertFalse(crap_report.is_generated("// handwritten comment\n\n"))
+
+    def test_missing_git_executable_is_a_clear_operational_error(self):
+        import os
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {"PATH": directory}):
+            with self.assertRaisesRegex(crap_report.CoverageError, "git is required"):
+                crap_report.tracked_files(Path(directory))
+
+    def test_executable_no_inputs_remains_unmeasured_and_failure_preserves_report(self):
+        import csv
+        import runpy
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / "go.mod").write_text("module example.com/app\n")
+            (root / "app.go").write_text("package app\nfunc Run() int { return 1 }\n")
+            subprocess.run(["git", "-C", str(root), "add", "go.mod", "app.go"], check=True)
+            args = ["crap_report.py", "--repo-root", str(root)]
+            with mock.patch("sys.argv", args), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_module("crap_report", run_name="__main__")
+            self.assertEqual(result.exception.code, 0)
+            inventory = root / ".metrics/inventory.csv"
+            with inventory.open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([(row["name"], row["coverage_recorded"], row["coverage"]) for row in rows],
+                             [("Run", "no", "")])
+            before = inventory.read_bytes()
+            stderr = io.StringIO()
+            with mock.patch("sys.argv", args + ["--go-unit", "missing.out"]), contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_module("crap_report", run_name="__main__")
+            self.assertEqual(result.exception.code, 2)
+            self.assertIn("input not found", stderr.getvalue())
+            self.assertEqual(inventory.read_bytes(), before)
 
 
 if __name__ == "__main__":

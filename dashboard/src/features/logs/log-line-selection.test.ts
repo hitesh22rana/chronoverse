@@ -38,6 +38,10 @@ describe("log line fragments", () => {
         expect(formatLogLineSelection({ start: 6, end: 19 })).toBe("#L6-L19")
     })
 
+    it.each([{ start: 0, end: 1 }, { start: 1, end: Infinity }, { start: NaN, end: 1 }])("does not format invalid selections: %o", (selection) => {
+        expect(formatLogLineSelection(selection)).toBe("")
+    })
+
     it("builds a pathname-based URL when filters are cleared", () => {
         expect(buildLogViewerUrl("/jobs/1", "", "#L1-L7")).toBe("/jobs/1#L1-L7")
         expect(buildLogViewerUrl("/jobs/1", "q=level", "#L1-L7")).toBe("/jobs/1?q=level#L1-L7")

@@ -52,6 +52,7 @@ COVERAGE_INPUTS=target/coverage-inputs
 UNIT_COVERPROFILE=$(COVERAGE_INPUTS)/unit/coverage.out
 INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
 INTEGRATION_PARALLELISM?=1
+COMMAND_COVERAGE_DIR=$(abspath $(COVERAGE_INPUTS)/command-native)
 DASHBOARD_LCOV=dashboard/coverage/lcov.info
 STATIC_LCOV=static/coverage/lcov.info
 TOOLING_LCOV=$(COVERAGE_INPUTS)/tooling/lcov.info
@@ -60,12 +61,20 @@ TOOLING_LCOV=$(COVERAGE_INPUTS)/tooling/lcov.info
 PYTHON?=python3
 
 # Merges the profiles the test jobs wrote and scores the handwritten sources.
-# Additional suites remain explicitly unmeasured until their reports are supplied.
+# Native process profiles supplement the test-driver profiles; no suite is rerun here.
 .PHONY: coverage/crap
 coverage/crap:
-	@$(PYTHON) scripts/coverage/crap_report.py \
+	@set --; \
+	if [ -d "$(COMMAND_COVERAGE_DIR)" ]; then \
+		for profile in "$(COMMAND_COVERAGE_DIR)"/*/coverage.out; do \
+			[ -f "$$profile" ] || continue; \
+			set -- "$$@" --go-native "$$profile"; \
+		done; \
+	fi; \
+	$(PYTHON) scripts/coverage/crap_report.py \
 		--go-unit $(UNIT_COVERPROFILE) \
 		--go-integration $(INTEGRATION_COVERPROFILE) \
+		"$$@" \
 		--dashboard-lcov $(DASHBOARD_LCOV) \
 		$(if $(wildcard $(STATIC_LCOV)),--static-lcov $(STATIC_LCOV)) \
 		$(if $(wildcard $(TOOLING_LCOV)),--tooling-lcov $(TOOLING_LCOV))
@@ -92,9 +101,10 @@ test/short: dependencies
 # limit: the joblogs suite boots five containers plus sequential Eventually
 # windows.
 .PHONY: test/integration
+test/integration: export CHRONOVERSE_COMMAND_COVERAGE_DIR=$(if $(COVERPROFILE),$(COMMAND_COVERAGE_DIR))
 test/integration: dependencies
 	@$(call discover-go-packages)$(GO_PACKAGES_REQUIRED)
-	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); fi
+	@if [ -n "$(COVERPROFILE)" ]; then mkdir -p $(dir $(COVERPROFILE)); rm -rf "$(COMMAND_COVERAGE_DIR)"; fi
 	@go test -p $(INTEGRATION_PARALLELISM) -race -v -count=1 -timeout=20m -exec '$(PYTHON) "$(abspath scripts/test/integration_exec.py)"' -run 'TestIntegration' $(strip $(COVERFLAGS)) $(GO_PACKAGES)
 
 .PHONY: k8s/setup

@@ -51,15 +51,19 @@ func loadPublicKeyFromPEM(path string) (ed25519.PublicKey, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	pub, err := jwt.ParseEdPublicKeyFromPEM(data)
+	pub, err := parseEd25519PublicKey(data)
 	if err != nil {
 		return nil, nil, err
 	}
-	edPub, ok := pub.(ed25519.PublicKey)
-	if !ok {
-		return nil, nil, fmt.Errorf("not ed25519 public key: %T", pub)
+	return pub, data, nil
+}
+
+func parseEd25519PublicKey(data []byte) (ed25519.PublicKey, error) {
+	pub, err := jwt.ParseEdPublicKeyFromPEM(data)
+	if err != nil {
+		return nil, err
 	}
-	return edPub, data, nil
+	return pub.(ed25519.PublicKey), nil //nolint:errcheck,forcetypeassert // ParseEdPublicKeyFromPEM already rejects other key types.
 }
 
 func loadBundle(bundlePath string) (map[string]*bundleEntry, error) {

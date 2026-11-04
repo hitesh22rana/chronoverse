@@ -2,10 +2,11 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -451,34 +452,54 @@ func (s *Server) registerRoutes(router *http.ServeMux) {
 	)
 }
 
-// Start starts the HTTP server.
+// Start serves HTTP until SIGINT or SIGTERM, then drains active requests.
 func (s *Server) Start() error {
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	// Restore default signal handling as soon as shutdown starts so a second
+	// signal can force exit while active requests drain.
+	context.AfterFunc(ctx, stop)
+	return s.start(ctx, serverShutdownTimeout)
+}
 
+func (s *Server) start(ctx context.Context, shutdownTimeout time.Duration) error {
+	listener, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return err
+	}
+	return s.serve(ctx, listener, shutdownTimeout)
+}
+
+func (s *Server) serve(ctx context.Context, listener net.Listener, shutdownTimeout time.Duration) error {
+	serveError := make(chan error, 1)
 	go func() {
 		s.logger.Info("starting HTTP server",
-			zap.String("addr", s.httpServer.Addr),
+			zap.String("addr", listener.Addr().String()),
 			zap.Bool("http_compression_enabled", true),
 		)
-
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
-			os.Exit(1)
-		}
+		serveError <- s.httpServer.Serve(listener)
 	}()
 
-	sig := <-sigChan
-	fmt.Fprintf(os.Stdout, "Received signal: %v\n", sig)
+	select {
+	case err := <-serveError:
+		return normalizeServeError(err)
+	case <-ctx.Done():
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
-
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Server shutdown failed: %v\n", err)
+	if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(os.Stdout, "Server gracefully stopped")
-	return nil
+	// Serve may have failed just as cancellation won the select above.
+	return normalizeServeError(<-serveError)
+}
+
+// normalizeServeError treats net/http's shutdown sentinel as a clean stop.
+func normalizeServeError(err error) error {
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }

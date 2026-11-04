@@ -3,6 +3,8 @@
 import csv
 from decimal import Decimal
 import json
+import runpy
+from unittest import mock
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,6 +25,18 @@ def patch(old="12,1", new="12,1", path="internal/service.go"):
 
 
 class ChangedFunctionReportTests(unittest.TestCase):
+    def test_previously_unmeasured_function_stays_explicitly_unmeasured(self):
+        result = compare([function(coverage=None)], [function(coverage=None)], patch())
+        self.assertEqual(result["gate"], "passed")
+        self.assertEqual(result["rows"][0]["reasons"], [])
+        self.assertIn("remains unmeasured", result["rows"][0]["note"])
+        self.assertIsNone(result["rows"][0]["after"]["coverage"])
+
+    def test_empty_diff_summary_does_not_invent_changed_functions(self):
+        result = compare([function()], [function()], "email patch preamble\n")
+        self.assertEqual(result["rows"], [])
+        self.assertIn("No changed application functions", markdown(result))
+
     def test_only_changed_function_is_gated(self):
         base = [function("changed"), function("unrelated", start=30, end=40)]
         head = [function("changed", coverage="90", crap="8"),
@@ -182,6 +196,13 @@ class ChangedFunctionReportTests(unittest.TestCase):
         self.assertEqual(git_path(r'"a/bell\a.go"'), "bell\a.go")
         self.assertEqual(git_path(r'"a/vertical\v.go"'), "vertical\v.go")
 
+    def test_git_paths_handle_deletions_and_invalid_utf8_octal(self):
+        from pr_report import git_path
+        self.assertIsNone(git_path("/dev/null"))
+        self.assertEqual(git_path(r'"a/\377.go"'), "ÿ.go")
+        with self.assertRaisesRegex(ValueError, "not a quoted string"):
+            git_path('"a/path", 1')
+
     def test_git_quoted_paths_and_zero_hunks_are_parsed(self):
         diff = ('diff --git "a/a b.go" "b/a b.go"\n--- "a/a b.go"\n+++ "b/a b.go"\n'
                 '@@ -1,0 +2,3 @@\n+x\n+y\n+z\n')
@@ -214,6 +235,28 @@ class InventoryAndCliTests(unittest.TestCase):
             self.assertIsNone(record.coverage)
             self.assertIsNone(record.crap)
             self.assertFalse(record.measured)
+
+    def test_invalid_inventory_schema_flags_and_ranges_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "inventory.csv"
+            path.write_text("path,name\na.go,run\n")
+            with self.assertRaisesRegex(ValueError, "Incomplete inventory schema"):
+                read_inventory(path)
+            for key, value, message in (
+                ("coverage_recorded", "unknown", "must be yes or no"),
+                ("start_line", "0", "Invalid function range"),
+                ("end_line", "1", "Invalid function range"),
+                ("complexity", "0", "Invalid function range"),
+            ):
+                with self.subTest(key=key, value=value):
+                    row = self.row(); row[key] = value
+                    self.write_inventory(path, [row])
+                    with self.assertRaisesRegex(ValueError, message):
+                        read_inventory(path)
+            row = self.row(False); row["coverage"] = "0"
+            self.write_inventory(path, [row])
+            with self.assertRaisesRegex(ValueError, "must not contain coverage"):
+                read_inventory(path)
 
     def test_malformed_numeric_inventory_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -267,6 +310,10 @@ class InventoryAndCliTests(unittest.TestCase):
             self.assertEqual(main(args), 1)
             result = json.loads((root/"result.json").read_text())
             self.assertEqual(result["gate"], "failed")
+            with mock.patch("sys.argv", ["pr_report.py", *args]):
+                with self.assertRaises(SystemExit) as exit_result:
+                    runpy.run_path(str(Path(__file__).with_name("pr_report.py")), run_name="__main__")
+            self.assertEqual(exit_result.exception.code, 1)
             self.assertIn("80.00%", (root/"summary.md").read_text())
             self.assertIn("50.00%", (root/"summary.md").read_text())
             args = [value for value in args]

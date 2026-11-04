@@ -171,6 +171,59 @@ def totals(functions: list[Function]) -> dict:
     }
 
 
+def compare_metrics(previous: Function, current: Function) -> tuple[list[str], str]:
+    """Compare measured outcomes without conflating missing records with zero."""
+    reasons = []
+    note = ""
+    if previous.measured and not current.measured:
+        reasons.append("Previously measured function lost its coverage record.")
+    elif previous.measured and current.measured:
+        if previous.coverage - current.coverage > TOLERANCE:
+            reasons.append("Coverage decreased by more than 0.01 percentage points.")
+        if current.crap - previous.crap > TOLERANCE:
+            if current.crap >= 30:
+                reasons.append("CRAP increased by more than 0.01 and is now >= 30.")
+            else:
+                note = "CRAP increased below 30; informational only."
+    elif not current.measured:
+        note = "Function remains unmeasured; no numeric comparison is possible."
+    else:
+        note = "Coverage measurement added; no baseline numeric comparison is possible."
+    return reasons, note
+
+
+def compare_identity(key: Identity, before: list[Function], after: list[Function],
+                     base_available: bool, renamed: bool) -> dict:
+    """Classify a changed identity before applying numeric regression rules."""
+    row = {
+        "path": key[0], "namespace": key[1], "name": key[2],
+        "status": "changed", "before": None, "after": None,
+        "reasons": [], "note": "",
+    }
+    if len(before) > 1 or len(after) > 1:
+        row.update(status="uncomparable", note="Duplicate identity; no line/order pairing attempted.")
+        return row
+    previous = before[0] if before else None
+    current = after[0] if after else None
+    row["before"] = previous.metrics() if previous else None
+    row["after"] = current.metrics() if current else None
+    if renamed:
+        row.update(status="uncomparable", note="File renamed; strict path identity cannot establish a pair.")
+    elif not base_available:
+        row.update(status="baseline-unavailable", note="No verified base inventory; comparison and regression gate unavailable.")
+    elif current is None:
+        row["status"] = "removed"
+    elif previous is None:
+        row["status"] = "added"
+        if not current.measured:
+            row["reasons"].append("New function has no coverage record.")
+        elif current.crap >= 30:
+            row["reasons"].append("New function has CRAP >= 30.")
+    else:
+        row["reasons"], row["note"] = compare_metrics(previous, current)
+    return row
+
+
 def compare(head: list[Function], base: list[Function] | None, patch: str,
             base_sha: str = "", head_sha: str = "", tested_sha: str = "",
             baseline_reason: str = "") -> dict:
@@ -179,51 +232,10 @@ def compare(head: list[Function], base: list[Function] | None, patch: str,
     new = index(head)
     selected = {f.identity for f in head if touched(f, changes, "after")}
     selected.update(f.identity for f in base or [] if touched(f, changes, "before"))
-    rows = []
-    for key in sorted(selected):
-        before, after = old.get(key, []), new.get(key, [])
-        row = {
-            "path": key[0], "namespace": key[1], "name": key[2],
-            "status": "changed", "before": None, "after": None,
-            "reasons": [], "note": "",
-        }
-        if len(before) > 1 or len(after) > 1:
-            row.update(status="uncomparable", note="Duplicate identity; no line/order pairing attempted.")
-        elif any(c.renamed and key[0] in (c.before_path, c.after_path) for c in changes):
-            row.update(status="uncomparable", note="File renamed; strict path identity cannot establish a pair.")
-            row["before"] = before[0].metrics() if before else None
-            row["after"] = after[0].metrics() if after else None
-        else:
-            previous = before[0] if before else None
-            current = after[0] if after else None
-            row["before"] = previous.metrics() if previous else None
-            row["after"] = current.metrics() if current else None
-            if base is None:
-                row.update(status="baseline-unavailable", note="No verified base inventory; comparison and regression gate unavailable.")
-            elif current is None:
-                row["status"] = "removed"
-            elif previous is None:
-                row["status"] = "added"
-                if not current.measured:
-                    row["reasons"].append("New function has no coverage record.")
-                elif current.crap >= 30:
-                    row["reasons"].append("New function has CRAP >= 30.")
-            else:
-                if previous.measured and not current.measured:
-                    row["reasons"].append("Previously measured function lost its coverage record.")
-                elif previous.measured and current.measured:
-                    if previous.coverage - current.coverage > TOLERANCE:
-                        row["reasons"].append("Coverage decreased by more than 0.01 percentage points.")
-                    if current.crap - previous.crap > TOLERANCE:
-                        if current.crap >= 30:
-                            row["reasons"].append("CRAP increased by more than 0.01 and is now >= 30.")
-                        else:
-                            row["note"] = "CRAP increased below 30; informational only."
-                elif not current.measured:
-                    row["note"] = "Function remains unmeasured; no numeric comparison is possible."
-                else:
-                    row["note"] = "Coverage measurement added; no baseline numeric comparison is possible."
-        rows.append(row)
+    renamed = {path for change in changes if change.renamed
+               for path in (change.before_path, change.after_path)}
+    rows = [compare_identity(key, old.get(key, []), new.get(key, []), base is not None,
+                             key[0] in renamed) for key in sorted(selected)]
     regressions = sum(bool(row["reasons"]) for row in rows)
     uncomparable = sum(row["status"] == "uncomparable" for row in rows)
     gate = ("comparison-unavailable" if base is None else

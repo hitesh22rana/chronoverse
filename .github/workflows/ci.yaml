@@ -344,6 +344,11 @@ jobs:
             echo '::endgroup::'
           }
 
+      - name: Report absolute coverage completion debt
+        run: |
+          python scripts/coverage/completion_report.py
+          cat target/coverage/completion.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish command coverage details
         run: |
           python - <<'PYTHON'

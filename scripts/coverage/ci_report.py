@@ -20,7 +20,7 @@ import zipfile
 
 MARKER = "<!-- chronoverse-crap-report -->"
 SCHEMA_VERSION = 1
-SCOPE_VERSION = 1
+SCOPE_VERSION = 2
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_INVENTORY_BYTES = 8 * 1024 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024

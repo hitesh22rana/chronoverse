@@ -54,6 +54,8 @@ INTEGRATION_COVERPROFILE=$(COVERAGE_INPUTS)/integration/coverage.out
 INTEGRATION_PARALLELISM?=1
 COMMAND_COVERAGE_DIR=$(abspath $(COVERAGE_INPUTS)/command-native)
 DASHBOARD_LCOV=dashboard/coverage/lcov.info
+STATIC_LCOV=static/coverage/lcov.info
+TOOLING_LCOV=$(COVERAGE_INPUTS)/tooling/lcov.info
 
 # Interpreter that has the pinned crapper installed (see docs/coverage.md).
 PYTHON?=python3
@@ -73,7 +75,15 @@ coverage/crap:
 		--go-unit $(UNIT_COVERPROFILE) \
 		--go-integration $(INTEGRATION_COVERPROFILE) \
 		"$$@" \
-		--dashboard-lcov $(DASHBOARD_LCOV)
+		--dashboard-lcov $(DASHBOARD_LCOV) \
+		$(if $(wildcard $(STATIC_LCOV)),--static-lcov $(STATIC_LCOV)) \
+		$(if $(wildcard $(TOOLING_LCOV)),--tooling-lcov $(TOOLING_LCOV))
+
+.PHONY: coverage/tooling
+coverage/tooling:
+	@$(PYTHON) -m coverage run -m unittest discover -s scripts/coverage -t scripts/coverage
+	@$(PYTHON) -m coverage lcov
+	@$(PYTHON) -m coverage json
 
 # Runs every unit suite with the race detector. Docker-backed integration
 # tests self-skip under -short and are covered by test/integration.

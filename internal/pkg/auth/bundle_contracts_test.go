@@ -97,6 +97,15 @@ func TestTrustedBundleLoadsAbsoluteRelativeAndInlinePublicKeys(t *testing.T) {
 	}
 }
 
+func TestKidForKeyRejectsTruncatedPublicKeys(t *testing.T) {
+	t.Parallel()
+	for _, pub := range []ed25519.PublicKey{nil, {1}, {1, 2, 3}} {
+		if kid := kidForKey("server", pub); kid != "server:unknown" {
+			t.Fatalf("kidForKey(%d-byte key) = %q, want server:unknown", len(pub), kid)
+		}
+	}
+}
+
 func TestKeyLoadingRejectsUnreadableAndMalformedPublicKeys(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "key.pem")

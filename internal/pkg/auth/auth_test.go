@@ -240,6 +240,27 @@ func TestIsOnlyTokenExpiredRejectsAdditionalValidationErrors(t *testing.T) {
 	}
 }
 
+type emptyJoinedExpirationError struct{}
+
+func (emptyJoinedExpirationError) Error() string { return jwt.ErrTokenExpired.Error() }
+
+func (emptyJoinedExpirationError) Is(target error) bool { return target == jwt.ErrTokenExpired }
+
+func (emptyJoinedExpirationError) Unwrap() []error { return nil }
+
+func TestIsOnlyTokenExpiredRejectsEmptyJoinedErrors(t *testing.T) {
+	if isOnlyTokenExpired(emptyJoinedExpirationError{}) {
+		t.Fatal("an expired error with no joined causes must not be classified as expired-only")
+	}
+}
+
+func TestNewFailsClosedWithoutServiceKeyConfiguration(t *testing.T) {
+	instance, err := New()
+	if instance != nil || status.Code(err) != codes.Internal {
+		t.Fatalf("New() = %v, %v; want nil and Internal without configured key paths", instance, err)
+	}
+}
+
 func TestValidateTokenPropagatesClaimsToContext(t *testing.T) {
 	authService, privateKey, _ := newTestAuth(t)
 

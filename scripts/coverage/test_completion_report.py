@@ -8,13 +8,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from completion_report import REQUIRED_INPUTS, evaluate, main, markdown
+from completion_report import evaluate, main, markdown
 from test_pr_report import function
 
 
 def scope(**changes):
     result = {"sources": ["internal/service.go"],
-              "inputs": dict.fromkeys(REQUIRED_INPUTS, True)}
+              "inputs": dict.fromkeys(("go_unit", "go_integration", "dashboard", "static", "tooling"), True)}
     result.update(changes)
     return result
 
@@ -31,6 +31,37 @@ class CompletionReportTests(unittest.TestCase):
              "reasons": ["coverage below 100%", "CRAP at least 30"]}])
         self.assertFalse(report["function_policy_satisfied"])
         self.assertFalse(report["complete"])
+
+    def test_each_absolute_policy_boundary_independently(self):
+        for coverage, crap, reasons in (
+            (None, "10", ["coverage unavailable"]),
+            ("0", "10", ["coverage below 100%"]),
+            ("99.999", "10", ["coverage below 100%"]),
+            ("100", "30", ["CRAP at least 30"]),
+            ("100", "30.001", ["CRAP at least 30"]),
+            ("100", "29.999", []),
+        ):
+            with self.subTest(coverage=coverage, crap=crap):
+                report = evaluate([function(coverage=coverage, crap=crap)], scope())
+                self.assertEqual(report["scope_blockers"], [])
+                self.assertEqual(report["function_policy_satisfied"], not reasons)
+                self.assertEqual([debt["reasons"] for debt in report["function_debt"]],
+                                 [reasons] if reasons else [])
+
+    def test_each_missing_measurement_input_independently_blocks_success(self):
+        for name in ("go_unit", "go_integration", "dashboard", "static", "tooling"):
+            for unavailable in (None, False, "true", 1):
+                with self.subTest(name=name, unavailable=unavailable):
+                    metadata = scope()
+                    if unavailable is None:
+                        del metadata["inputs"][name]
+                    else:
+                        metadata["inputs"][name] = unavailable
+                    report = evaluate([function(coverage="100")], metadata)
+                    self.assertEqual(report["function_debt"], [])
+                    self.assertEqual(report["scope_blockers"], [
+                        f"Required measurement input unavailable: {name}."])
+                    self.assertFalse(report["function_policy_satisfied"])
 
     def test_function_success_cannot_establish_repository_completion(self):
         report = evaluate([function(coverage="100", crap="4")], scope())

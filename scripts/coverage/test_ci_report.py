@@ -210,7 +210,7 @@ class HTTPTests(unittest.TestCase):
     def test_pages_follow_later_comments(self):
         api = report.GitHub(REPO, "token")
         api.request = mock.Mock(side_effect=[[{"id": i} for i in range(100)], [{"id": 100}]])
-        self.assertEqual(len(list(api.pages("/comments"))), 101)
+        self.assertEqual(list(api.pages("/comments")), [{"id": i} for i in range(101)])
         self.assertIn("page=2", api.request.call_args.args[0])
 
 

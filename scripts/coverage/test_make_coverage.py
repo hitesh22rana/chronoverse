@@ -74,7 +74,7 @@ class MakeCoverageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         makefile = Path(__file__).resolve().parents[2] / "Makefile"
         shutil.copyfile(makefile, self.root / "Makefile")
         self.go = self.root / "go"

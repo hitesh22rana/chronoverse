@@ -192,7 +192,11 @@ class MergeGoProfilesTest(unittest.TestCase):
     def test_set_and_count_modes_are_accepted(self):
         for mode in ("set", "count"):
             with self.subTest(mode=mode):
-                self.merged(GO_UNIT.replace("mode: atomic", f"mode: {mode}"))
+                blocks = self.merged(GO_UNIT.replace("mode: atomic", f"mode: {mode}"))
+                written_mode, written_blocks = crap_report._read_go_profile(self.root / "out/coverage.out")
+                self.assertEqual(written_mode, mode)
+                self.assertEqual(len(blocks), 3)
+                self.assertEqual(written_blocks["github.com/acme/app/service/user.go:14.2,20.5"], (6, 3))
 
     def test_missing_mode_header_is_rejected(self):
         with self.assertRaisesRegex(crap_report.CoverageError, "no 'mode:' header"):
@@ -808,6 +812,8 @@ class SummariseTest(unittest.TestCase):
         self.assertIn("recorded:   2 functions matched a coverage record", text)
         self.assertIn("no record:  1 functions no report mentions", text)
         self.assertIn("zero:       1 of the matched functions measured 0%", text)
+        self.assertIn("CRAP >= 30: 1", text)
+        self.assertIn("CC > 10:    1", text)
 
 
 class MissingTrackedFileTest(unittest.TestCase):
@@ -887,10 +893,11 @@ class MeasureTest(unittest.TestCase):
             for index in (3, 1, 2):
                 path = root / "src" / f"file{index}.go"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(f"package src\n\nfunc F{index}() {{\n\treturn\n}}\n", encoding="utf-8")
+                path.write_text(f"package src\n\nfunc F{index}() {{\n\treturn\n}}\n\nfunc A{index}() {{}}\n", encoding="utf-8")
                 paths.append(path)
             rows = crap_report.measure(paths, root, crap_report.load_bundle(root))[1]
-            self.assertEqual([row["path"] for row in rows], sorted(row["path"] for row in rows))
+            self.assertEqual([(row["path"], row["name"]) for row in rows],
+                             [(f"src/file{i}.go", f"{name}{i}") for i in (1, 2, 3) for name in ("F", "A")])
 
 
 class InventoryFileTest(unittest.TestCase):

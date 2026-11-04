@@ -39,7 +39,7 @@ func (c *Crypto) decode(s string) ([]byte, error) {
 func newAEAD(secret string) (cipher.AEAD, error) {
 	block, err := aes.NewCipher([]byte(secret))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create new cipher: %v", err)
+		return nil, err
 	}
 	return cipher.NewGCMWithRandomNonce(block)
 }
@@ -48,7 +48,7 @@ func newAEAD(secret string) (cipher.AEAD, error) {
 func (c *Crypto) Encrypt(data string) (string, error) {
 	aead, err := newAEAD(c.secret)
 	if err != nil {
-		return "", err
+		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
 	}
 
 	// Seal authenticates the ciphertext and prepends a random nonce.
@@ -60,7 +60,7 @@ func (c *Crypto) Encrypt(data string) (string, error) {
 func (c *Crypto) Decrypt(data string) (string, error) {
 	aead, err := newAEAD(c.secret)
 	if err != nil {
-		return "", err
+		return "", status.Errorf(codes.Internal, "failed to create authenticated cipher: %v", err)
 	}
 
 	decodedBytes, err := c.decode(data)

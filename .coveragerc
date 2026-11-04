@@ -1,0 +1,15 @@
+[run]
+branch = True
+source = scripts/coverage,scripts/test
+omit = */test_*.py
+relative_files = True
+data_file = target/coverage-inputs/tooling/.coverage
+
+[report]
+skip_empty = True
+
+[lcov]
+output = target/coverage-inputs/tooling/lcov.info
+
+[json]
+output = target/coverage-inputs/tooling/coverage.json

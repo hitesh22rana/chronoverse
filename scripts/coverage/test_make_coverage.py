@@ -74,7 +74,7 @@ class MakeCoverageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         makefile = Path(__file__).resolve().parents[2] / "Makefile"
         shutil.copyfile(makefile, self.root / "Makefile")
         self.go = self.root / "go"
@@ -91,7 +91,8 @@ class MakeCoverageTests(unittest.TestCase):
         self.log.write_text("", encoding="utf-8")
         env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
         # The defaults under test must come from the Makefile, not the caller's shell.
-        env.pop("INTEGRATION_PARALLELISM", None)
+        for name in ("INTEGRATION_PARALLELISM", "PYTHON", "MAKEFLAGS", "MAKEOVERRIDES"):
+            env.pop(name, None)
         env.update(fake)
         return subprocess.run(
             args, cwd=self.root, text=True, capture_output=True, env=env,
@@ -103,6 +104,46 @@ class MakeCoverageTests(unittest.TestCase):
     def discoveries(self) -> list[str]:
         """Every `go list` the last make run made, in order."""
         return [line for line in self.log.read_text(encoding="utf-8").splitlines() if line]
+
+    def test_native_profile_directory_is_exported_and_cleared_only_with_coverage(self):
+        run_tests = """'test '*)
+    printf '%s\\n' "${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}" > "$(dirname "$0")/native-env.log"
+    if [ -n "${CHRONOVERSE_COMMAND_COVERAGE_DIR:-}" ]; then
+        native="$CHRONOVERSE_COMMAND_COVERAGE_DIR/server"
+        [ ! -e "$native/covcounters.stale" ] || exit 42
+        mkdir -p "$native"
+        printf 'current run' > "$native/covcounters.current"
+    fi
+    exit 0 ;;
+"""
+        script = FAKE_GO.replace('case "$*" in\n',
+            'case "$*" in\n' + run_tests, 1)
+        self.go.write_text(script)
+        env = {**os.environ, "PATH": str(self.root) + os.pathsep + os.environ["PATH"]}
+        env.pop("CHRONOVERSE_COMMAND_COVERAGE_DIR", None)
+        native = self.root / "target/coverage-inputs/command-native"
+        stale = native / "server" / "covcounters.stale"
+        for coverage in (True, True, False):
+            # A profile left by an earlier run must not survive into this one.
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("previous run", encoding="utf-8")
+            args = ["make", "-o", "dependencies", "test/integration"]
+            if coverage:
+                args.append("COVERPROFILE=target/coverage-inputs/test.out")
+            result = subprocess.run(args, cwd=self.root, env=env, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            actual = (self.root / "native-env.log").read_text().strip()
+            if coverage:
+                # macOS exposes temp dirs as both /var and /private/var.
+                self.assertEqual(
+                    Path(actual).resolve(),
+                    native.resolve(),
+                )
+                self.assertFalse(stale.exists())
+                self.assertEqual((native / "server/covcounters.current").read_text(), "current run")
+            else:
+                self.assertEqual(actual, "")
+                self.assertTrue(stale.exists())
 
     def test_both_jobs_measure_identical_application_dependencies(self):
         for target in ("test/short", "test/integration"):
@@ -132,13 +173,23 @@ class MakeCoverageTests(unittest.TestCase):
         self.assertIn("-exec", tokens)
         launcher = shlex.split(tokens[tokens.index("-exec") + 1])
         self.assertEqual(launcher[0], "python3")
-        self.assertEqual(Path(launcher[1]), self.root / "scripts/test/integration_exec.py")
+        self.assertEqual(
+            Path(launcher[1]).resolve(),
+            (self.root / "scripts/test/integration_exec.py").resolve(),
+        )
         for flag in ("-race", "-count=1", "-timeout=20m", "-covermode=atomic"):
             self.assertIn(flag, command)
         for package in self.PACKAGES:
             self.assertIn(package, command)
         unit = self.run_make("test/short")
         self.assertNotIn("-p", self.go_test_command(unit).split())
+
+    def test_integration_uses_the_selected_python_interpreter(self):
+        result = self.run_make("test/integration", PYTHON="/opt/coverage/bin/python")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tokens = shlex.split(self.go_test_command(result))
+        launcher = shlex.split(tokens[tokens.index("-exec") + 1])
+        self.assertEqual(launcher, ["/opt/coverage/bin/python", str(self.root / "scripts/test/integration_exec.py")])
 
     def test_integration_parallelism_can_be_bounded_by_the_caller(self):
         result = self.run_make("test/integration", INTEGRATION_PARALLELISM="2")

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
 import csv
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -12,6 +13,7 @@ import html
 import json
 from pathlib import Path
 import re
+import zlib
 from collections import defaultdict
 
 SCHEMA_VERSION = 1
@@ -171,6 +173,72 @@ def totals(functions: list[Function]) -> dict:
     }
 
 
+def inventory_debt(functions: list[Function]) -> dict:
+    """Expose whole-scope debt separately from the changed-function gate."""
+    measured = [function for function in functions if function.measured]
+    groups = {
+        "high_crap": sorted((f for f in measured if f.crap >= 30),
+                            key=lambda f: (-f.crap, f.identity)),
+        "partial": sorted((f for f in measured if f.coverage < 100),
+                          key=lambda f: (f.coverage, f.identity)),
+        "unmeasured": sorted((f for f in functions if not f.measured), key=lambda f: f.identity),
+    }
+    return {name: [{"path": f.path, "namespace": f.namespace, "name": f.name, **f.metrics()}
+                   for f in selected] for name, selected in groups.items()}
+
+def compare_metrics(previous: Function, current: Function) -> tuple[list[str], str]:
+    """Compare measured outcomes without conflating missing records with zero."""
+    reasons = []
+    note = ""
+    if previous.measured and not current.measured:
+        reasons.append("Previously measured function lost its coverage record.")
+    elif previous.measured and current.measured:
+        if previous.coverage - current.coverage > TOLERANCE:
+            reasons.append("Coverage decreased by more than 0.01 percentage points.")
+        if current.crap - previous.crap > TOLERANCE:
+            if current.crap >= 30:
+                reasons.append("CRAP increased by more than 0.01 and is now >= 30.")
+            else:
+                note = "CRAP increased below 30; informational only."
+    elif not current.measured:
+        note = "Function remains unmeasured; no numeric comparison is possible."
+    else:
+        note = "Coverage measurement added; no baseline numeric comparison is possible."
+    return reasons, note
+
+
+def compare_identity(key: Identity, before: list[Function], after: list[Function],
+                     base_available: bool, renamed: bool) -> dict:
+    """Classify a changed identity before applying numeric regression rules."""
+    row = {
+        "path": key[0], "namespace": key[1], "name": key[2],
+        "status": "changed", "before": None, "after": None,
+        "reasons": [], "note": "",
+    }
+    if len(before) > 1 or len(after) > 1:
+        row.update(status="uncomparable", note="Duplicate identity; no line/order pairing attempted.")
+        return row
+    previous = before[0] if before else None
+    current = after[0] if after else None
+    row["before"] = previous.metrics() if previous else None
+    row["after"] = current.metrics() if current else None
+    if renamed:
+        row.update(status="uncomparable", note="File renamed; strict path identity cannot establish a pair.")
+    elif not base_available:
+        row.update(status="baseline-unavailable", note="No verified base inventory; comparison and regression gate unavailable.")
+    elif current is None:
+        row["status"] = "removed"
+    elif previous is None:
+        row["status"] = "added"
+        if not current.measured:
+            row["reasons"].append("New function has no coverage record.")
+        elif current.crap >= 30:
+            row["reasons"].append("New function has CRAP >= 30.")
+    else:
+        row["reasons"], row["note"] = compare_metrics(previous, current)
+    return row
+
+
 def compare(head: list[Function], base: list[Function] | None, patch: str,
             base_sha: str = "", head_sha: str = "", tested_sha: str = "",
             baseline_reason: str = "") -> dict:
@@ -179,51 +247,10 @@ def compare(head: list[Function], base: list[Function] | None, patch: str,
     new = index(head)
     selected = {f.identity for f in head if touched(f, changes, "after")}
     selected.update(f.identity for f in base or [] if touched(f, changes, "before"))
-    rows = []
-    for key in sorted(selected):
-        before, after = old.get(key, []), new.get(key, [])
-        row = {
-            "path": key[0], "namespace": key[1], "name": key[2],
-            "status": "changed", "before": None, "after": None,
-            "reasons": [], "note": "",
-        }
-        if len(before) > 1 or len(after) > 1:
-            row.update(status="uncomparable", note="Duplicate identity; no line/order pairing attempted.")
-        elif any(c.renamed and key[0] in (c.before_path, c.after_path) for c in changes):
-            row.update(status="uncomparable", note="File renamed; strict path identity cannot establish a pair.")
-            row["before"] = before[0].metrics() if before else None
-            row["after"] = after[0].metrics() if after else None
-        else:
-            previous = before[0] if before else None
-            current = after[0] if after else None
-            row["before"] = previous.metrics() if previous else None
-            row["after"] = current.metrics() if current else None
-            if base is None:
-                row.update(status="baseline-unavailable", note="No verified base inventory; comparison and regression gate unavailable.")
-            elif current is None:
-                row["status"] = "removed"
-            elif previous is None:
-                row["status"] = "added"
-                if not current.measured:
-                    row["reasons"].append("New function has no coverage record.")
-                elif current.crap >= 30:
-                    row["reasons"].append("New function has CRAP >= 30.")
-            else:
-                if previous.measured and not current.measured:
-                    row["reasons"].append("Previously measured function lost its coverage record.")
-                elif previous.measured and current.measured:
-                    if previous.coverage - current.coverage > TOLERANCE:
-                        row["reasons"].append("Coverage decreased by more than 0.01 percentage points.")
-                    if current.crap - previous.crap > TOLERANCE:
-                        if current.crap >= 30:
-                            row["reasons"].append("CRAP increased by more than 0.01 and is now >= 30.")
-                        else:
-                            row["note"] = "CRAP increased below 30; informational only."
-                elif not current.measured:
-                    row["note"] = "Function remains unmeasured; no numeric comparison is possible."
-                else:
-                    row["note"] = "Coverage measurement added; no baseline numeric comparison is possible."
-        rows.append(row)
+    renamed = {path for change in changes if change.renamed
+               for path in (change.before_path, change.after_path)}
+    rows = [compare_identity(key, old.get(key, []), new.get(key, []), base is not None,
+                             key[0] in renamed) for key in sorted(selected)]
     regressions = sum(bool(row["reasons"]) for row in rows)
     uncomparable = sum(row["status"] == "uncomparable" for row in rows)
     gate = ("comparison-unavailable" if base is None else
@@ -236,6 +263,7 @@ def compare(head: list[Function], base: list[Function] | None, patch: str,
         "gate": gate,
         "totals": {"base": totals(base) if base is not None else None, "head": totals(head)},
         "rows": rows, "regressions": regressions, "uncomparable": uncomparable,
+        "inventory_debt": inventory_debt(head),
     }
 
 
@@ -251,6 +279,29 @@ def metric(value: dict | None, field: str, percent: bool = False) -> str:
     if value[field] is None:
         return "unmeasured"
     return f"{value[field]:.2f}" + ("%" if percent else "") if field != "complexity" else str(value[field])
+
+
+def debt_markdown(debt: dict, limit: int = 20) -> list[str]:
+    lines = ["", "### Whole-scope coverage debt", "",
+             "These current-revision measurements include unchanged functions. They are "
+             "investigation candidates, not additional changed-function gate failures.", ""]
+    for key, title in (("high_crap", "Measured CRAP ≥ 30"),
+                       ("partial", "Measured coverage below 100%"),
+                       ("unmeasured", "Functions without a coverage record")):
+        rows = debt[key]
+        lines += [f"#### {title}: {len(rows)}", ""]
+        if not rows:
+            lines += ["None.", ""]
+            continue
+        lines += ["| Function | CC | Coverage | CRAP |", "|---|---:|---:|---:|"]
+        for row in rows[:limit]:
+            identity = " :: ".join((row["path"], row["namespace"], row["name"]))
+            lines.append("| " + " | ".join((escape(identity), metric(row, "complexity"),
+                         metric(row, "coverage", True), metric(row, "crap"))) + " |")
+        if len(rows) > limit:
+            lines += ["", f"Showing {limit} of {len(rows)}; the full inventory remains in the report artifact."]
+        lines.append("")
+    return lines
 
 
 def markdown(report: dict, limit: int = 50) -> str:
@@ -297,12 +348,45 @@ def markdown(report: dict, limit: int = 50) -> str:
         if len(report["rows"]) > limit:
             lines += ["", f"Showing {limit} of {len(report['rows'])} changed-function identities; "
                       "the complete results remain in the report artifact."]
+    lines += debt_markdown(report["inventory_debt"])
     return "\n".join(lines).rstrip() + "\n"
+
+
+def inventory_annotations(report: dict) -> list[str]:
+    """Keep bounded exact-revision debt readable through check-run annotations."""
+    revision = escape(report["provenance"]["tested_sha"])
+    text = "\n".join(debt_markdown(report["inventory_debt"]))
+    message = f"Tested revision: {revision}\n{text}"
+    if len(message.encode("utf-8")) > 3800:
+        message = message.encode("utf-8")[:3600].decode("utf-8", errors="ignore") + (
+            "\nHuman summary truncated; use the complete JSON export or report artifact.")
+    encoded = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    annotations = ["::notice title=Whole-scope coverage inventory::" + encoded]
+    # GitHub retains ten notices per step: reserve one for the human summary.
+    payload = json.dumps({"provenance": report["provenance"],
+                          "totals": report["totals"]["head"],
+                          "inventory_debt": report["inventory_debt"]},
+                         ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+    envelope = json.dumps({"encoding": "zlib-base64", "payload": base64.b64encode(
+        zlib.compress(payload.encode("ascii"), level=9)).decode("ascii")}, separators=(",", ":"))
+    chunks = [envelope[offset:offset + 3900] for offset in range(0, len(envelope), 3900)]
+    if len(chunks) > 9:
+        annotations.append("::notice title=Full inventory export unavailable::"
+                           "Compressed inventory exceeds the nine-page annotation limit; "
+                           "use the complete report artifact. No partial JSON export was emitted.")
+        return annotations
+    for index, chunk in enumerate(chunks, 1):
+        message = (f"Tested revision: {report['provenance']['tested_sha']}\n"
+                   f"JSON chunk {index}/{len(chunks)}; concatenate page bodies in order.\n{chunk}")
+        encoded = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        annotations.append(f"::notice title=Whole-scope inventory JSON {index}/{len(chunks)}::" + encoded)
+    return annotations
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--head", type=Path, required=True)
+    parser.add_argument("--annotations", action="store_true", help="emit bounded current inventory as GitHub check annotations")
     parser.add_argument("--base", type=Path)
     parser.add_argument("--diff", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
@@ -319,6 +403,8 @@ def main(argv: list[str] | None = None) -> int:
         path.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(markdown(report), encoding="utf-8")
     args.result.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    if args.annotations:
+        print("\n".join(inventory_annotations(report)))
     return 1 if report["gate"] in {"failed", "incomplete"} else 0
 
 

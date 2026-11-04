@@ -8,7 +8,7 @@ export default defineConfig({
             // Name the application sources explicitly. Without `include`, Vitest
             // reports only the files a test happened to import, so the summary
             // described a subset of the dashboard instead of the dashboard.
-            include: ["src/**/*.{ts,tsx}"],
+            include: ["src/**/*.{ts,tsx}", "next.config.ts"],
             exclude: [
                 // Test files are the subject of the measurement, not part of it.
                 "src/**/*.{test,spec}.{ts,tsx}",

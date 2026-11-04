@@ -185,10 +185,10 @@ class HTTPTests(unittest.TestCase):
             api = report.GitHub(REPO, "token")
             api.opener.open = mock.Mock(side_effect=urllib.error.HTTPError(
                 "https://api.github.com/a", 302, "redirect", {"Location": location}, None))
-            with self.subTest(location=location), mock.patch("urllib.request.urlopen") as download:
-                with self.assertRaises(report.ReportError):
+            with self.subTest(location=location):
+                with self.assertRaisesRegex(report.ReportError, "HTTPS without URL credentials"):
                     api.download_artifact(1)
-                download.assert_not_called()
+                self.assertEqual(api.opener.open.call_count, 1)
 
     def test_later_blob_redirect_cannot_downgrade_https(self):
         api = report.GitHub(REPO, "secret")

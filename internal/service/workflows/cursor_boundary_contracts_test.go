@@ -35,10 +35,10 @@ func TestListWorkflowsDecodesCursorAndPreservesCaller(t *testing.T) {
 			raw := cursorBoundaryWorkflow + "$2026-11-05T01:02:03.123456Z"
 			req := &workflowspb.ListWorkflowsRequest{
 				UserId: cursorBoundaryOwner, Cursor: base64.StdEncoding.EncodeToString([]byte(raw)),
-				Filters: &workflowspb.ListWorkflowsFilters{Kind: kind, BuildStatus: "COMPLETED", Query: strings.Repeat("界", 100), IntervalMin: 1, IntervalMax: 5},
+				Filters: &workflowspb.ListWorkflowsFilters{Kind: kind, BuildStatus: "COMPLETED", IsTerminated: true, Query: strings.Repeat("界", 100), IntervalMin: 1, IntervalMax: 5},
 			}
 			original := proto.Clone(req)
-			filters := &model.ListWorkflowsFilters{Kind: kind, BuildStatus: "COMPLETED", Query: strings.Repeat("界", 100), IntervalMin: 1, IntervalMax: 5}
+			filters := &model.ListWorkflowsFilters{Kind: kind, BuildStatus: "COMPLETED", IsTerminated: true, Query: strings.Repeat("界", 100), IntervalMin: 1, IntervalMax: 5}
 			cache := mocks.NewMockCache(ctrl)
 			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.NotFound, "cache miss"))
 			background := make(chan (<-chan struct{}), 1)

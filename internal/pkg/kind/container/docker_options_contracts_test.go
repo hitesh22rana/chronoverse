@@ -90,7 +90,13 @@ func optionContractDaemon(t *testing.T, subnet string) (server *httptest.Server,
 				http.Error(w, "bad create request", http.StatusBadRequest)
 				return
 			}
-			requests <- request
+			select {
+			case requests <- request:
+			default:
+				t.Error("repeated Docker network creation")
+				http.Error(w, "duplicate create request", http.StatusInternalServerError)
+				return
+			}
 			exists.Store(true)
 			w.WriteHeader(http.StatusCreated)
 			writeDockerTestResponse(t, w, `{"Id":"option-contract-network","Warning":""}`)

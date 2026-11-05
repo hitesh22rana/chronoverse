@@ -56,6 +56,7 @@ func TestPartitionLossCancelsOnlyLostLane(t *testing.T) {
 	}}}}}
 	assertCommitRecord(t, client.commits, 1, 1)
 	assertNoCommit(t, client.commits, 50*time.Millisecond)
+	assertPartitionLossShutdownHasNoCommits(t, cancel, done, client.commits)
 }
 
 func TestPartitionLossBeforeRunnerRegistrationPreservesRetainedAssignment(t *testing.T) {
@@ -82,4 +83,20 @@ func TestPartitionLossBeforeRunnerRegistrationPreservesRetainedAssignment(t *tes
 	}}}}}
 	assertCommitRecord(t, client.commits, 1, 0)
 	assertNoCommit(t, client.commits, 50*time.Millisecond)
+	assertPartitionLossShutdownHasNoCommits(t, cancel, done, client.commits)
+}
+
+func assertPartitionLossShutdownHasNoCommits(t *testing.T, cancel context.CancelFunc, done <-chan struct{}, commits <-chan *kgo.Record) {
+	t.Helper()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runner did not shut down")
+	}
+	select {
+	case commit := <-commits:
+		t.Fatalf("late commit after partition loss: partition %d offset %d", commit.Partition, commit.Offset)
+	default:
+	}
 }

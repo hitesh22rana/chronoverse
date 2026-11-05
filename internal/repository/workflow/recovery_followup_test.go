@@ -220,3 +220,28 @@ func TestHeartbeatBuildCompletesThroughWorkerEntry(t *testing.T) {
 		assertLockReleased(t, lock, 1)
 	})
 }
+
+func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
+	for _, tc := range []struct{ name, kind string }{
+		{"heartbeat", "HEARTBEAT"},
+		{"container not started", "CONTAINER"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			factoryCalls := 0
+			repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+				factoryCalls++
+				return nil, errors.New("cleanup must not select a runtime")
+			}}}
+			workflow := buildContractWorkflow()
+			workflow.Kind = tc.kind
+			// Valid routing keeps the missing-endpoint fallback from masking this guard.
+			job := &jobspb.JobsResponse{
+				Id: "00000000-0000-4000-8000-000000000091", ContainerId: "",
+				RuntimeNodeId: "00000000-0000-4000-8000-000000000092", RuntimeEndpoint: "http://runtime.example:2375",
+			}
+			if err := repo.cleanupCanceledJobContainer(t.Context(), workflow, job); err != nil || factoryCalls != 0 {
+				t.Fatalf("no-op cleanup error=%v factory calls=%d", err, factoryCalls)
+			}
+		})
+	}
+}

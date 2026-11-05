@@ -709,7 +709,7 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
 	if cacheErr != nil {
 		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			err = status.FromContextError(cacheErr).Err()
 			return nil, err
 		}
 	} else {

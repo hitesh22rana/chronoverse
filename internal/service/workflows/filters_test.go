@@ -16,6 +16,7 @@ func TestValidateFiltersIntervalRange(t *testing.T) {
 		filters *workflowsmodel.ListWorkflowsFilters
 		wantErr bool
 	}{
+		{name: "omitted filters", filters: nil},
 		{
 			name:    "minimum only",
 			filters: &workflowsmodel.ListWorkflowsFilters{IntervalMin: 5},

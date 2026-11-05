@@ -137,7 +137,7 @@ func boundaryServer(call func(context.Context, proto.Message) error) *Server {
 	return &Server{workflowsClient: &boundaryWorkflowClient{call: call}, usersClient: &boundaryUserClient{call: call}}
 }
 
-func boundaryRequest(t *testing.T, endpoint boundaryEndpoint) *http.Request {
+func boundaryRequest(t *testing.T, endpoint *boundaryEndpoint) *http.Request {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), endpoint.method, endpoint.path, strings.NewReader(endpoint.body))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -146,7 +146,7 @@ func boundaryRequest(t *testing.T, endpoint boundaryEndpoint) *http.Request {
 	return req.WithContext(context.WithValue(req.Context(), userIDKey{}, boundaryUserID))
 }
 
-func assertBoundaryResponse(t *testing.T, response *httptest.ResponseRecorder, endpoint boundaryEndpoint) {
+func assertBoundaryResponse(t *testing.T, response *httptest.ResponseRecorder, endpoint *boundaryEndpoint) {
 	t.Helper()
 	if response.Code != endpoint.status {
 		t.Fatalf("status=%d body=%q; want %d", response.Code, response.Body.String(), endpoint.status)
@@ -163,7 +163,7 @@ func TestBoundaryHandlersForwardRequestsAndResponses(t *testing.T) {
 	for _, endpoint := range boundaryEndpoints(boundaryUserID) {
 		t.Run(endpoint.name, func(t *testing.T) {
 			calls := 0
-			req := boundaryRequest(t, endpoint)
+			req := boundaryRequest(t, &endpoint)
 			s := boundaryServer(func(ctx context.Context, got proto.Message) error {
 				calls++
 				if !proto.Equal(got, endpoint.request) {
@@ -176,7 +176,7 @@ func TestBoundaryHandlersForwardRequestsAndResponses(t *testing.T) {
 			})
 			response := httptest.NewRecorder()
 			endpoint.handler(s, response, req)
-			assertBoundaryResponse(t, response, endpoint)
+			assertBoundaryResponse(t, response, &endpoint)
 			if calls != 1 {
 				t.Fatalf("RPC calls=%d; want 1", calls)
 			}
@@ -193,7 +193,10 @@ func TestBoundaryCreatePreservesExplicitRetention(t *testing.T) {
 				suffix = `,"log_retention":true}`
 			}
 			endpoint.body = strings.TrimSuffix(endpoint.body, "}") + suffix
-			want := proto.Clone(endpoint.request).(*workflowspb.CreateWorkflowRequest)
+			want, ok := proto.Clone(endpoint.request).(*workflowspb.CreateWorkflowRequest)
+			if !ok {
+				t.Fatal("create endpoint has the wrong request type")
+			}
 			want.LogRetention = proto.Bool(retain)
 			calls := 0
 			s := boundaryServer(func(_ context.Context, got proto.Message) error {
@@ -204,8 +207,8 @@ func TestBoundaryCreatePreservesExplicitRetention(t *testing.T) {
 				return nil
 			})
 			response := httptest.NewRecorder()
-			endpoint.handler(s, response, boundaryRequest(t, endpoint))
-			assertBoundaryResponse(t, response, endpoint)
+			endpoint.handler(s, response, boundaryRequest(t, &endpoint))
+			assertBoundaryResponse(t, response, &endpoint)
 			if calls != 1 {
 				t.Fatalf("RPC calls=%d", calls)
 			}
@@ -238,7 +241,7 @@ func TestBoundaryHandlersMapServiceFailures(t *testing.T) {
 					return status.Error(failure.code, "private backend detail")
 				})
 				response := httptest.NewRecorder()
-				endpoint.handler(s, response, boundaryRequest(t, endpoint))
+				endpoint.handler(s, response, boundaryRequest(t, &endpoint))
 				if response.Code != failure.status {
 					t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 				}
@@ -257,7 +260,7 @@ func TestBoundaryHandlersRejectMissingUserBeforeRPC(t *testing.T) {
 	for _, endpoint := range boundaryEndpoints(boundaryUserID) {
 		t.Run(endpoint.name, func(t *testing.T) {
 			s := boundaryServer(func(context.Context, proto.Message) error { t.Fatal("unauthenticated request reached RPC"); return nil })
-			req := boundaryRequest(t, endpoint).WithContext(t.Context())
+			req := boundaryRequest(t, &endpoint).WithContext(t.Context())
 			response := httptest.NewRecorder()
 			endpoint.handler(s, response, req)
 			if response.Code != http.StatusBadRequest {
@@ -271,7 +274,7 @@ func TestBoundaryWorkflowHandlersRequirePath(t *testing.T) {
 	for _, endpoint := range boundaryEndpoints(boundaryUserID)[1:5] {
 		t.Run(endpoint.name, func(t *testing.T) {
 			s := boundaryServer(func(context.Context, proto.Message) error { t.Fatal("missing workflow path reached RPC"); return nil })
-			req := boundaryRequest(t, endpoint)
+			req := boundaryRequest(t, &endpoint)
 			req.SetPathValue("workflow_id", "")
 			response := httptest.NewRecorder()
 			endpoint.handler(s, response, req)
@@ -291,7 +294,7 @@ func TestBoundaryMutationHandlersRejectMalformedBodies(t *testing.T) {
 				invalid.body = body
 				s := boundaryServer(func(context.Context, proto.Message) error { t.Fatal("invalid JSON reached RPC"); return nil })
 				response := httptest.NewRecorder()
-				invalid.handler(s, response, boundaryRequest(t, invalid))
+				invalid.handler(s, response, boundaryRequest(t, &invalid))
 				if response.Code != http.StatusBadRequest {
 					t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
 				}
@@ -305,7 +308,7 @@ func TestBoundaryMutationHandlersRequireJSONContentType(t *testing.T) {
 	for _, endpoint := range []boundaryEndpoint{endpoints[0], endpoints[1], endpoints[6]} {
 		t.Run(endpoint.name, func(t *testing.T) {
 			s := boundaryServer(func(context.Context, proto.Message) error { t.Fatal("non-JSON request reached RPC"); return nil })
-			req := boundaryRequest(t, endpoint)
+			req := boundaryRequest(t, &endpoint)
 			req.Header.Set("Content-Type", "text/plain")
 			response := httptest.NewRecorder()
 			endpoint.handler(s, response, req)
@@ -323,7 +326,7 @@ func TestBoundaryWorkflowWritesRequireCommandIdentity(t *testing.T) {
 				t.Fatal("missing command identity reached RPC")
 				return nil
 			})
-			req := boundaryRequest(t, endpoint)
+			req := boundaryRequest(t, &endpoint)
 			req.Header.Del(idempotencyKeyHeader)
 			response := httptest.NewRecorder()
 			endpoint.handler(s, response, req)
@@ -373,7 +376,7 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 			want = proto.Clone(endpoint.request)
 			before := calls
 			if endpoint.method != http.MethodGet {
-				assertBoundaryRouteRequiresCSRF(t, mux, endpoint, session)
+				assertBoundaryRouteRequiresCSRF(t, mux, &endpoint, session)
 				if calls != before {
 					t.Fatal("missing CSRF token reached RPC")
 				}
@@ -385,7 +388,7 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 			addCSRFValues(req, csrf, csrf)
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, req)
-			assertBoundaryResponse(t, response, endpoint)
+			assertBoundaryResponse(t, response, &endpoint)
 			if calls-before != 1 {
 				t.Fatalf("RPC calls=%d; want 1", calls-before)
 			}
@@ -404,7 +407,7 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 	}
 }
 
-func assertBoundaryRouteRequiresCSRF(t *testing.T, mux *http.ServeMux, endpoint boundaryEndpoint, session string) {
+func assertBoundaryRouteRequiresCSRF(t *testing.T, mux *http.ServeMux, endpoint *boundaryEndpoint, session string) {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), endpoint.method, endpoint.path, strings.NewReader(endpoint.body))
 	req.Header.Set("Content-Type", "application/json")

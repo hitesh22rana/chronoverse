@@ -75,6 +75,7 @@ func TestAdapterTLSRejectsUnusableCredentialFiles(t *testing.T) {
 		{"empty CA", cert, key, empty, "parse CA"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cfg, err := newTLSConfig(tc.cert, tc.key, tc.ca)
 			if cfg != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), tc.message) {
 				t.Fatalf("nil config=%t error=%v, want nil config/Internal/%q", cfg == nil, err, tc.message)

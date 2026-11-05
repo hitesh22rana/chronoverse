@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -100,7 +101,9 @@ func TestIntegrationWorkflowTerminationLookupContracts(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
-				if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil {
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if rollbackErr := tx.Rollback(cleanupCtx); rollbackErr != nil {
 					t.Errorf("rollback workflow termination lookup: %v", rollbackErr)
 				}
 			})

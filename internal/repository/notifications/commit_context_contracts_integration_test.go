@@ -47,8 +47,8 @@ func newNotificationCommitCancellationRepository(t *testing.T) *Repository {
 		otel.SetTracerProvider(previous)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := provider.Shutdown(ctx); err != nil {
-			t.Errorf("shutdown commit tracer: %v", err)
+		if shutdownErr := provider.Shutdown(ctx); shutdownErr != nil {
+			t.Errorf("shutdown commit tracer: %v", shutdownErr)
 		}
 	})
 	pg, err := postgres.New(t.Context(), &postgres.Config{

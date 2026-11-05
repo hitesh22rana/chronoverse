@@ -1162,7 +1162,6 @@ func encodeListJobsCursor(cursor string) string {
 func newJobLogsHighlightToken() string {
 	token := make([]byte, jobLogsHighlightTokenBytes)
 	// crypto/rand.Read fills the buffer or terminates the process.
-	//nolint:errcheck // crypto/rand.Read never returns an error.
 	_, _ = rand.Read(token)
 	return hex.EncodeToString(token)
 }

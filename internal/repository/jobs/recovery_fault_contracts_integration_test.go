@@ -99,7 +99,11 @@ func TestIntegrationWorkflowTerminationLookupContracts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
+			t.Cleanup(func() {
+				if rollbackErr := tx.Rollback(context.Background()); rollbackErr != nil {
+					t.Errorf("rollback workflow termination lookup: %v", rollbackErr)
+				}
+			})
 			terminated, err := repo.isWorkflowTerminated(ctx, tx, tc.jobID)
 			if terminated || status.Code(err) != tc.code {
 				t.Fatalf("terminated=%v error=%v", terminated, err)

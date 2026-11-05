@@ -28,6 +28,8 @@ func TestIntegrationAnalyticsDeliveryContracts(t *testing.T) {
 			process := repo.processJobsEvent
 			payload, changed := `{"job_execution_duration":11}`, `{"job_execution_duration":90}`
 			switch kind {
+			case analyticsmodel.EventTypeJobs:
+				// Jobs use the initial processor and payload.
 			case analyticsmodel.EventTypeLogs:
 				process = repo.processLogsEvent
 				payload, changed = `{"count":7}`, `{"count":90}`
@@ -68,10 +70,7 @@ func TestIntegrationAnalyticsDeliveryContracts(t *testing.T) {
 				wantKind = "CONTAINER"
 			}
 			assertAnalyticsState(t, repo, user, workflow, wantKind, jobs, logs, duration, true)
-			var ledger int
-			if err := pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer='analytics-processor' AND event_key=$1`, event.EventKey).Scan(&ledger); err != nil || ledger != 1 {
-				t.Fatalf("ledger=%d error=%v", ledger, err)
-			}
+			assertAnalyticsLedgerCount(t, repo, event.EventKey, 1)
 			assertAnalyticsFailureRetry(t, repo, event, process, user, payload, wantKind)
 		})
 	}
@@ -153,6 +152,16 @@ func assertAnalyticsFailureRetry(
 		jobs, duration = 1, 11
 	case analyticsmodel.EventTypeLogs:
 		logs = 7
+	case analyticsmodel.EventTypeWorkflows:
+		jobs, logs, duration = 0, 0, 0
 	}
 	assertAnalyticsState(t, repo, user, event.WorkflowID, wantKind, jobs, logs, duration, true)
+}
+
+func assertAnalyticsLedgerCount(t *testing.T, repo *Repository, key string, want int) {
+	t.Helper()
+	var count int
+	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer='analytics-processor' AND event_key=$1`, key).Scan(&count); err != nil || count != want {
+		t.Fatalf("ledger=%d error=%v, want %d", count, err, want)
+	}
 }

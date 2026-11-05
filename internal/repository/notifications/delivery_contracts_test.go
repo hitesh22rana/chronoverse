@@ -29,9 +29,10 @@ func TestIntegrationNotificationLegacyAdoptionContracts(t *testing.T) {
 			}
 			id, err := repo.CreateNotification(t.Context(), user, "WEB_INFO", `{"message":"same"}`, key)
 			want := codes.OK
-			if payload == `[]` {
+			switch payload {
+			case `[]`:
 				want = codes.Internal
-			} else if payload == `{"message":"different"}` {
+			case `{"message":"different"}`:
 				want = codes.AlreadyExists
 			}
 			if status.Code(err) != want {
@@ -314,7 +315,7 @@ func TestIntegrationNotificationInsertCancellation(t *testing.T) {
 		if id != "" || status.Code(insertErr) != want {
 			t.Fatalf("id=%q error=%v want %s", id, insertErr, want)
 		}
-		// A canceled query may close the transaction's connection.
+		//nolint:errcheck // A canceled query may already close the transaction connection.
 		_ = tx.Rollback(t.Context())
 	}
 	assertNotificationCounts(t, repo, user, 0, 0)

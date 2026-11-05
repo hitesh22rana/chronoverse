@@ -2,7 +2,9 @@ package workflows_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -59,9 +61,19 @@ func TestListWorkflowsCacheWriteFailureDoesNotLoseResults(t *testing.T) {
 			req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner}
 			original := proto.Clone(req)
 			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.NotFound, "miss"))
-			repo.EXPECT().ListWorkflows(gomock.Any(), cursorBoundaryOwner, "", &model.ListWorkflowsFilters{}).Return(&model.ListWorkflowsResponse{}, nil)
+			record := model.WorkflowByUserIDResponse{
+				ID: cursorBoundaryWorkflow, Name: "cache contract", Kind: "HEARTBEAT",
+				Payload: `{"endpoint":"https://example.com"}`, WorkflowBuildStatus: "COMPLETED",
+				Interval: 60, MaxConsecutiveJobFailuresAllowed: 3, Generation: 1,
+				CreatedAt: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC), UpdatedAt: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC),
+			}
+			wantRecord := record
+			cursor := base64.StdEncoding.EncodeToString([]byte("00000000-0000-4000-8000-000000000013$2026-11-05T00:00:00Z"))
+			want := model.ListWorkflowsResponse{Workflows: []*model.WorkflowByUserIDResponse{&wantRecord}, Cursor: cursor}
+			response := &model.ListWorkflowsResponse{Workflows: []*model.WorkflowByUserIDResponse{&record}, Cursor: cursor}
+			repo.EXPECT().ListWorkflows(gomock.Any(), cursorBoundaryOwner, "", &model.ListWorkflowsFilters{}).Return(response, nil)
 			released := make(chan (<-chan struct{}), 1)
-			cache.EXPECT().Set(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(bg context.Context, _ string, _ any, _ time.Duration) error {
+			cache.EXPECT().Set(gomock.Any(), gomock.Any(), &want, gomock.Any()).DoAndReturn(func(bg context.Context, _ string, _ any, _ time.Duration) error {
 				released <- bg.Done()
 				if fail {
 					return errors.New("cache unavailable")
@@ -69,7 +81,7 @@ func TestListWorkflowsCacheWriteFailureDoesNotLoseResults(t *testing.T) {
 				return nil
 			})
 			got, err := service.New(validator.New(), repo, cache).ListWorkflows(ctx, req)
-			if err != nil || got == nil || len(got.Workflows) != 0 || got.Cursor != "" {
+			if err != nil || got == nil || !reflect.DeepEqual(*got, want) {
 				t.Fatalf("response=%+v err=%v", got, err)
 			}
 			if !proto.Equal(req, original) {

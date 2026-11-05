@@ -10,6 +10,7 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestPartitionAssignmentSetOperations(t *testing.T) {
@@ -152,4 +153,119 @@ func TestBatchQueueCollectsRecordsArrivingDuringInterval(t *testing.T) {
 			t.Fatalf("batch collection = %v, %v", records, err)
 		}
 	})
+}
+
+func TestRunnerCancellationDuringPollSkipsFetchedRecords(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	polls := 0
+	client := &scriptedFetchClient{poll: func(context.Context) kgo.Fetches {
+		polls++
+		cancel()
+		return kgo.Fetches{{Topics: []kgo.FetchTopic{{Topic: "jobs", Partitions: []kgo.FetchPartition{{Partition: 0, Records: []*kgo.Record{{Topic: "jobs", Offset: 1}}}}}}}}
+	}}
+	client.commit = func(context.Context, ...*kgo.Record) error { t.Error("canceled poll committed records"); return nil }
+	runner := NewPartitionRunner(client, func(context.Context, *kgo.Record) error { t.Error("canceled poll processed records"); return nil }, &PartitionRunnerConfig{ChannelBuffer: 1}, nil)
+	if err := runner.Run(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run = %v", err)
+	}
+	if polls != 1 || len(runner.lanes) != 0 || client.pauses != 0 {
+		t.Fatalf("polls=%d lanes=%d pauses=%d", polls, len(runner.lanes), client.pauses)
+	}
+}
+
+func TestRunnerSkipsEmptyPartitionInMixedFetch(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	committed := make(chan struct{})
+	polls := 0
+	client := &scriptedFetchClient{poll: func(context.Context) kgo.Fetches {
+		polls++
+		if polls == 1 {
+			return kgo.Fetches{{Topics: []kgo.FetchTopic{{Topic: "jobs", Partitions: []kgo.FetchPartition{{Partition: 0}, {Partition: 1, Records: []*kgo.Record{{Topic: "jobs", Partition: 1, Offset: 7}}}}}}}}
+		}
+		select {
+		case <-committed:
+		case <-time.After(5 * time.Second):
+			t.Error("nonempty partition never committed")
+		}
+		return kgo.Fetches{{Topics: []kgo.FetchTopic{{Partitions: []kgo.FetchPartition{{Err: kgo.ErrClientClosed}}}}}}
+	}}
+	client.commit = func(_ context.Context, records ...*kgo.Record) error {
+		if len(records) != 1 || records[0].Partition != 1 || records[0].Offset != 7 {
+			t.Errorf("committed records = %v", records)
+		}
+		close(committed)
+		return nil
+	}
+	processed := 0
+	runner := NewPartitionRunner(client, func(_ context.Context, record *kgo.Record) error {
+		processed++
+		if record.Partition != 1 || record.Offset != 7 {
+			t.Errorf("processed record = %v", record)
+		}
+		return nil
+	}, nil, nil)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if processed != 1 || polls != 2 {
+		t.Fatalf("processed=%d polls=%d", processed, polls)
+	}
+}
+
+func TestBatchLaneStopsWhenProcessorCancelsParent(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := &batchCommitClient{commit: func(context.Context, ...*kgo.Record) error { t.Error("canceled batch committed"); return nil }}
+	calls := 0
+	runner := NewPartitionBatchRunner(client, func(ctx context.Context, records []*kgo.Record) error {
+		calls++
+		if len(records) != 1 || records[0].Offset != 3 {
+			t.Errorf("batch = %v", records)
+		}
+		cancel()
+		return ctx.Err()
+	}, &PartitionRunnerConfig{BatchSize: 1}, nil)
+	lane := &partitionLane{key: partitionKey{topic: "jobs"}, notify: make(chan struct{}, 1)}
+	runner.lanes[lane.key] = lane
+	lane.enqueue([]*kgo.Record{{Topic: "jobs", Offset: 3}})
+	core, logs := observer.New(zap.WarnLevel)
+	runner.SetLogger(zap.New(core))
+	runner.runLane(ctx, lane)
+	if logs.FilterMessage("partition lane stopped").Len() != 1 {
+		t.Fatalf("lane stop warnings = %v", logs.All())
+	}
+	if calls != 1 {
+		t.Fatalf("batch processor calls=%d", calls)
+	}
+}
+
+// A custom poller can supply nil records; the single-record lane must stop
+// without invoking the application handler or acknowledging malformed input.
+func TestRecordLaneStopsOnNilPollerRecord(t *testing.T) {
+	client := &batchCommitClient{commit: func(context.Context, ...*kgo.Record) error { t.Error("nil record committed"); return nil }}
+	runner := NewPartitionRunner(client, func(context.Context, *kgo.Record) error { t.Error("nil record processed"); return nil }, nil, nil)
+	lane := &partitionLane{key: partitionKey{topic: "jobs"}, notify: make(chan struct{}, 1)}
+	runner.lanes[lane.key] = lane
+	lane.enqueue([]*kgo.Record{nil})
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	runner.runLane(ctx, lane)
+	if lane.queueLen() != 0 {
+		t.Fatal("nil poller record left queued")
+	}
+}
+
+func TestRunnerClientClosedResponseRetainsPrecedenceOverPollCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := &scriptedFetchClient{poll: func(context.Context) kgo.Fetches {
+		cancel()
+		return kgo.Fetches{{Topics: []kgo.FetchTopic{{Partitions: []kgo.FetchPartition{{Err: kgo.ErrClientClosed}}}}}}
+	}}
+	runner := NewPartitionRunner(client, func(context.Context, *kgo.Record) error { t.Error("closed client processed records"); return nil }, nil, nil)
+	if err := runner.Run(ctx); err != nil {
+		t.Fatalf("closed client Run = %v", err)
+	}
 }

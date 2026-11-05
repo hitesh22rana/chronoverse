@@ -340,9 +340,8 @@ func (r *PartitionRunner) Run(ctx context.Context) error {
 			continue
 		}
 
-		var dispatchErr error
 		fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
-			if dispatchErr != nil {
+			if ctx.Err() != nil {
 				return
 			}
 
@@ -350,20 +349,8 @@ func (r *PartitionRunner) Run(ctx context.Context) error {
 				return
 			}
 
-			if err := r.dispatchPartition(
-				ctx,
-				partition.Topic,
-				partition.Partition,
-				partition.Records,
-			); err != nil {
-				dispatchErr = err
-				return
-			}
+			r.dispatchPartition(ctx, partition.Topic, partition.Partition, partition.Records)
 		})
-
-		if dispatchErr != nil {
-			return dispatchErr
-		}
 	}
 }
 
@@ -372,7 +359,7 @@ func (r *PartitionRunner) dispatchPartition(
 	topic string,
 	partition int32,
 	records []*kgo.Record,
-) error {
+) {
 	key := partitionKey{
 		topic:     topic,
 		partition: partition,
@@ -387,21 +374,12 @@ func (r *PartitionRunner) dispatchPartition(
 			zap.Int32("partition", partition),
 			zap.Int("records", len(records)),
 		)
-		return nil
+		return
 	}
 
 	queued := lane.enqueue(records)
 	if queued >= r.channelBuffer {
 		r.setPaused(lane, pauseReasonBacklog, true)
-	}
-
-	select {
-	case <-lane.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return nil
 	}
 }
 
@@ -552,9 +530,7 @@ func (r *PartitionRunner) runLane(ctx context.Context, lane *partitionLane) {
 				return
 			}
 			r.resumeBacklogIfReady(lane)
-			if len(records) == 0 {
-				continue
-			}
+			// A successful popBatch always includes its first popped record.
 			if err := r.processAndCommitBatch(ctx, lane, records); err != nil {
 				r.logger.Warn(
 					"partition lane stopped",

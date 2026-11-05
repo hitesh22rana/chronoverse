@@ -98,10 +98,10 @@ func (r *Repository) processContainerExecution(
 	done := make(chan struct{})
 	defer close(done)
 
-	logErrors := r.publishContainerLogs(ctx, jobID, attempts, workflow, logs, done)
+	logDone := r.publishContainerLogs(ctx, jobID, attempts, workflow, logs, done)
 	execErrors := errs
 	var execErr error
-	for execErrors != nil || logErrors != nil {
+	for execErrors != nil || logDone != nil {
 		select {
 		case err, ok := <-execErrors:
 			if !ok {
@@ -111,12 +111,8 @@ func (r *Repository) processContainerExecution(
 			if execErr == nil {
 				execErr = err
 			}
-		case err, ok := <-logErrors:
-			if !ok {
-				logErrors = nil
-				continue
-			}
-			return err
+		case <-logDone:
+			logDone = nil
 		}
 	}
 
@@ -130,10 +126,10 @@ func (r *Repository) publishContainerLogs(
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	logs <-chan *jobsmodel.JobLog,
 	done <-chan struct{},
-) <-chan error {
-	logErrors := make(chan error, 1)
+) <-chan struct{} {
+	logDone := make(chan struct{})
 	go func() {
-		defer close(logErrors)
+		defer close(logDone)
 
 		batchSize := r.cfg.JobLogBatchSize
 		records := make([]*kgo.Record, 0, batchSize)
@@ -173,7 +169,7 @@ func (r *Repository) publishContainerLogs(
 		}
 	}()
 
-	return logErrors
+	return logDone
 }
 
 func (r *Repository) jobLogRecord(

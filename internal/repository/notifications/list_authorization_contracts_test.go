@@ -3,6 +3,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -59,7 +60,7 @@ func TestListNotificationsPreservesAuthorizationAndUserFailures(t *testing.T) {
 			// A database must never be needed after either upstream failure.
 			repo := New(&Config{FetchLimit: 20}, issuer, nil, &Services{UsersService: users})
 			response, err := repo.ListNotifications(t.Context(), owner, "")
-			if response != nil || err != failure {
+			if response != nil || !errors.Is(err, failure) {
 				t.Fatalf("response=%+v error=%v, want unchanged upstream failure", response, err)
 			}
 			wantCalls := 1

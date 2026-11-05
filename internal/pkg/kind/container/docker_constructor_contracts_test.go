@@ -96,7 +96,7 @@ func TestDockerConstructorAuthenticatesProxyWithMutualTLS(t *testing.T) {
 
 func TestEnsureWorkloadNetworkRejectsUnsafeNameBeforeDaemon(t *testing.T) {
 	t.Parallel()
-	workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("invalid network name reached Docker")
 		http.Error(w, "unexpected request", http.StatusInternalServerError)
 	}))

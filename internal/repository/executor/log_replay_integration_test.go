@@ -33,7 +33,9 @@ func TestIntegrationReplayedContainerLogsPreserveDurableIdentity(t *testing.T) {
 			repo := &Repository{cfg: defaultConfig(), kfk: producer}
 			stamp := time.Date(2026, time.January, 2, 3, 4, 5, 123456789, time.UTC)
 			for range 2 {
-				logs := make(chan *jobsmodel.JobLog, 2)
+				logs := make(chan *jobsmodel.JobLog, 4)
+				logs <- nil
+				logs <- &jobsmodel.JobLog{Message: "unencodable", Timestamp: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC), Stream: "stdout", SequenceNum: 99}
 				errs := make(chan error)
 				logs <- &jobsmodel.JobLog{Message: "restored stdout", Timestamp: stamp, Stream: "stdout", SequenceNum: 1}
 				logs <- &jobsmodel.JobLog{Message: "restored stderr", Timestamp: stamp.Add(time.Second), Stream: "stderr", SequenceNum: 1}

@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -153,26 +152,4 @@ func TestRecoveredLogTimestampFillsMissingTimestamp(t *testing.T) {
 	if got := recoveredLogTimestamp(&jobsmodel.JobLog{Timestamp: stamp}); !got.Equal(stamp) {
 		t.Fatalf("stored timestamp = %v, want %v", got, stamp)
 	}
-}
-
-func TestPublishRecoveredContainerLogSkipsNilLog(t *testing.T) {
-	t.Parallel()
-	claim, workflow := replayContractIdentity()
-	(&Repository{}).publishRecoveredContainerLog(t.Context(), claim, workflow, nil)
-}
-
-func TestPublishJobLogEventDropsUnencodableEvent(t *testing.T) {
-	t.Parallel()
-	event := &jobsmodel.JobLogEvent{
-		EventKey:  "log:job-1:stdout:1",
-		JobID:     "job-1",
-		TimeStamp: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC),
-		Stream:    "stdout",
-	}
-	if _, err := joblogevents.KafkaRecord(event); err == nil {
-		t.Fatal("test event is encodable; the drop path would not be exercised")
-	}
-	// publishJobLogEvent has no result; the producer would need a recording
-	// seam to observe the dropped batch directly.
-	(&Repository{}).publishJobLogEvent(t.Context(), event)
 }

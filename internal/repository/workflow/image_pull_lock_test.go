@@ -160,7 +160,9 @@ func TestImagePullLockedDigestResolutionPreservesIdentityAndFailure(t *testing.T
 			if len(inner.resolved) != 1 || inner.resolved[0] != "image:tag" {
 				t.Fatalf("inspection inputs=%v", inner.resolved)
 			}
-			if tc.resolveErr == nil {
+			if tc.resolveErr != nil {
+				assertDigestPair(t, ref, digest, "", "")
+			} else {
 				assertDigestPair(t, ref, digest, "image:tag", "image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 			}
 		})

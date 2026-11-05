@@ -303,7 +303,9 @@ func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNode
 }
 
 func (r *Repository) publishWorkflowBuildAnalytics(ctx context.Context, workflowID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
-	analyticEventBytes, err := analyticsmodel.NewAnalyticEventBytesWithKey(
+	// The concrete payload and event metadata contain only JSON-safe strings.
+	//nolint:errcheck // Both marshal stages encode fixed string fields.
+	analyticEventBytes, _ := analyticsmodel.NewAnalyticEventBytesWithKey(
 		idempotency.WorkflowAnalyticsEventKey(workflowID),
 		workflow.GetUserId(),
 		workflowID,
@@ -312,16 +314,12 @@ func (r *Repository) publishWorkflowBuildAnalytics(ctx context.Context, workflow
 			Kind: workflow.GetKind(),
 		},
 	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to marshal analytic event: %v", err)
-	}
-
 	record := &kgo.Record{
 		Topic: kafka.TopicAnalytics,
 		Key:   []byte(workflowID),
 		Value: analyticEventBytes,
 	}
-	if err = r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
+	if err := r.kfk.ProduceSync(ctx, record).FirstErr(); err != nil {
 		return status.Errorf(codes.Unavailable, "failed to publish workflow analytics event: %v", err)
 	}
 

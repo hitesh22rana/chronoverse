@@ -229,3 +229,58 @@ func assertAttachedRuntime(t *testing.T, req *jobspb.AttachJobContainerRequest) 
 		t.Fatalf("attached runtime/container=%q/%q, want runtime-1/container-1", req.GetRuntimeNodeId(), req.GetContainerId())
 	}
 }
+
+// admissionAuth models a signer that becomes temporarily unavailable after the
+// lease was renewed, then recovers in time to authorize the retry release.
+type admissionAuth struct {
+	fakeAuth
+	calls int
+}
+
+func (a *admissionAuth) IssueToken(context.Context, string, ...string) (string, error) {
+	a.calls++
+	if a.calls == 2 {
+		return "", status.Error(codes.Unavailable, "signing key temporarily unavailable")
+	}
+	return "token", nil
+}
+
+func TestClaimedWorkflowReleasesLeaseWhenAdmissionAuthorizationFails(t *testing.T) {
+	t.Parallel()
+	auth := &admissionAuth{}
+	fixture := newClaimedRunFixtureWithAuth(&scriptedJobsClient{}, &scriptedWorkflowsClient{flow: containerWorkflow()}, nil, nil, auth)
+	fixture.repo.cfg.LeaseRenewInterval = time.Hour
+	if err := fixture.repo.runClaimedWorkflow(t.Context(), claimedJob(1), time.Now(), 1); err != nil {
+		t.Fatalf("retry release=%v", err)
+	}
+	assertSingleSettlement(t, fixture.log, commandReleaseRetry)
+	assertNoOwnershipStealing(t, fixture.log)
+	release, _ := firstOp(fixture.log.snapshot(), commandReleaseRetry)
+	if auth.calls != 3 || release.ErrorCode != codes.Unavailable.String() || fixture.lookups.count() != 0 || fixture.container.executionCount() != 0 || fixture.repo.handoffs.size() != 0 {
+		t.Fatalf("admission side effects: auth=%d release=%+v lookups=%d executions=%d handoffs=%d",
+			auth.calls, release, fixture.lookups.count(), fixture.container.executionCount(), fixture.repo.handoffs.size())
+	}
+}
+
+func TestRecoveryBatchDoesNotSettleLeaseWhoseRenewalWasRejected(t *testing.T) {
+	t.Parallel()
+	jobs := &scriptedJobsClient{renewLease: func(context.Context, *jobspb.RenewJobLeaseRequest) error {
+		return status.Error(codes.FailedPrecondition, "lease was replaced")
+	}}
+	fixture := newClaimedRunFixture(jobs, &scriptedWorkflowsClient{}, nil, nil)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fixture.repo.recoverClaimedExpiredLeases(t.Context(), []*jobspb.ExpiredJobLease{{Id: claimedJobID, WorkflowId: claimedWorkflowID, LeaseToken: claimedLeaseToken, RuntimeUnavailable: true}})
+	}()
+	select {
+	case <-done:
+	case <-time.After(claimedRunBound):
+		t.Fatal("failed recovery did not finish")
+	}
+	commands := fixture.log.snapshot()
+	if len(commands) != 1 || commands[0].Op != commandRenewLease || len(settleOps(commands)) != 0 || fixture.container.executionCount() != 0 {
+		t.Fatalf("rejected renewal effects=%+v", commands)
+	}
+	assertNoOwnershipStealing(t, fixture.log)
+}

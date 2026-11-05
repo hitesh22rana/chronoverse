@@ -4,6 +4,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,10 +16,19 @@ import (
 )
 
 func TestIntegrationContainerLogsFlushBeforeStreamCloses(t *testing.T) {
+	for _, batchSize := range []int{1, 10} {
+		t.Run(fmt.Sprintf("batch-%d", batchSize), func(t *testing.T) {
+			verifyContainerLogFlush(t, batchSize)
+		})
+	}
+}
+
+func verifyContainerLogFlush(t *testing.T, batchSize int) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	cfg := defaultConfig()
-	cfg.JobLogBatchSize = 10
+	cfg.JobLogBatchSize = batchSize
 	cfg.JobLogBatchInterval = 5 * time.Millisecond
 	// An unset retry budget must still attempt durable publication once.
 	cfg.JobLogPublishRetries = 0
@@ -50,8 +60,8 @@ func TestIntegrationContainerLogsFlushBeforeStreamCloses(t *testing.T) {
 		event.Message != "durable without live retention" || event.Retention || event.LivePublished || !event.TimeStamp.Equal(stamp) {
 		t.Fatalf("flushed event=%+v", event)
 	}
-	// The source remains open and the batch is below capacity, so this publication
-	// proves the timer flushed it rather than a close or full-batch boundary.
+	// The source remains open: batch size one flushes immediately, while the
+	// larger batch must flush on its timer. Both paths retain a running publisher.
 	select {
 	case <-stopped:
 		t.Fatal("publisher stopped while stream open")

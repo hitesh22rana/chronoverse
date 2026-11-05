@@ -115,6 +115,25 @@ func TestNormalizeAttachJobContainerIdentityRejectsEmptyRuntimeNodeID(t *testing
 	}
 }
 
+// TestAttachJobContainerRejectsInvalidIdentityBeforeDatabase proves a malformed
+// job or runtime identity is refused before the repository opens a transaction.
+func TestAttachJobContainerRejectsInvalidIdentityBeforeDatabase(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, jobID, node string }{
+		{name: "JobID", jobID: "not-a-uuid", node: "local-docker"},
+		{name: "RuntimeNodeID", jobID: "550e8400-e29b-41d4-a716-446655440000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := New(nil, nil, nil, nil, nil, nil, nil).AttachJobContainer(context.Background(), tc.jobID, "lease", "container-1", tc.node, "command-1")
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("AttachJobContainer(%q, %q) = %v, want InvalidArgument", tc.jobID, tc.node, err)
+			}
+		})
+	}
+}
+
 // TestMapJobLeaseWriteErrorReportsEveryConditionItDistinguishes pins the mapper the lease
 // write paths defer to. A nil error has to come back nil so a caller can hand it a rollback
 // result unconditionally, an abandoned caller has to read as the cancellation it is rather

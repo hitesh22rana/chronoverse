@@ -499,16 +499,7 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	if err != nil {
-		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "workflow not found or not owned by user: %v", err)
-			return nil, err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to get workflow: %v", err)
-		return nil, err
+		return nil, r.mapWorkflowReadError(err, "workflow not found or not owned by user")
 	}
 
 	return res, nil
@@ -546,16 +537,7 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 
 	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowByIDResponse])
 	if err != nil {
-		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "workflow not found: %v", err)
-			return nil, err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return nil, err
-		}
-
-		err = status.Errorf(codes.Internal, "failed to get workflow: %v", err)
-		return nil, err
+		return nil, r.mapWorkflowReadError(err, "workflow not found")
 	}
 
 	return res, nil
@@ -1095,6 +1077,18 @@ func mapWorkflowWriteError(err error, message string) error {
 		return status.Error(codes.Canceled, err.Error())
 	default:
 		return status.Errorf(codes.Internal, "%s: %v", message, err)
+	}
+}
+
+// mapWorkflowReadError separates a missing workflow from a malformed identity.
+func (r *Repository) mapWorkflowReadError(err error, notFound string) error {
+	switch {
+	case r.pg.IsNoRows(err):
+		return status.Errorf(codes.NotFound, "%s: %v", notFound, err)
+	case r.pg.IsInvalidTextRepresentation(err):
+		return status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
+	default:
+		return status.Errorf(codes.Internal, "failed to get workflow: %v", err)
 	}
 }
 

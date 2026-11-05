@@ -91,3 +91,27 @@ func TestIntegrationTerminalFaultsRollbackAndPermitSameCommandRetry(t *testing.T
 		})
 	}
 }
+
+func TestIntegrationTerminalCommandsRejectCanceledCallerBeforeReservation(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	for _, operation := range terminalCommandOperations {
+		t.Run(operation.Name, func(t *testing.T) {
+			fixture := seedClaimedJob(t.Context(), t, pg, repo)
+			before := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
+			command := "terminal-before-begin-" + fixtureTag()
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if err := operation.Invoke(ctx, repo, fixture.JobID, fixture.LeaseToken, command); status.Code(err) != codes.Canceled {
+				t.Fatalf("canceled command error=%v", err)
+			}
+			if after := readTerminalJobState(t.Context(), t, pg, fixture.JobID); !reflect.DeepEqual(after, before) {
+				t.Fatalf("canceled caller changed job: %+v -> %+v", before, after)
+			}
+			if ledger, ok := readJobCommand(t.Context(), t, pg, fixture.JobID, operation.Operation, command); ok {
+				t.Fatalf("canceled caller retained reservation: %+v", ledger)
+			}
+			assertNoOutboxEffect(t.Context(), t, pg, fixture)
+		})
+	}
+}

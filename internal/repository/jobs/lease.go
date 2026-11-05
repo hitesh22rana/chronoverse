@@ -468,11 +468,8 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start complete job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback complete job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobComplete, commandID, map[string]any{leaseTokenField: leaseToken})
 	if err != nil {
 		return err
@@ -534,11 +531,8 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start fail job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback fail job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobFail, commandID, map[string]any{
 		leaseTokenField: leaseToken, "failure_kind": failureKind, "error_code": errorCode,
 		"error_message": truncateJobError(errorMessage), terminalReasonCodeField: terminalReasonCode,
@@ -608,11 +602,8 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start cancel claimed job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback cancel claimed job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobCancelClaimed, commandID, map[string]any{
 		leaseTokenField: leaseToken, terminalReasonCodeField: terminalReasonCode,
 	})
@@ -681,11 +672,8 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start release job for retry transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback release job for retry transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	// Hashing the normalized instant rather than the supplied text keeps one retry one
 	// request: the stored next_attempt_at is UTC either way, so two spellings of the same
 	// instant must not reserve two command identities or reject the second as a mismatch.

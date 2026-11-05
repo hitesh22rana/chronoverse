@@ -111,3 +111,36 @@ func TestIntegrationWorkflowTerminationLookupContracts(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegrationRecoveryCanceledBeforeBeginPreservesLease(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedClaimedJob(t.Context(), t, pg, repo)
+	setLeaseMinutes(t.Context(), t, pg, fixture.JobID, -expiredFixtureMinutes)
+	before := readLeaseOwnership(t.Context(), t, pg, fixture.JobID)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	process, command := uuid.NewString(), "recover-before-begin-"+fixtureTag()
+	result, err := repo.RecoverExpiredJobLeases(ctx, 100, recoveryWorkerID, process, command, recoveryLeaseDuration)
+	if result != nil || status.Code(err) != codes.Canceled {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if after := readLeaseOwnership(t.Context(), t, pg, fixture.JobID); !reflect.DeepEqual(after, before) {
+		t.Fatalf("canceled recovery changed authority: %+v -> %+v", before, after)
+	}
+	if ledger, ok := readWorkerCommand(t.Context(), t, pg, process, command); ok {
+		t.Fatalf("canceled recovery retained ledger: %+v", ledger)
+	}
+}
+
+func TestRecoveryReplayRejectsMalformedPayloadBeforeDatabase(t *testing.T) {
+	repo := New(&Config{}, nil, nil, nil, nil, nil, nil)
+	for _, payload := range []string{`[`, `{}`, `[{"ScheduledAt":"invalid-time"}]`} {
+		t.Run(payload, func(t *testing.T) {
+			result, err := repo.replayExpiredJobRecovery(t.Context(), nil, []byte(payload), "worker", uuid.NewString(), recoveryLeaseDuration)
+			if result != nil || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to decode recovery replay") {
+				t.Fatalf("result=%+v error=%v", result, err)
+			}
+		})
+	}
+}

@@ -100,3 +100,25 @@ func TestIntegrationReleaseFaultsRollbackAndPermitSameCommandRetry(t *testing.T)
 		})
 	}
 }
+
+func TestIntegrationTerminatedReleaseRejectsStaleLeaseWithoutEffects(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedClaimedJob(t.Context(), t, pg, repo)
+	if _, err := pg.Exec(t.Context(), `UPDATE workflows SET terminated_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.WorkflowID); err != nil {
+		t.Fatal(err)
+	}
+	before := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
+	command := "terminated-stale-" + fixtureTag()
+	err := repo.ReleaseJobForRetry(t.Context(), fixture.JobID, "stale-lease", time.Now().UTC().Format(time.RFC3339Nano), "Unavailable", "retry", command)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("error=%v, want stale lease rejection", err)
+	}
+	if after := readTerminalJobState(t.Context(), t, pg, fixture.JobID); !reflect.DeepEqual(after, before) {
+		t.Fatalf("stale release changed job: %+v -> %+v", before, after)
+	}
+	if ledger, ok := readJobCommand(t.Context(), t, pg, fixture.JobID, commandidempotency.OperationJobReleaseForRetry, command); ok {
+		t.Fatalf("rejected command retained ledger: %+v", ledger)
+	}
+	assertNoOutboxEffect(t.Context(), t, pg, fixture)
+}

@@ -24,7 +24,7 @@ type replayContractContainer struct {
 	containerID string
 }
 
-func (s *replayContractContainer) Logs(ctx context.Context, id string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+func (s *replayContractContainer) Logs(ctx context.Context, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	s.logsDone, s.containerID = ctx.Done(), id
 	return s.logs, s.errs, s.startErr
 }

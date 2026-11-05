@@ -108,7 +108,9 @@ func newTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	}
 
 	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		return nil, status.Error(codes.Internal, "failed to parse CA certificate")
+	}
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},

@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -97,4 +98,78 @@ func (*fakeContainerSvc) Remove(context.Context, string) error {
 
 func (*fakeContainerSvc) Terminate(context.Context, string) error {
 	return nil
+}
+
+type digestContextKey struct{}
+
+type digestContractContainer struct {
+	workflowrepo.ContainerSvc
+	buildErr, resolveErr error
+	built, resolved      []string
+	seen                 context.Context
+}
+
+func (s *digestContractContainer) Build(ctx context.Context, image string) error {
+	s.seen = ctx
+	s.built = append(s.built, image)
+	return s.buildErr
+}
+
+func (*digestContractContainer) ImageExists(context.Context, string) (bool, error) { return false, nil }
+
+func (*digestContractContainer) DockerHost() string { return "tcp://digest-contract:2376" }
+
+func (s *digestContractContainer) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
+	s.seen = ctx
+	s.resolved = append(s.resolved, image)
+	if s.resolveErr != nil {
+		return "", "", s.resolveErr
+	}
+	return image, "image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil
+}
+
+func TestImagePullLockedDigestResolutionPreservesIdentityAndFailure(t *testing.T) {
+	t.Parallel()
+	failure := errors.New("registry unavailable")
+	for _, tc := range []struct {
+		name                 string
+		buildErr, resolveErr error
+	}{
+		{name: "success"}, {name: "pull failure", buildErr: failure}, {name: "inspect failure", resolveErr: failure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			inner := &digestContractContainer{buildErr: tc.buildErr, resolveErr: tc.resolveErr}
+			svc := workflowrepo.NewImagePullLockedContainerSvc(inner, &fakeImagePullLockStore{acquireResults: []bool{true}}, imagepull.Config{TTL: time.Minute})
+			ctx := context.WithValue(t.Context(), digestContextKey{}, "caller-value")
+			ref, digest, err := svc.ResolveImageDigest(ctx, "image:tag")
+			wantErr := tc.resolveErr
+			if tc.buildErr != nil {
+				wantErr = tc.buildErr
+			}
+			if !errors.Is(err, wantErr) || len(inner.built) != 1 || inner.built[0] != "image:tag" || inner.seen.Value(digestContextKey{}) != "caller-value" {
+				t.Fatalf("resolution ref=%q digest=%q err=%v build=%v", ref, digest, err, inner.built)
+			}
+			if tc.buildErr != nil {
+				assertDigestPair(t, ref, digest, "image:tag", "")
+				if len(inner.resolved) != 0 {
+					t.Fatalf("pull failure inspected or lost input ref: ref=%q digest=%q calls=%v", ref, digest, inner.resolved)
+				}
+				return
+			}
+			if len(inner.resolved) != 1 || inner.resolved[0] != "image:tag" {
+				t.Fatalf("inspection inputs=%v", inner.resolved)
+			}
+			if tc.resolveErr == nil {
+				assertDigestPair(t, ref, digest, "image:tag", "image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			}
+		})
+	}
+}
+
+func assertDigestPair(t *testing.T, ref, digest, wantRef, wantDigest string) {
+	t.Helper()
+	if ref != wantRef || digest != wantDigest {
+		t.Fatalf("resolved identity=%q/%q want %q/%q", ref, digest, wantRef, wantDigest)
+	}
 }

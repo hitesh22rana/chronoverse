@@ -116,3 +116,53 @@ func TestReplayContainerLogsClassifiesCallerCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestContextErrorReturnsNilWithoutCause(t *testing.T) {
+	t.Parallel()
+	if err := contextError(nil); err != nil {
+		t.Fatalf("contextError(nil) = %v, want nil", err)
+	}
+}
+
+func TestReplayContainerLogsSkipsEmptyContainer(t *testing.T) {
+	t.Parallel()
+	container := &replayContractContainer{}
+	claim, workflow := replayContractIdentity()
+	if err := (&Repository{}).replayContainerLogs(t.Context(), container, claim, workflow, ""); err != nil {
+		t.Fatalf("empty replay = %v, want nil", err)
+	}
+	if container.containerID != "" {
+		t.Fatalf("empty replay requested container %q", container.containerID)
+	}
+}
+
+func TestRecoveredLogTimestampFillsMissingTimestamp(t *testing.T) {
+	t.Parallel()
+	before := time.Now().UTC()
+	for _, log := range []*jobsmodel.JobLog{nil, {}} {
+		got := recoveredLogTimestamp(log)
+		if got.IsZero() || got.Location() != time.UTC || got.Before(before) || time.Since(got) > time.Second {
+			t.Fatalf("missing timestamp recovered as %v, want current UTC time", got)
+		}
+	}
+	stamp := time.Date(2026, time.January, 2, 3, 4, 5, 123456789, time.UTC)
+	if got := recoveredLogTimestamp(&jobsmodel.JobLog{Timestamp: stamp}); !got.Equal(stamp) {
+		t.Fatalf("stored timestamp = %v, want %v", got, stamp)
+	}
+}
+
+func TestPublishRecoveredContainerLogSkipsNilLog(t *testing.T) {
+	t.Parallel()
+	claim, workflow := replayContractIdentity()
+	(&Repository{}).publishRecoveredContainerLog(t.Context(), claim, workflow, nil)
+}
+
+func TestPublishJobLogEventDropsUnencodableEvent(t *testing.T) {
+	t.Parallel()
+	(&Repository{}).publishJobLogEvent(t.Context(), &jobsmodel.JobLogEvent{
+		EventKey:  "log:job-1:stdout:1",
+		JobID:     "job-1",
+		TimeStamp: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC),
+		Stream:    "stdout",
+	})
+}

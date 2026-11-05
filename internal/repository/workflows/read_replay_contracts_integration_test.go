@@ -105,3 +105,32 @@ func TestIntegrationLegacyCreateReplayReloadsOwnedWorkflowWithoutNewEffects(t *t
 		})
 	}
 }
+
+// TestIntegrationLegacyCreateReplayReportsMissingWorkflow proves an old ID-only
+// snapshot still has to name a workflow the user owns when it is replayed.
+func TestIntegrationLegacyCreateReplayReportsMissingWorkflow(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	owner := newListOwner(t)
+	key := uuid.NewString()
+	created, err := repo.CreateWorkflow(ctx, owner, "legacy-missing", heartbeatFixturePayload, "HEARTBEAT", 60, 3, true, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := json.Marshal(map[string]string{"id": created.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, execErr := repo.pg.Exec(ctx, "UPDATE "+postgres.TableCommandIdempotencyKeys+" SET response=$1::jsonb WHERE scope=$2 AND operation=$3 AND idempotency_key=$4",
+		string(response), commandidempotency.UserScope(owner), commandidempotency.OperationWorkflowCreate, key); execErr != nil {
+		t.Fatal(execErr)
+	}
+	if _, execErr := repo.pg.Exec(ctx, "DELETE FROM "+postgres.TableWorkflows+" WHERE id=$1", created.ID); execErr != nil {
+		t.Fatal(execErr)
+	}
+
+	replay, err := repo.CreateWorkflow(ctx, owner, "legacy-missing", heartbeatFixturePayload, "HEARTBEAT", 60, 3, true, key)
+	if replay != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("legacy replay=%+v err=%v, want NotFound", replay, err)
+	}
+}

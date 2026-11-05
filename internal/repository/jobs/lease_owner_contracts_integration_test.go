@@ -4,6 +4,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,5 +170,48 @@ func TestIntegrationAttachContainerReplaysOriginalCommand(t *testing.T) {
 	}
 	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
 		t.Fatalf("conflicting replay corrupted the original command identity: %v", err)
+	}
+}
+
+// TestIntegrationAttachContainerFaultsRollBackAndAllowRetry proves the job
+// update and its ledger completion commit together: a failure at either leaves
+// the job untouched and the same command usable for a retry.
+func TestIntegrationAttachContainerFaultsRollBackAndAllowRetry(t *testing.T) {
+	ctx := context.Background()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+
+	for _, tc := range []struct{ name, table string }{
+		{name: "JobUpdate", table: "jobs"},
+		{name: "LedgerCompletion", table: "command_idempotency_keys"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := seedClaimedJob(ctx, t, pg, repo)
+			before := readLeaseOwnership(ctx, t, pg, fixture.JobID)
+			if !before.RuntimeNodeID.Valid || before.RuntimeNodeID.String == "" {
+				t.Fatal("claimed container job has no runtime node")
+			}
+			const containerID = "fault-container"
+			command := "attach-fault-" + fixtureTag()
+			remove := scheduleFaultTrigger(ctx, t, pg, tc.table, "UPDATE", false)
+			err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command)
+			remove()
+			if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "schedule fault") {
+				t.Fatalf("attach through fault = %v, want Internal caused by schedule fault", err)
+			}
+			if after := readLeaseOwnership(ctx, t, pg, fixture.JobID); after != before {
+				t.Fatalf("failed attach changed job: before=%+v after=%+v", before, after)
+			}
+			if _, exists := readJobCommand(ctx, t, pg, fixture.JobID, commandidempotency.OperationJobAttachContainer, command); exists {
+				t.Fatal("failed attach left a completed command")
+			}
+
+			if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
+				t.Fatalf("retry after recovery: %v", err)
+			}
+			if after := readLeaseOwnership(ctx, t, pg, fixture.JobID); !after.ContainerID.Valid || after.ContainerID.String != containerID {
+				t.Fatalf("retry did not attach its container: %+v", after)
+			}
+		})
 	}
 }

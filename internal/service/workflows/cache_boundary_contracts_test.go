@@ -94,9 +94,9 @@ func TestListWorkflowsCacheWriteFailureDoesNotLoseResults(t *testing.T) {
 
 func TestListWorkflowsStopsOnCacheContextFailure(t *testing.T) {
 	for _, canceled := range []bool{false, true} {
-		name := "deadline"
+		name, wantCode := "deadline", codes.DeadlineExceeded
 		if canceled {
-			name = "canceled"
+			name, wantCode = "canceled", codes.Canceled
 		}
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -113,8 +113,8 @@ func TestListWorkflowsStopsOnCacheContextFailure(t *testing.T) {
 			original := proto.Clone(req)
 			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, ctx.Err())
 			got, err := service.New(validator.New(), repo, cache).ListWorkflows(ctx, req)
-			if got != nil || status.Code(err) != codes.DeadlineExceeded {
-				t.Fatalf("response=%+v err=%v", got, err)
+			if got != nil || status.Code(err) != wantCode {
+				t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
 			}
 			if !proto.Equal(req, original) {
 				t.Fatal("request was mutated")

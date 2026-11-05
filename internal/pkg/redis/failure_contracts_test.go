@@ -407,3 +407,54 @@ func redisProtocolConfig(t *testing.T, address string) *Config {
 	}
 	return &Config{Host: host, Port: port, MaxMemory: "8mb", EvictionPolicy: "volatile-ttl", EvictionPolicySampleSize: 5, TLSConfig: &TLSConfig{}}
 }
+
+// MALFORMED peer response contract: these replies violate the fixed Lua
+// scripts' integer result. They model a broken proxy/server, not valid Redis
+// script execution, and must never be interpreted as lock ownership.
+func TestRedisTokenLocksRejectMalformedPeerResults(t *testing.T) {
+	for _, operation := range []string{"extend", "release"} {
+		for _, tc := range []struct{ name, response, message string }{
+			{"wrong type", "+unexpected\r\n", "unexpected lock "},
+			{"nil", "$-1\r\n", "failed to "},
+		} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				address := redisProtocolPeer(t, nil, func(args []string) string {
+					if !strings.EqualFold(args[0], "eval") {
+						return redisHandshakeReply(args)
+					}
+					assertTokenLockCommand(t, operation, args)
+					return tc.response
+				})
+				client := goredis.NewClient(&goredis.Options{Addr: address, MaxRetries: -1})
+				defer client.Close()
+				store := &Store{client: client}
+				var err error
+				if operation == "extend" {
+					var extended bool
+					extended, err = store.ExtendDistributedLockWithToken(t.Context(), "owner-lock", "owner-token", time.Minute)
+					if extended {
+						t.Fatal("malformed reply granted lock extension")
+					}
+				} else {
+					err = store.ReleaseDistributedLockWithToken(t.Context(), "owner-lock", "owner-token")
+				}
+				if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message+operation) {
+					t.Fatalf("malformed %s reply = %v", operation, err)
+				}
+				if tc.name == "wrong type" && !strings.Contains(err.Error(), "result type string") {
+					t.Fatalf("wrong-type reply lost type diagnostic: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func assertTokenLockCommand(t *testing.T, operation string, args []string) {
+	t.Helper()
+	if len(args) < 5 || args[2] != "1" || args[3] != "owner-lock" || args[4] != "owner-token" {
+		t.Errorf("lock command arguments = %v", args)
+	}
+	if operation == "extend" && (len(args) != 6 || args[5] != "60000") {
+		t.Errorf("extend arguments = %v", args)
+	}
+}

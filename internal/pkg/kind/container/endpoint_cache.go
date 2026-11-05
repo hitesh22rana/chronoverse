@@ -76,6 +76,9 @@ func (c *EndpointCache[T]) Get(endpoint string) (T, error) {
 		if err != nil {
 			return zero, err
 		}
+		if any(client) == nil {
+			return zero, status.Error(codes.Internal, "endpoint factory returned nil client")
+		}
 
 		c.mu.Lock()
 		if c.closed {
@@ -83,13 +86,7 @@ func (c *EndpointCache[T]) Get(endpoint string) (T, error) {
 			_ = client.Close()
 			return zero, status.Error(codes.FailedPrecondition, "endpoint cache is closed")
 		}
-		if existing, ok := c.clients[endpoint]; ok {
-			existing.lastUsed = c.now()
-			c.clients[endpoint] = existing
-			c.mu.Unlock()
-			_ = client.Close()
-			return existing.client, nil
-		}
+		// Singleflight allows only this call to install the endpoint.
 		evicted = c.evictLRULocked()
 		c.clients[endpoint] = endpointCacheEntry[T]{client: client, lastUsed: c.now()}
 		c.mu.Unlock()
@@ -100,11 +97,9 @@ func (c *EndpointCache[T]) Get(endpoint string) (T, error) {
 		return zero, err
 	}
 
-	client, ok := value.(T)
-	if !ok {
-		return zero, status.Error(codes.Internal, "endpoint cache returned unexpected client type")
-	}
-	return client, nil
+	// Every successful flight returns T; nil interface factory results are rejected.
+	//nolint:errcheck,forcetypeassert // Cache entries and successful factory results have type T.
+	return value.(T), nil
 }
 
 func (c *EndpointCache[T]) evictExpiredLocked(now time.Time) []T {

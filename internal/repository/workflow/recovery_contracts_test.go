@@ -27,7 +27,7 @@ type recoveryContainer struct {
 	logs func(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 }
 
-func (c recoveryContainer) Logs(ctx context.Context, id string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+func (c recoveryContainer) Logs(ctx context.Context, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	return c.logs(ctx, id)
 }
 
@@ -120,7 +120,7 @@ func TestCanceledLogReplayHandlesChannelFailuresAndDetachedDeadline(t *testing.T
 					if id != "container-recovery" || ctx.Err() != nil {
 						t.Errorf("replay identity/context=%q/%v", id, ctx.Err())
 					}
-					assertReplayDeadline(t, ctx)
+					assertReplayDeadline(ctx, t)
 					if tc.openErr != nil {
 						return nil, nil, tc.openErr
 					}
@@ -586,7 +586,7 @@ func TestBuildPreparationFailuresReleaseLockWithoutCompleting(t *testing.T) {
 	}
 }
 
-func assertReplayDeadline(t *testing.T, ctx context.Context) {
+func assertReplayDeadline(ctx context.Context, t *testing.T) {
 	t.Helper()
 	deadline, ok := ctx.Deadline()
 	if !ok || !deadline.Equal(time.Now().Add(2*time.Minute)) {

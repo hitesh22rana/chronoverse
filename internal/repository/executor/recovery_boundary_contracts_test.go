@@ -85,7 +85,7 @@ type boundaryReconciliationClient struct {
 	err   error
 }
 
-func (c *boundaryReconciliationClient) ClaimJob(_ context.Context, req *jobspb.ClaimJobRequest, _ ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+func (c *boundaryReconciliationClient) ClaimJob(_ context.Context, _ *jobspb.ClaimJobRequest, _ ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
 	c.calls++
 	return &jobspb.ClaimJobResponse{Claimed: true}, c.err
 }
@@ -94,6 +94,7 @@ func TestReconciliationOnlyReleasesProvenMissingAuthority(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"canceled", "authorization", "unavailable", "missing"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			gate := newHandoffRegistry(1)
 			entry, _, err := gate.getOrReserve("command", &jobspb.ClaimJobRequest{Id: "job", CommandId: "command"})
 			if err != nil {

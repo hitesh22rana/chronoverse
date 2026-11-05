@@ -26,21 +26,25 @@ func (s *boundaryContainer) Build(_ context.Context, image string) error {
 	return s.buildErr
 }
 
-func (s *boundaryContainer) Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobsmodel.JobLog, <-chan error, error) {
-	id, logs, errs, _ := s.observedContainerSvc.Execute(ctx, timeout, image, cmd, env)
+func (s *boundaryContainer) Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	containerID, logs, errs, err = s.observedContainerSvc.Execute(ctx, timeout, image, cmd, env)
+	if err != nil {
+		return containerID, logs, errs, err
+	}
 	if s.executeErr != nil {
 		if status.Code(s.executeErr) == codes.FailedPrecondition {
 			return "", nil, nil, s.executeErr
 		}
-		return id, nil, nil, s.executeErr
+		return containerID, nil, nil, s.executeErr
 	}
-	return id, logs, errs, nil
+	return containerID, logs, errs, nil
 }
 
 func TestContainerExecutionFailurePreservesAttachmentOrdering(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"invalid payload", "build denied", "precondition before attach", "start failed after attach", "attach failed", "fallback image"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			csvc := &boundaryContainer{}
 			var attachErr error
 			jobs := &scriptedJobsClient{attachJobContainer: func(_ context.Context, req *jobspb.AttachJobContainerRequest) error {
@@ -102,6 +106,7 @@ func TestSettlementAuthorizationFailureLeavesContainerAndAuthority(t *testing.T)
 	t.Parallel()
 	for _, name := range []string{"cancel", "release", "complete", "fail", "attach"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			csvc := &observedContainerSvc{}
 			fixture := newClaimedRunFixture(&scriptedJobsClient{}, &scriptedWorkflowsClient{}, nil, csvc)
 			fixture.repo.auth = failingTokenAuth{}
@@ -134,6 +139,7 @@ func TestSettlementSucceedsDespiteContainerRemovalFailure(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"complete", "terminal failure", "retryable failure"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			csvc := &recoveryContainer{removeErr: status.Error(codes.Unavailable, "runtime cleanup unavailable")}
 			fixture := newClaimedRunFixture(&scriptedJobsClient{}, &scriptedWorkflowsClient{}, nil, csvc)
 			claim := claimedJob(1)

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -22,9 +23,11 @@ type replayContractContainer struct {
 	startErr    error
 	logsDone    <-chan struct{}
 	containerID string
+	logsCalls   int
 }
 
 func (s *replayContractContainer) Logs(ctx context.Context, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	s.logsCalls++
 	s.logsDone, s.containerID = ctx.Done(), id
 	return s.logs, s.errs, s.startErr
 }
@@ -131,18 +134,19 @@ func TestReplayContainerLogsSkipsEmptyContainer(t *testing.T) {
 	if err := (&Repository{}).replayContainerLogs(t.Context(), container, claim, workflow, ""); err != nil {
 		t.Fatalf("empty replay = %v, want nil", err)
 	}
-	if container.containerID != "" {
-		t.Fatalf("empty replay requested container %q", container.containerID)
+	if container.logsCalls != 0 {
+		t.Fatalf("empty replay requested %d container streams", container.logsCalls)
 	}
 }
 
 func TestRecoveredLogTimestampFillsMissingTimestamp(t *testing.T) {
 	t.Parallel()
-	before := time.Now().UTC()
 	for _, log := range []*jobsmodel.JobLog{nil, {}} {
+		before := time.Now().UTC()
 		got := recoveredLogTimestamp(log)
-		if got.IsZero() || got.Location() != time.UTC || got.Before(before) || time.Since(got) > time.Second {
-			t.Fatalf("missing timestamp recovered as %v, want current UTC time", got)
+		after := time.Now().UTC()
+		if got.IsZero() || got.Location() != time.UTC || got.Before(before) || got.After(after) {
+			t.Fatalf("missing timestamp recovered as %v, want between %v and %v", got, before, after)
 		}
 	}
 	stamp := time.Date(2026, time.January, 2, 3, 4, 5, 123456789, time.UTC)
@@ -159,10 +163,16 @@ func TestPublishRecoveredContainerLogSkipsNilLog(t *testing.T) {
 
 func TestPublishJobLogEventDropsUnencodableEvent(t *testing.T) {
 	t.Parallel()
-	(&Repository{}).publishJobLogEvent(t.Context(), &jobsmodel.JobLogEvent{
+	event := &jobsmodel.JobLogEvent{
 		EventKey:  "log:job-1:stdout:1",
 		JobID:     "job-1",
 		TimeStamp: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC),
 		Stream:    "stdout",
-	})
+	}
+	if _, err := joblogevents.KafkaRecord(event); err == nil {
+		t.Fatal("test event is encodable; the drop path would not be exercised")
+	}
+	// publishJobLogEvent has no result; the producer would need a recording
+	// seam to observe the dropped batch directly.
+	(&Repository{}).publishJobLogEvent(t.Context(), event)
 }

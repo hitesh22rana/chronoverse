@@ -100,3 +100,15 @@ func assertPartitionLossShutdownHasNoCommits(t *testing.T, cancel context.Cancel
 	default:
 	}
 }
+
+func TestNilPartitionLifecycleCallbacksAreNoOps(t *testing.T) {
+	t.Parallel()
+	var lifecycle *kafka.PartitionLifecycle
+	partitions := map[string][]int32{"topic": {0}}
+	lifecycle.OnAssigned(t.Context(), nil, partitions)
+	lifecycle.OnRevoked(t.Context(), nil, partitions)
+	lifecycle.OnLost(t.Context(), nil, partitions)
+	if len(partitions["topic"]) != 1 || partitions["topic"][0] != 0 {
+		t.Fatal("optional lifecycle callbacks mutated assignments")
+	}
+}

@@ -20,22 +20,22 @@ type replayContractContainer struct {
 	logs        <-chan *jobsmodel.JobLog
 	errs        <-chan error
 	startErr    error
-	logsCtx     context.Context
+	logsDone    <-chan struct{}
 	containerID string
 }
 
 func (s *replayContractContainer) Logs(ctx context.Context, id string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
-	s.logsCtx, s.containerID = ctx, id
+	s.logsDone, s.containerID = ctx.Done(), id
 	return s.logs, s.errs, s.startErr
 }
 
-func replayContractIdentity() (*jobspb.ClaimJobResponse, *workflowspb.GetWorkflowByIDResponse) {
-	claim := &jobspb.ClaimJobResponse{
+func replayContractIdentity() (claim *jobspb.ClaimJobResponse, workflow *workflowspb.GetWorkflowByIDResponse) {
+	claim = &jobspb.ClaimJobResponse{
 		Claimed: true, Id: "00000000-0000-0000-0000-0000000000c1",
 		WorkflowId: "00000000-0000-0000-0000-0000000000c2", UserId: "00000000-0000-0000-0000-0000000000c3",
 		Attempts: 2, LeaseToken: "replay-lease",
 	}
-	workflow := &workflowspb.GetWorkflowByIDResponse{Id: claim.GetWorkflowId(), UserId: claim.GetUserId(), LogRetention: true}
+	workflow = &workflowspb.GetWorkflowByIDResponse{Id: claim.GetWorkflowId(), UserId: claim.GetUserId(), LogRetention: true}
 	return claim, workflow
 }
 
@@ -74,8 +74,10 @@ func TestReplayContainerLogsPreservesDependencyFailures(t *testing.T) {
 			if container.containerID != "container-1" {
 				t.Fatalf("requested container = %q", container.containerID)
 			}
-			if !errors.Is(container.logsCtx.Err(), context.Canceled) {
-				t.Fatalf("replay context remains active after return: %v", container.logsCtx.Err())
+			select {
+			case <-container.logsDone:
+			default:
+				t.Fatal("replay context remains active after return")
 			}
 		})
 	}
@@ -106,7 +108,9 @@ func TestReplayContainerLogsClassifiesCallerCancellation(t *testing.T) {
 			if status.Code(err) != want {
 				t.Fatalf("replay error = %v, want %s", err, want)
 			}
-			if container.logsCtx.Err() == nil {
+			select {
+			case <-container.logsDone:
+			default:
 				t.Fatal("container stream did not receive cancellation")
 			}
 		})

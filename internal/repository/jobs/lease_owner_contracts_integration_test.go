@@ -99,7 +99,7 @@ func TestIntegrationAttachContainerRejectsUnownedCommands(t *testing.T) {
 	command := "attach-" + fixtureTag()
 	for _, rejection := range []string{"stale token", "different runtime", "canceled caller"} {
 		t.Run(rejection, func(t *testing.T) {
-			callCtx, cancel := context.WithCancel(t.Context())
+			callCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 			token, node, want := fixture.LeaseToken, before.RuntimeNodeID.String, codes.FailedPrecondition
 			switch rejection {

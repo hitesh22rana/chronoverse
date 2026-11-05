@@ -106,11 +106,11 @@ type digestContractContainer struct {
 	workflowrepo.ContainerSvc
 	buildErr, resolveErr error
 	built, resolved      []string
-	seen                 context.Context
+	seenValue            any
 }
 
 func (s *digestContractContainer) Build(ctx context.Context, image string) error {
-	s.seen = ctx
+	s.seenValue = ctx.Value(digestContextKey{})
 	s.built = append(s.built, image)
 	return s.buildErr
 }
@@ -120,7 +120,7 @@ func (*digestContractContainer) ImageExists(context.Context, string) (bool, erro
 func (*digestContractContainer) DockerHost() string { return "tcp://digest-contract:2376" }
 
 func (s *digestContractContainer) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
-	s.seen = ctx
+	s.seenValue = ctx.Value(digestContextKey{})
 	s.resolved = append(s.resolved, image)
 	if s.resolveErr != nil {
 		return "", "", s.resolveErr
@@ -147,7 +147,7 @@ func TestImagePullLockedDigestResolutionPreservesIdentityAndFailure(t *testing.T
 			if tc.buildErr != nil {
 				wantErr = tc.buildErr
 			}
-			if !errors.Is(err, wantErr) || len(inner.built) != 1 || inner.built[0] != "image:tag" || inner.seen.Value(digestContextKey{}) != "caller-value" {
+			if !errors.Is(err, wantErr) || len(inner.built) != 1 || inner.built[0] != "image:tag" || inner.seenValue != "caller-value" {
 				t.Fatalf("resolution ref=%q digest=%q err=%v build=%v", ref, digest, err, inner.built)
 			}
 			if tc.buildErr != nil {

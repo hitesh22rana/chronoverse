@@ -79,7 +79,9 @@ func (r *Repository) ClaimJob(
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	requestHash, err := idempotency.HashCanonical(map[string]any{
+	// These command fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]any{
 		"job_id":                 jobID,
 		"workflow_id":            workflowID,
 		"worker_id":              workerID,
@@ -87,9 +89,6 @@ func (r *Repository) ClaimJob(
 		"lease_duration_seconds": leaseSeconds(leaseDuration),
 		"dispatch_attempt":       dispatchAttempt,
 	})
-	if err != nil {
-		return nil, false, "", status.Errorf(grpccodes.Internal, "failed to hash claim command: %v", err)
-	}
 	scope := commandidempotency.WorkerScope(processInstanceID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobClaim, commandID, requestHash)
 	if err != nil {
@@ -779,13 +778,12 @@ func (r *Repository) RecoverExpiredJobLeases(
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
-	requestHash, err := idempotency.HashCanonical(map[string]any{
+	// These command fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]any{
 		"batch_size": batchSize, "worker_id": workerID, "process_instance_id": processInstanceID,
 		"lease_duration_seconds": leaseSeconds(leaseDuration),
 	})
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to hash recovery command: %v", err)
-	}
 	scope := commandidempotency.WorkerScope(processInstanceID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases, commandID, requestHash)
 	if err != nil {
@@ -837,10 +835,9 @@ func (r *Repository) renewRecoveryReplay(
 		return stored, nil
 	}
 	identities := recoveryReplayIdentities(stored)
-	encoded, err := json.Marshal(identities)
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to encode recovery replay identities: %v", err)
-	}
+	// Recovery identities contain only strings.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	encoded, _ := json.Marshal(identities)
 
 	rows, err := tx.Query(
 		ctx,
@@ -1157,12 +1154,11 @@ func (r *Repository) insertTerminalJobOutboxEvents(
 	errorMessage string,
 ) error {
 	duration := job.executionDurationSeconds()
-	data, err := json.Marshal(&analyticsmodel.EventTypeJobsData{
+	// Job analytics data contains only an unsigned integer.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	data, _ := json.Marshal(&analyticsmodel.EventTypeJobsData{
 		JobExecutionDuration: duration,
 	})
-	if err != nil {
-		return status.Errorf(grpccodes.Internal, "failed to marshal job analytics event data: %v", err)
-	}
 
 	analyticsEvent := &analyticsmodel.AnalyticEvent{
 		EventKey:   idempotency.JobCompletedAnalyticsEventKey(job.ID),

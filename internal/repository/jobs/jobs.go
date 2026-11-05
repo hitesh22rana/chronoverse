@@ -184,10 +184,9 @@ func (r *Repository) ScheduleJob(
 		scope = commandidempotency.UserScope(userID)
 		operation = commandidempotency.ManualScheduleOperation(workflowID)
 	}
-	requestHash, err := idempotency.HashCanonical(hashFields)
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash schedule command: %v", err)
-	}
+	// These fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(hashFields)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return "", err
@@ -307,12 +306,11 @@ func validateStoredScheduleCommand(
 	if workflowGeneration.Valid {
 		storedGeneration = workflowGeneration.Int64
 	}
-	storedRequestHash, err := idempotency.HashCanonical(
+	// These fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	storedRequestHash, _ := idempotency.HashCanonical(
 		scheduleJobHashFields(workflowID, userID, trigger, storedGeneration),
 	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to hash stored schedule command: %v", err)
-	}
 	if storedRequestHash != requestHash {
 		return status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
@@ -451,13 +449,12 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	requestHash, err := idempotency.HashCanonical(map[string]string{
+	// A string map always has a JSON representation.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]string{
 		"job_id":                jobID,
 		terminalReasonCodeField: terminalReasonCode,
 	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to hash cancel command: %v", err)
-	}
 	scope := commandidempotency.JobScope(jobID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash)
 	if err != nil {
@@ -981,12 +978,7 @@ func (r *Repository) SearchJobLogs(
 	)
 	highlightToken := ""
 	if !options.DisableHighlight {
-		var tokenErr error
-		highlightToken, tokenErr = newJobLogsHighlightToken()
-		if tokenErr != nil {
-			err = tokenErr
-			return nil, "", err
-		}
+		highlightToken = newJobLogsHighlightToken()
 	}
 
 	eg.Go(func() error {
@@ -1152,10 +1144,9 @@ func encodeJobLogsCursor(cursor jobLogsCursor) string {
 		return ""
 	}
 
-	payload, err := json.Marshal(cursor)
-	if err != nil {
-		return ""
-	}
+	// The cursor contains only strings and an unsigned integer.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	payload, _ := json.Marshal(cursor)
 
 	return base64.StdEncoding.EncodeToString(payload)
 }
@@ -1168,13 +1159,12 @@ func encodeListJobsCursor(cursor string) string {
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 
-func newJobLogsHighlightToken() (string, error) {
+func newJobLogsHighlightToken() string {
 	token := make([]byte, jobLogsHighlightTokenBytes)
-	if _, err := rand.Read(token); err != nil {
-		return "", status.Errorf(codes.Internal, "failed to generate log highlight token: %v", err)
-	}
-
-	return hex.EncodeToString(token), nil
+	// crypto/rand.Read fills the buffer or terminates the process.
+	//nolint:errcheck // crypto/rand.Read never returns an error.
+	_, _ = rand.Read(token)
+	return hex.EncodeToString(token)
 }
 
 func jobLogsHighlightTags(token string) (startTag, endTag string) {

@@ -2,14 +2,19 @@
 package jobs
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
@@ -18,18 +23,20 @@ import (
 // malformed schemas; no persisted job or command is modified by these tests.
 func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 	pg := testkit.Postgres(t)
+	repo := New(&Config{}, nil, pg, nil, nil, nil, nil)
+	scope := commandidempotency.WorkerScope(uuid.NewString())
 	projection := `SELECT 'id'::text AS id, 'workflow'::text AS workflow_id, 'user'::text AS user_id,
  NULL::text AS container_id, 'token'::text AS lease_token, NULL::text AS leased_by, 'MANUAL'::text AS trigger,
  now() AS scheduled_at, 1::int4 AS attempts, true AS log_retention, NULL::text AS runtime_node_id,
  NULL::text AS runtime_endpoint, false AS runtime_unavailable`
 	for _, tc := range []struct {
 		name, query, message string
-		collect              func(pgx.Rows) error
+		collect              func(*testing.T, pgx.Tx, pgx.Rows) error
 	}{
 		{
 			name: "replay identity scan", query: `SELECT NULL::text`, message: "failed to collect renewed recovery replay leases",
-			collect: func(rows pgx.Rows) error {
-				result, err := collectRecoveryReplayIDs(rows)
+			collect: func(t *testing.T, _ pgx.Tx, rows pgx.Rows) error {
+				result, err := collectRenewedRecoveryJobs(rows, []*jobsmodel.ExpiredJobLease{{ID: "first", LeaseToken: "token"}})
 				if result != nil {
 					t.Errorf("failed collection returned identities: %v", result)
 				}
@@ -38,8 +45,8 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		},
 		{
 			name: "replay stream error", query: `SELECT CASE WHEN i=1 THEN 'first' ELSE (1/(i-i))::text END FROM generate_series(1,2) AS i`, message: "division by zero",
-			collect: func(rows pgx.Rows) error {
-				result, err := collectRecoveryReplayIDs(rows)
+			collect: func(t *testing.T, _ pgx.Tx, rows pgx.Rows) error {
+				result, err := collectRenewedRecoveryJobs(rows, []*jobsmodel.ExpiredJobLease{{ID: "first", LeaseToken: "token"}})
 				if result != nil {
 					t.Errorf("failed stream returned partial identities: %v", result)
 				}
@@ -48,8 +55,8 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		},
 		{
 			name: "lease timestamp scan", query: strings.Replace(projection, "now() AS scheduled_at", "NULL::timestamptz AS scheduled_at", 1), message: "failed to collect expired job leases",
-			collect: func(rows pgx.Rows) error {
-				result, err := collectExpiredJobLeases(rows)
+			collect: func(t *testing.T, tx pgx.Tx, rows pgx.Rows) error {
+				result, err := repo.completeExpiredRecovery(t.Context(), tx, scope, "driver-contract", strings.Repeat("0", 64), rows)
 				if result != nil {
 					t.Errorf("failed collection returned leases: %v", result)
 				}
@@ -60,8 +67,8 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 			name:    "lease stream error",
 			query:   strings.Replace(projection, "'id'::text AS id", "CASE WHEN i=1 THEN 'first' ELSE (1/(i-i))::text END AS id", 1) + ` FROM generate_series(1,2) AS i`,
 			message: "division by zero",
-			collect: func(rows pgx.Rows) error {
-				result, err := collectExpiredJobLeases(rows)
+			collect: func(t *testing.T, tx pgx.Tx, rows pgx.Rows) error {
+				result, err := repo.completeExpiredRecovery(t.Context(), tx, scope, "driver-contract", strings.Repeat("0", 64), rows)
 				if result != nil {
 					t.Errorf("failed stream returned partial leases: %v", result)
 				}
@@ -70,11 +77,22 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rows, err := pg.Query(t.Context(), tc.query)
+			tx, err := pg.BeginTx(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+					t.Errorf("rollback driver contract transaction: %v", rollbackErr)
+				}
+			})
+			rows, err := tx.Query(t.Context(), tc.query)
 			if err != nil {
 				t.Fatalf("query must produce driver Rows before collection fails: %v", err)
 			}
-			err = tc.collect(rows)
+			err = tc.collect(t, tx, rows)
 			if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("collection error=%v, want Internal/%q", err, tc.message)
 			}
@@ -86,10 +104,22 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 	}
 }
 
-func TestDecodeCancelJobSnapshotContracts(t *testing.T) {
+func TestIntegrationFinishCancelReplayRejectsMalformedResponse(t *testing.T) {
+	pg := testkit.Postgres(t)
 	for _, payload := range []string{`[`, `[]`, `{"Attempt":"not-a-number"}`} {
 		t.Run(payload, func(t *testing.T) {
-			result, err := decodeCancelJobSnapshot([]byte(payload))
+			tx, err := pg.BeginTx(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+					t.Errorf("rollback rejected cancel replay: %v", rollbackErr)
+				}
+			})
+			result, err := finishCancelReplay(t.Context(), tx, []byte(payload))
 			if result != nil || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to decode cancel replay") {
 				t.Fatalf("snapshot=%+v error=%v", result, err)
 			}

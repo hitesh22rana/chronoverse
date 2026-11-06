@@ -791,20 +791,7 @@ func (r *Repository) RecoverExpiredJobLeases(
 		}
 	}
 
-	jobs, err = collectExpiredJobLeases(rows)
-	if err != nil {
-		return nil, err
-	}
-	if completeErr := commandidempotency.Complete(
-		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
-		commandID, requestHash, "", jobs, commandidempotency.ClientCommandRetention,
-	); completeErr != nil {
-		return nil, completeErr
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
-	}
-	return jobs, nil
+	return r.completeExpiredRecovery(ctx, tx, scope, commandID, requestHash, rows)
 }
 
 type recoveryReplayIdentity struct {
@@ -838,11 +825,7 @@ func (r *Repository) renewRecoveryReplay(
 	if err != nil {
 		return nil, r.mapJobLeaseWriteError(err, "renew recovery replay")
 	}
-	renewedIDs, err := collectRecoveryReplayIDs(rows)
-	if err != nil {
-		return nil, err
-	}
-	return activeRecoveryReplayJobs(stored, renewedIDs), nil
+	return collectRenewedRecoveryJobs(rows, stored)
 }
 
 func validateClaimReplayQuery() string {
@@ -1412,21 +1395,36 @@ func activeRecoveryReplayJobs(stored []*jobsmodel.ExpiredJobLease, renewedIDs []
 	return active
 }
 
-// collectRecoveryReplayIDs maps result decoding failures independently of the
-// transaction and renewal query. CollectRows closes its result set.
-func collectRecoveryReplayIDs(rows pgx.Rows) ([]string, error) {
+// collectRenewedRecoveryJobs decodes renewed authorities and retains their stored
+// response entries in order. CollectRows closes its result set.
+func collectRenewedRecoveryJobs(rows pgx.Rows, stored []*jobsmodel.ExpiredJobLease) ([]*jobsmodel.ExpiredJobLease, error) {
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
 	}
-	return ids, nil
+	return activeRecoveryReplayJobs(stored, ids), nil
 }
 
-// collectExpiredJobLeases preserves the recovery response's named-column mapping.
-func collectExpiredJobLeases(rows pgx.Rows) ([]*jobsmodel.ExpiredJobLease, error) {
+// completeExpiredRecovery consumes the recovery result and atomically completes
+// its command. CollectRows closes the result set; the caller owns rollback.
+func (r *Repository) completeExpiredRecovery(
+	ctx context.Context,
+	tx pgx.Tx,
+	scope, commandID, requestHash string,
+	rows pgx.Rows,
+) ([]*jobsmodel.ExpiredJobLease, error) {
 	jobs, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
 	if err != nil {
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
+	}
+	if completeErr := commandidempotency.Complete(
+		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
+		commandID, requestHash, "", jobs, commandidempotency.ClientCommandRetention,
+	); completeErr != nil {
+		return nil, completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
 	}
 	return jobs, nil
 }

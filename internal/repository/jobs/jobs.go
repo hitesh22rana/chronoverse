@@ -462,14 +462,7 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		return nil, err
 	}
 	if reservation.Replay {
-		snapshot, err = decodeCancelJobSnapshot(reservation.Response)
-		if err != nil {
-			return nil, err
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
-		}
-		return snapshot, nil
+		return finishCancelReplay(ctx, tx, reservation.Response)
 	}
 
 	snapshot = &jobsmodel.CancelJobSnapshot{}
@@ -1399,11 +1392,15 @@ func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowG
 	return status.Errorf(codes.Internal, "failed to insert job: %v", err)
 }
 
-// decodeCancelJobSnapshot validates a persisted replay before the caller commits.
-func decodeCancelJobSnapshot(response []byte) (*jobsmodel.CancelJobSnapshot, error) {
+// finishCancelReplay validates the persisted response before committing its replay.
+// The caller retains rollback ownership.
+func finishCancelReplay(ctx context.Context, tx pgx.Tx, response []byte) (*jobsmodel.CancelJobSnapshot, error) {
 	snapshot := &jobsmodel.CancelJobSnapshot{}
 	if err := json.Unmarshal(response, snapshot); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
 	}
 	return snapshot, nil
 }

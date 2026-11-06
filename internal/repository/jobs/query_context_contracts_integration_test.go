@@ -4,6 +4,7 @@ package jobs
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,4 +139,42 @@ func TestIntegrationCancelCanceledBeforeBeginPreservesSnapshot(t *testing.T) {
 	if err != nil || retry == nil || retry.ID != fixture.JobID || retry.PreviousStatus != "RUNNING" {
 		t.Fatalf("retry=%+v error=%v", retry, err)
 	}
+}
+
+func TestIntegrationCancelSnapshotQueryFailureRollsBackReservation(t *testing.T) {
+	repo := newCommitCancellationRepository(t)
+	pg := testkit.Postgres(t)
+	fixture := seedClaimedJob(t.Context(), t, pg, repo)
+	before := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
+	slots := readRuntimeRunningJobs(t.Context(), t, pg, before.RuntimeNodeID.String)
+	command := "cancel-snapshot-query-" + fixtureTag()
+	ctx, target := cancelAtQueryContext(t, "SELECT", "SELECT id, status, container_id, runtime_node_id, runtime_endpoint, attempts")
+	result, err := repo.CancelJob(ctx, fixture.JobID, command, "OPERATOR_REQUEST")
+	if !target.fired.Load() || ctx.Err() != context.Canceled || result != nil || status.Code(err) != codes.Internal ||
+		!strings.Contains(err.Error(), "failed to read cancellation snapshot") || !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("target=%t snapshot=%+v error=%v", target.fired.Load(), result, err)
+	}
+	if after := readTerminalJobState(t.Context(), t, pg, fixture.JobID); !reflect.DeepEqual(after, before) {
+		t.Fatalf("snapshot failure changed job: %+v -> %+v", before, after)
+	}
+	if got := readRuntimeRunningJobs(t.Context(), t, pg, before.RuntimeNodeID.String); got != slots {
+		t.Fatalf("snapshot failure slots=%d, want %d", got, slots)
+	}
+	if ledger, ok := readJobCommand(t.Context(), t, pg, fixture.JobID, commandidempotency.OperationJobCancel, command); ok {
+		t.Fatalf("snapshot failure retained reservation: %+v", ledger)
+	}
+	assertNoOutboxEffect(t.Context(), t, pg, fixture)
+	retry, err := repo.CancelJob(t.Context(), fixture.JobID, command, "OPERATOR_REQUEST")
+	if err != nil || retry == nil || retry.ID != fixture.JobID || retry.PreviousStatus != "RUNNING" {
+		t.Fatalf("retry=%+v error=%v", retry, err)
+	}
+	after := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
+	if after.Status != "CANCELED" || !after.CompletedAt.Valid {
+		t.Fatalf("retry state=%+v", after)
+	}
+	assertTerminalLeaseReleased(t, after)
+	if got := readRuntimeRunningJobs(t.Context(), t, pg, before.RuntimeNodeID.String); got != slots-1 {
+		t.Fatalf("retry slots=%d, want %d", got, slots-1)
+	}
+	assertNoOutboxEffect(t.Context(), t, pg, fixture)
 }

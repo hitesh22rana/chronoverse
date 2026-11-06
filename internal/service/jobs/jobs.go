@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -650,8 +649,8 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 	if isCursorPage {
 		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
 		if cacheErr != nil {
-			if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-				err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				err = status.FromContextError(ctxErr).Err()
 				return nil, err
 			}
 		} else {
@@ -751,41 +750,43 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 		defer sub.Unsubscribe(ctx, redis.GetJobLogsChannel(req.GetId()))
 		defer sub.Close()
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case data, ok := <-subscribedChannel:
-				if !ok {
-					return
-				}
-
-				if data == nil {
-					continue
-				}
-
-				payload := data.Payload
-				var log jobsmodel.JobLogEvent
-				if err := json.Unmarshal([]byte(payload), &log); err != nil {
-					continue
-				}
-
-				select {
-				case ch <- &jobsmodel.JobLog{
-					EventID:     log.EventKey,
-					Timestamp:   log.TimeStamp,
-					Message:     log.Message,
-					SequenceNum: log.SequenceNum,
-					Stream:      log.Stream,
-				}:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
+		forwardLiveJobLogs(ctx, subscribedChannel, ch)
 	}()
 
 	return ch, nil
+}
+
+// forwardLiveJobLogs decodes events until closure or cancellation.
+// go-redis Channel emits nonnil messages; ok distinguishes channel closure.
+func forwardLiveJobLogs(ctx context.Context, subscribedChannel <-chan *goredis.Message, ch chan<- *jobsmodel.JobLog) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data, ok := <-subscribedChannel:
+			if !ok {
+				return
+			}
+
+			payload := data.Payload
+			var log jobsmodel.JobLogEvent
+			if err := json.Unmarshal([]byte(payload), &log); err != nil {
+				continue
+			}
+
+			select {
+			case ch <- &jobsmodel.JobLog{
+				EventID:     log.EventKey,
+				Timestamp:   log.TimeStamp,
+				Message:     log.Message,
+				SequenceNum: log.SequenceNum,
+				Stream:      log.Stream,
+			}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
 }
 
 // SearchJobLogsRequest holds the request parameters for getting filtered logs of a job.
@@ -851,8 +852,8 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 	if isCursorPage {
 		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
 		if cacheErr != nil {
-			if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-				err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				err = status.FromContextError(ctxErr).Err()
 				return nil, err
 			}
 		} else {

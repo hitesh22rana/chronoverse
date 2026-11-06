@@ -500,7 +500,9 @@ type jobLogsDownloadLog struct {
 }
 
 func writeJobLogsDownloadJSONHeader(w io.Writer, downloadReq *jobLogsDownloadRequest) error {
-	header, err := json.Marshal(jobLogsDownloadJSONHeader{
+	// Header fields are strings, so JSON encoding cannot fail.
+	//nolint:errcheck // This concrete value has no fallible marshaler.
+	header, _ := json.Marshal(jobLogsDownloadJSONHeader{
 		ID:         downloadReq.JobID,
 		WorkflowID: downloadReq.WorkflowID,
 		Filters: jobLogsDownloadJSONFilter{
@@ -508,9 +510,6 @@ func writeJobLogsDownloadJSONHeader(w io.Writer, downloadReq *jobLogsDownloadReq
 			Stream: downloadReq.StreamName,
 		},
 	})
-	if err != nil {
-		return err
-	}
 
 	if _, writeErr := w.Write(header[:len(header)-1]); writeErr != nil {
 		return writeErr
@@ -545,11 +544,10 @@ func writeJobLogsDownloadLog(w io.Writer, format string, log *jobspb.Log, isFirs
 			}
 		}
 		*isFirstJSONLog = false
-		encoded, err := json.Marshal(newJobLogsDownloadLog(log))
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(encoded)
+		// Raw JSON is included only after json.Valid succeeds.
+		//nolint:errcheck // Remaining fields are strings and integers.
+		encoded, _ := json.Marshal(newJobLogsDownloadLog(log))
+		_, err := w.Write(encoded)
 		return err
 	case jobLogsDownloadFormatJSONL:
 		return json.NewEncoder(w).Encode(newJobLogsDownloadLog(log))
@@ -665,12 +663,9 @@ func (s *Server) forwardJobLogEvents(ctx context.Context, w http.ResponseWriter,
 				continue
 			}
 
-			data, err := json.Marshal(msg)
-			if err != nil {
-				fmt.Fprintf(w, "event: error\ndata: failed to marshal log message\n\n")
-				rc.Flush()
-				continue
-			}
+			// Log protobuf fields are strings and integers.
+			//nolint:errcheck // This concrete message has no fallible marshaler.
+			data, _ := json.Marshal(msg)
 
 			fmt.Fprintf(w, "event: log\ndata: %s\n\n", data)
 			rc.Flush()

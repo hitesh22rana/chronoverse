@@ -140,9 +140,6 @@ func handleError(w http.ResponseWriter, err error, message ...string) {
 	}
 
 	code := status.Code(err)
-	if code == codes.OK {
-		return
-	}
 	httpStatus, ok := grpcToHTTPStatus[code]
 	if !ok {
 		return

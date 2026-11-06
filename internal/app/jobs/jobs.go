@@ -205,7 +205,6 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		config, err := grpcserverpkg.LoadTLSConfig(cfg.TLSConfig.CAFile, cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
 		if err != nil {
 			loggerpkg.FromContext(ctx).Fatal("failed to load TLS credentials", zap.Error(err))
-			return nil
 		}
 
 		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(config)))
@@ -630,15 +629,11 @@ func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.Job
 	for {
 		select {
 		case <-ctx.Done():
-			switch ctx.Err() {
-			case context.Canceled:
-				// Client disconnected - just return, don't send error
+			if ctx.Err() == context.Canceled {
 				return nil
-			case context.DeadlineExceeded:
-				return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
-			default:
-				return status.Error(codes.Unknown, ctx.Err().Error())
 			}
+			// A completed context reports cancellation or deadline expiry.
+			return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
 		case data, ok := <-ch:
 			if !ok {
 				return nil

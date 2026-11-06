@@ -244,17 +244,22 @@ func TestBatchLaneStopsWhenProcessorCancelsParent(t *testing.T) {
 // A custom poller can supply nil records; the single-record lane must stop
 // without invoking the application handler or acknowledging malformed input.
 func TestRecordLaneStopsOnNilPollerRecord(t *testing.T) {
-	client := &batchCommitClient{commit: func(context.Context, ...*kgo.Record) error { t.Error("nil record committed"); return nil }}
-	runner := NewPartitionRunner(client, func(context.Context, *kgo.Record) error { t.Error("nil record processed"); return nil }, nil, nil)
-	lane := &partitionLane{key: partitionKey{topic: "jobs"}, notify: make(chan struct{}, 1)}
-	runner.lanes[lane.key] = lane
-	lane.enqueue([]*kgo.Record{nil})
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	runner.runLane(ctx, lane)
-	if lane.queueLen() != 0 {
-		t.Fatal("nil poller record left queued")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		client := &batchCommitClient{commit: func(context.Context, ...*kgo.Record) error { t.Error("nil record committed"); return nil }}
+		runner := NewPartitionRunner(client, func(context.Context, *kgo.Record) error { t.Error("nil record processed"); return nil }, nil, nil)
+		lane := &partitionLane{key: partitionKey{topic: "jobs"}, notify: make(chan struct{}, 1)}
+		runner.lanes[lane.key] = lane
+		lane.enqueue([]*kgo.Record{nil})
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		runner.runLane(ctx, lane)
+		if ctx.Err() != nil {
+			t.Fatalf("nil record only stopped after context expired: %v", ctx.Err())
+		}
+		if lane.queueLen() != 0 {
+			t.Fatal("nil poller record left queued")
+		}
+	})
 }
 
 func TestRunnerClientClosedResponseRetainsPrecedenceOverPollCancellation(t *testing.T) {

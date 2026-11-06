@@ -254,18 +254,21 @@ func TestRedisClosedClientLockAndWriteFailures(t *testing.T) {
 }
 
 func TestRedisStatsRejectsMalformedServerData(t *testing.T) {
-	for _, info := range []string{"# Stats\r\nevicted_keys:invalid\r\n", "# Stats\r\nkeyspace_hits:12\r\n"} {
-		t.Run(info, func(t *testing.T) {
+	for _, tc := range []struct{ info, message string }{
+		{"# Stats\r\nevicted_keys:invalid\r\n", "failed to parse evicted_keys"},
+		{"# Stats\r\nkeyspace_hits:12\r\n", "evicted_keys missing"},
+	} {
+		t.Run(tc.message, func(t *testing.T) {
 			address := redisProtocolPeer(t, nil, func(args []string) string {
 				if strings.EqualFold(args[0], "info") {
-					return fmt.Sprintf("$%d\r\n%s\r\n", len(info), info)
+					return fmt.Sprintf("$%d\r\n%s\r\n", len(tc.info), tc.info)
 				}
 				return redisHandshakeReply(args)
 			})
 			client := goredis.NewClient(&goredis.Options{Addr: address, MaxRetries: -1})
 			defer client.Close()
 			value, err := (&Store{client: client}).EvictedKeys(t.Context())
-			if value != 0 || status.Code(err) != codes.Internal {
+			if value != 0 || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("malformed stats = %d, %v", value, err)
 			}
 		})

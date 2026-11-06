@@ -42,24 +42,28 @@ func TestGetUserCacheCancellationDoesNotReachRepository(t *testing.T) {
 			name, wantCode = "canceled", codes.Canceled
 		}
 		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			repo := usersmock.NewMockRepository(ctrl)
-			var ctx context.Context
-			var cancel context.CancelFunc
-			if canceled {
-				ctx, cancel = context.WithCancel(t.Context())
-			} else {
-				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-			}
-			cancel()
-			// The real store wraps failures in a gRPC status, so the cache error
-			// never matched errors.Is; the caller's context carries the cause.
-			cache := &unavailableCache{err: status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err())}
-			got, err := users.New(validator.New(), repo, cache).
-				GetUser(ctx, &userpb.GetUserRequest{Id: "user-id"})
-			if got != nil || status.Code(err) != wantCode {
-				t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
-			}
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				repo := usersmock.NewMockRepository(ctrl)
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if canceled {
+					ctx, cancel = context.WithCancel(t.Context())
+				} else {
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				}
+				cancel()
+				// The real store wraps failures in a gRPC status, so the cache error
+				// never matched errors.Is; the caller's context carries the cause.
+				cache := &unavailableCache{err: status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err())}
+				got, err := users.New(validator.New(), repo, cache).
+					GetUser(ctx, &userpb.GetUserRequest{Id: "user-id"})
+				if got != nil || status.Code(err) != wantCode {
+					t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
+				}
+
+				synctest.Wait()
+			})
 		})
 	}
 }

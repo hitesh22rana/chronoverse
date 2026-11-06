@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -100,38 +101,43 @@ func TestWorkflowCacheCancellationDoesNotReachRepository(t *testing.T) {
 				name, wantCode = method+"/canceled", codes.Canceled
 			}
 			t.Run(name, func(t *testing.T) {
-				ctrl := gomock.NewController(t)
-				repo, cache := mocks.NewMockRepository(ctrl), mocks.NewMockCache(ctrl)
-				var ctx context.Context
-				var cancel context.CancelFunc
-				if canceled {
-					ctx, cancel = context.WithCancel(t.Context())
-				} else {
-					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-				}
-				cancel()
-				svc := service.New(validator.New(), repo, cache)
-				// The real store wraps failures in a gRPC status, so the cache error
-				// never matched errors.Is; the caller's context carries the cause.
-				cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-					nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err()),
-				)
-				if method == "get" {
-					got, err := svc.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{Id: cursorBoundaryWorkflow, UserId: cursorBoundaryOwner})
+				synctest.Test(t, func(t *testing.T) {
+					ctrl := gomock.NewController(t)
+					repo, cache := mocks.NewMockRepository(ctrl), mocks.NewMockCache(ctrl)
+					var ctx context.Context
+					var cancel context.CancelFunc
+					if canceled {
+						ctx, cancel = context.WithCancel(t.Context())
+					} else {
+						ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+					}
+					cancel()
+					svc := service.New(validator.New(), repo, cache)
+					// The real store wraps failures in a gRPC status, so the cache error
+					// never matched errors.Is; the caller's context carries the cause.
+					cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+						nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err()),
+					)
+					if method == "get" {
+						got, err := svc.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{Id: cursorBoundaryWorkflow, UserId: cursorBoundaryOwner})
+						if got != nil || status.Code(err) != wantCode {
+							t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
+						}
+						synctest.Wait()
+						return
+					}
+					req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner}
+					original := proto.Clone(req)
+					got, err := svc.ListWorkflows(ctx, req)
 					if got != nil || status.Code(err) != wantCode {
 						t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
 					}
-					return
-				}
-				req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner}
-				original := proto.Clone(req)
-				got, err := svc.ListWorkflows(ctx, req)
-				if got != nil || status.Code(err) != wantCode {
-					t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
-				}
-				if !proto.Equal(req, original) {
-					t.Fatal("request was mutated")
-				}
+					if !proto.Equal(req, original) {
+						t.Fatal("request was mutated")
+					}
+
+					synctest.Wait()
+				})
 			})
 		}
 	}

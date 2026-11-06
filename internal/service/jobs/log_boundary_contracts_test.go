@@ -103,53 +103,56 @@ func TestLogReadCacheCancellationDoesNotReachRepository(t *testing.T) {
 	t.Parallel()
 	for _, search := range []bool{false, true} {
 		for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
-			ctx, cancel := context.WithCancel(t.Context())
-			wantCode := codes.Canceled
-			if errors.Is(cause, context.DeadlineExceeded) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				wantCode := codes.Canceled
+				if errors.Is(cause, context.DeadlineExceeded) {
+					cancel()
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+					wantCode = codes.DeadlineExceeded
+				}
 				cancel()
-				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-				wantCode = codes.DeadlineExceeded
-			}
-			cancel()
-			ctrl := gomock.NewController(t)
-			cache := jobsmock.NewMockCache(ctrl)
-			repo := jobsmock.NewMockRepository(ctrl)
-			svc := New(validator.New(), repo, cache)
-			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-				func(got context.Context, _ string, _ any) (any, error) {
-					require.ErrorIs(t, got.Err(), cause)
-					return nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", cause)
-				},
-			)
-			var result *jobsmodel.GetJobLogsResponse
-			var err error
-			if search {
-				result,
-					err = svc.SearchJobLogs(ctx,
-					&jobspb.SearchJobLogsRequest{
-						Id:         "job",
-						WorkflowId: "workflow",
-						UserId:     "user",
-						Cursor:     "page",
-						Filters: &jobspb.SearchJobLogsFilters{
-							Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-							Message: "query",
-						},
-					})
-			} else {
-				result,
-					err = svc.GetJobLogs(ctx,
-					&jobspb.GetJobLogsRequest{
-						Id:         "job",
-						WorkflowId: "workflow",
-						UserId:     "user",
-						Cursor:     "page",
-						Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
-					})
-			}
-			require.Nil(t, result)
-			require.Equal(t, wantCode, status.Code(err))
-			require.Contains(t, err.Error(), cause.Error())
+				ctrl := gomock.NewController(t)
+				cache := jobsmock.NewMockCache(ctrl)
+				repo := jobsmock.NewMockRepository(ctrl)
+				svc := New(validator.New(), repo, cache)
+				cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+					func(got context.Context, _ string, _ any) (any, error) {
+						require.ErrorIs(t, got.Err(), cause)
+						return nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", cause)
+					},
+				)
+				var result *jobsmodel.GetJobLogsResponse
+				var err error
+				if search {
+					result,
+						err = svc.SearchJobLogs(ctx,
+						&jobspb.SearchJobLogsRequest{
+							Id:         "job",
+							WorkflowId: "workflow",
+							UserId:     "user",
+							Cursor:     "page",
+							Filters: &jobspb.SearchJobLogsFilters{
+								Stream:  jobspb.LogStream_LOG_STREAM_ALL,
+								Message: "query",
+							},
+						})
+				} else {
+					result,
+						err = svc.GetJobLogs(ctx,
+						&jobspb.GetJobLogsRequest{
+							Id:         "job",
+							WorkflowId: "workflow",
+							UserId:     "user",
+							Cursor:     "page",
+							Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
+						})
+				}
+				require.Nil(t, result)
+				require.Equal(t, wantCode, status.Code(err))
+				require.Contains(t, err.Error(), cause.Error())
+				synctest.Wait()
+			})
 		}
 	}
 }

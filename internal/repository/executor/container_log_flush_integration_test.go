@@ -30,6 +30,10 @@ func verifyContainerLogFlush(t *testing.T, batchSize int) {
 	cfg := defaultConfig()
 	cfg.JobLogBatchSize = batchSize
 	cfg.JobLogBatchInterval = 5 * time.Millisecond
+	if batchSize == 1 {
+		// Keep the timer beyond the test deadline so only a full batch can flush.
+		cfg.JobLogBatchInterval = time.Minute
+	}
 	// An unset retry budget must still attempt durable publication once.
 	cfg.JobLogPublishRetries = 0
 	repo := &Repository{cfg: cfg, kfk: testkit.Kafka(t)}

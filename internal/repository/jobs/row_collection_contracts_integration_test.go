@@ -36,6 +36,7 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		{
 			name: "replay identity scan", query: `SELECT NULL::text`, message: "failed to collect renewed recovery replay leases",
 			collect: func(t *testing.T, _ pgx.Tx, rows pgx.Rows) error {
+				t.Helper()
 				result, err := collectRenewedRecoveryJobs(rows, []*jobsmodel.ExpiredJobLease{{ID: "first", LeaseToken: "token"}})
 				if result != nil {
 					t.Errorf("failed collection returned identities: %v", result)
@@ -46,6 +47,7 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		{
 			name: "replay stream error", query: `SELECT CASE WHEN i=1 THEN 'first' ELSE (1/(i-i))::text END FROM generate_series(1,2) AS i`, message: "division by zero",
 			collect: func(t *testing.T, _ pgx.Tx, rows pgx.Rows) error {
+				t.Helper()
 				result, err := collectRenewedRecoveryJobs(rows, []*jobsmodel.ExpiredJobLease{{ID: "first", LeaseToken: "token"}})
 				if result != nil {
 					t.Errorf("failed stream returned partial identities: %v", result)
@@ -56,6 +58,7 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 		{
 			name: "lease timestamp scan", query: strings.Replace(projection, "now() AS scheduled_at", "NULL::timestamptz AS scheduled_at", 1), message: "failed to collect expired job leases",
 			collect: func(t *testing.T, tx pgx.Tx, rows pgx.Rows) error {
+				t.Helper()
 				result, err := repo.completeExpiredRecovery(t.Context(), tx, scope, "driver-contract", strings.Repeat("0", 64), rows)
 				if result != nil {
 					t.Errorf("failed collection returned leases: %v", result)
@@ -68,6 +71,7 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 			query:   strings.Replace(projection, "'id'::text AS id", "CASE WHEN i=1 THEN 'first' ELSE (1/(i-i))::text END AS id", 1) + ` FROM generate_series(1,2) AS i`,
 			message: "division by zero",
 			collect: func(t *testing.T, tx pgx.Tx, rows pgx.Rows) error {
+				t.Helper()
 				result, err := repo.completeExpiredRecovery(t.Context(), tx, scope, "driver-contract", strings.Repeat("0", 64), rows)
 				if result != nil {
 					t.Errorf("failed stream returned partial leases: %v", result)

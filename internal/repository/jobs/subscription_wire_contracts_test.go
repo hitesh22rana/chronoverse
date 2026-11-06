@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,8 +113,8 @@ func TestJobLogSubscriptionRejectsMalformedWireAcknowledgements(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
-				if err := rdb.Close(); err != nil {
-					t.Error(err)
+				if closeErr := rdb.Close(); closeErr != nil {
+					t.Error(closeErr)
 				}
 			})
 			repo := &Repository{rdb: rdb}
@@ -166,7 +167,7 @@ func serveMalformedSubscription(t *testing.T, conn net.Conn, channel, reply stri
 		if strings.EqualFold(command[0], "subscribe") {
 			// Repository rejection must close its subscription, releasing the peer.
 			_, readErr = reader.ReadByte()
-			if readErr == io.EOF {
+			if errors.Is(readErr, io.EOF) {
 				close(done)
 			}
 			return

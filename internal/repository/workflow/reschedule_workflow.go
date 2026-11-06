@@ -46,7 +46,7 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	lockKey := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, workflowsmodel.ActionReschedule.ToString(), workflowID)
 	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)
 	if err != nil || !isLockAcquired {
-		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+		return distributedLockError(parentCtx)
 	}
 	defer func() {
 		//nolint:errcheck // Lock may have expired.

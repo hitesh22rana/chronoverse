@@ -33,7 +33,7 @@ func (r *Repository) deleteWorkflow(parentCtx context.Context, workflowID, userI
 	)
 	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, deleteWorkflowExpirationTimeout)
 	if err != nil || !isLockAcquired {
-		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+		return distributedLockError(parentCtx)
 	}
 
 	defer func() {
@@ -144,6 +144,17 @@ func (r *Repository) waitForMeiliSearchDeleteTask(parentCtx context.Context, wor
 
 		return nil
 	})
+}
+
+// distributedLockError preserves caller cancellation. The Redis store wraps
+// lock failures in a gRPC status, so the context is the reliable source of a
+// canceled or expired caller, and only genuine contention is reported Aborted.
+func distributedLockError(ctx context.Context) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return status.FromContextError(ctxErr).Err()
+	}
+
+	return status.Error(codes.Aborted, "failed to acquire distributed lock")
 }
 
 func deleteWorkflowStatusError(message string, err error) error {

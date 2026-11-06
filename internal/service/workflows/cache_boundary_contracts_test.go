@@ -92,35 +92,86 @@ func TestListWorkflowsCacheWriteFailureDoesNotLoseResults(t *testing.T) {
 	}
 }
 
-func TestListWorkflowsStopsOnCacheContextFailure(t *testing.T) {
-	for _, canceled := range []bool{false, true} {
-		name, wantCode := "deadline", codes.DeadlineExceeded
-		if canceled {
-			name, wantCode = "canceled", codes.Canceled
-		}
-		t.Run(name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			repo, cache := mocks.NewMockRepository(ctrl), mocks.NewMockCache(ctrl)
-			var ctx context.Context
-			var cancel context.CancelFunc
+func TestWorkflowCacheCancellationDoesNotReachRepository(t *testing.T) {
+	for _, method := range []string{"get", "list"} {
+		for _, canceled := range []bool{false, true} {
+			name, wantCode := method+"/deadline", codes.DeadlineExceeded
 			if canceled {
-				ctx, cancel = context.WithCancel(t.Context())
-			} else {
-				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				name, wantCode = method+"/canceled", codes.Canceled
 			}
-			cancel()
-			req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner}
-			original := proto.Clone(req)
-			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, ctx.Err())
-			got, err := service.New(validator.New(), repo, cache).ListWorkflows(ctx, req)
-			if got != nil || status.Code(err) != wantCode {
-				t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
-			}
-			if !proto.Equal(req, original) {
-				t.Fatal("request was mutated")
-			}
-		})
+			t.Run(name, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				repo, cache := mocks.NewMockRepository(ctrl), mocks.NewMockCache(ctrl)
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if canceled {
+					ctx, cancel = context.WithCancel(t.Context())
+				} else {
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				}
+				cancel()
+				svc := service.New(validator.New(), repo, cache)
+				// The real store wraps failures in a gRPC status, so the cache error
+				// never matched errors.Is; the caller's context carries the cause.
+				cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+					nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err()),
+				)
+				if method == "get" {
+					got, err := svc.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{Id: cursorBoundaryWorkflow, UserId: cursorBoundaryOwner})
+					if got != nil || status.Code(err) != wantCode {
+						t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
+					}
+					return
+				}
+				req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner}
+				original := proto.Clone(req)
+				got, err := svc.ListWorkflows(ctx, req)
+				if got != nil || status.Code(err) != wantCode {
+					t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
+				}
+				if !proto.Equal(req, original) {
+					t.Fatal("request was mutated")
+				}
+			})
+		}
 	}
+}
+
+// storedCache reports a wrapped cache failure without owning test cleanup.
+type storedCache struct{ err error }
+
+func (c *storedCache) Get(context.Context, string, any) (any, error) { return nil, c.err }
+
+func (*storedCache) Set(context.Context, string, any, time.Duration) error { return nil }
+
+func (*storedCache) Delete(context.Context, string) error { return nil }
+
+func (*storedCache) DeleteByPattern(context.Context, string) (int64, error) { return 0, nil }
+
+func TestWorkflowCacheFailureWithLiveContextFallsBackToRepository(t *testing.T) {
+	wrapped := status.Errorf(codes.Internal, "failed to get value from redis: %v", context.DeadlineExceeded)
+	t.Run("get", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo := mocks.NewMockRepository(ctrl)
+		want := &model.GetWorkflowResponse{ID: cursorBoundaryWorkflow, Name: "live context"}
+		repo.EXPECT().GetWorkflow(gomock.Any(), cursorBoundaryWorkflow, cursorBoundaryOwner).Return(want, nil)
+		got, err := service.New(validator.New(), repo, &storedCache{err: wrapped}).
+			GetWorkflow(t.Context(), &workflowspb.GetWorkflowRequest{Id: cursorBoundaryWorkflow, UserId: cursorBoundaryOwner})
+		if err != nil || got != want {
+			t.Fatalf("response=%+v err=%v", got, err)
+		}
+	})
+	t.Run("list", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		repo := mocks.NewMockRepository(ctrl)
+		want := &model.ListWorkflowsResponse{}
+		repo.EXPECT().ListWorkflows(gomock.Any(), cursorBoundaryOwner, "", &model.ListWorkflowsFilters{}).Return(want, nil)
+		got, err := service.New(validator.New(), repo, &storedCache{err: wrapped}).
+			ListWorkflows(t.Context(), &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner})
+		if err != nil || got != want {
+			t.Fatalf("response=%+v err=%v", got, err)
+		}
+	})
 }
 
 func assertBoundaryCacheOutcome(ctx context.Context, t *testing.T, messages <-chan string, wantMessage string, released <-chan (<-chan struct{})) {

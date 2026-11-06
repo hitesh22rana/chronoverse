@@ -101,7 +101,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 	)
 	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, buildWorkflowDefaultExpirationTimeout)
 	if err != nil || !isLockAcquired {
-		return status.Error(codes.Aborted, "failed to acquire distributed lock")
+		return distributedLockError(parentCtx)
 	}
 
 	defer func() {

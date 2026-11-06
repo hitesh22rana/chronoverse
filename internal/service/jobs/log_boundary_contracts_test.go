@@ -154,6 +154,54 @@ func TestLogReadCacheCancellationDoesNotReachRepository(t *testing.T) {
 	}
 }
 
+func TestLogReadCacheFailureWithLiveContextFallsBackToRepository(t *testing.T) {
+	t.Parallel()
+	for _, search := range []bool{false, true} {
+		t.Run(map[bool]string{false: "get", true: "search"}[search], func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+			cache, repo := jobsmock.NewMockCache(ctrl), jobsmock.NewMockRepository(ctrl)
+			svc := New(validator.New(), repo, cache)
+			// A cache-internal timeout is wrapped in a gRPC status while the caller's
+			// context stays healthy, so the read must fall back to the repository.
+			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+				nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", context.DeadlineExceeded),
+			)
+			response := &jobsmodel.GetJobLogsResponse{ID: "job", WorkflowID: "workflow"}
+			var result *jobsmodel.GetJobLogsResponse
+			var err error
+			if search {
+				repo.EXPECT().SearchJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
+				result,
+					err = svc.SearchJobLogs(t.Context(),
+					&jobspb.SearchJobLogsRequest{
+						Id:         "job",
+						WorkflowId: "workflow",
+						UserId:     "user",
+						Cursor:     "page",
+						Filters: &jobspb.SearchJobLogsFilters{
+							Stream:  jobspb.LogStream_LOG_STREAM_ALL,
+							Message: "query",
+						},
+					})
+			} else {
+				repo.EXPECT().GetJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
+				result,
+					err = svc.GetJobLogs(t.Context(),
+					&jobspb.GetJobLogsRequest{
+						Id:         "job",
+						WorkflowId: "workflow",
+						UserId:     "user",
+						Cursor:     "page",
+						Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
+					})
+			}
+			require.NoError(t, err)
+			require.Same(t, response, result)
+		})
+	}
+}
+
 // logContractCache makes asynchronous completion observable without sleeps.
 type logContractCache struct {
 	err  error

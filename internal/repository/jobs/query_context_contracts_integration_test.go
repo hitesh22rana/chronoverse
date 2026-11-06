@@ -141,6 +141,7 @@ func TestIntegrationCancelCanceledBeforeBeginPreservesSnapshot(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // Checks rollback and retry through one transaction failure.
 func TestIntegrationCancelSnapshotQueryFailureRollsBackReservation(t *testing.T) {
 	repo := newCommitCancellationRepository(t)
 	pg := testkit.Postgres(t)

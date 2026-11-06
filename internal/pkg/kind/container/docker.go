@@ -469,7 +469,7 @@ func (w *DockerWorkflow) DockerHost() string {
 
 // Execute runs a command in a new container and streams the logs.
 //
-//nolint:gocyclo,gocritic // This function is not complex enough to warrant a refactor
+//nolint:gocritic // Preserve the established Execute result signature.
 func (w *DockerWorkflow) Execute(
 	ctx context.Context,
 	timeout time.Duration,
@@ -532,7 +532,7 @@ func (w *DockerWorkflow) Execute(
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 
-	go func() { //nolint:gosec // Execution must remain tied to the caller context so cancellation stops the container.
+	go func() {
 		defer close(logs)
 		defer close(errs)
 		defer cancel()
@@ -555,19 +555,7 @@ func (w *DockerWorkflow) Execute(
 
 		select {
 		case <-timeoutCtx.Done():
-			if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
-				errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", timeoutCtx.Err()))
-			} else {
-				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", timeoutCtx.Err())
-			}
-
-			stopTimeout := int(containerStopTimeout.Seconds())
-			stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
-			//nolint:errcheck,contextcheck // Ignore error, as we are trying to stop the container gracefully.
-			_ = w.Client.ContainerStop(stopCtx, containerID, container.StopOptions{
-				Timeout: &stopTimeout,
-			})
-			stopCancel()
+			w.publishExecutionFailure(timeoutCtx, containerID, errs, nil)
 
 			stopLogStream()
 			return
@@ -578,13 +566,9 @@ func (w *DockerWorkflow) Execute(
 				return
 			}
 
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", ctx.Err()))
-			} else if errors.Is(ctx.Err(), context.Canceled) {
-				errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", ctx.Err())
-			} else {
-				errs <- status.Errorf(codes.Aborted, "container execution error: %v", err)
-			}
+			// timeoutCtx, not the caller ctx: the internal deadline is the only
+			// signal available when the wait error races the deadline.
+			w.publishExecutionFailure(timeoutCtx, containerID, errs, err)
 
 			stopLogStream()
 			return
@@ -601,6 +585,26 @@ func (w *DockerWorkflow) Execute(
 	}()
 
 	return containerID, logs, errs, nil
+}
+
+// publishExecutionFailure reports the terminal cause before bounded cleanup.
+func (w *DockerWorkflow) publishExecutionFailure(ctx context.Context, containerID string, errs chan<- error, waitErr error) {
+	contextErr := ctx.Err()
+	switch {
+	case errors.Is(contextErr, context.DeadlineExceeded):
+		errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", contextErr))
+	case errors.Is(contextErr, context.Canceled):
+		errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", contextErr)
+	default:
+		errs <- status.Errorf(codes.Aborted, "container execution error: %v", waitErr)
+		return
+	}
+
+	stopTimeout := int(containerStopTimeout.Seconds())
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
+	defer stopCancel()
+	//nolint:errcheck,contextcheck // Terminal failure is already published; cleanup must outlive the canceled execution.
+	_ = w.Client.ContainerStop(stopCtx, containerID, container.StopOptions{Timeout: &stopTimeout})
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {

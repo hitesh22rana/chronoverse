@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,13 +24,33 @@ import (
 
 type commitCancelContextKey struct{}
 
-// OnStart runs synchronously before pgx sends COMMIT. Only the private marked
-// caller is canceled; other queries and repositories keep their original context.
+type queryCancelContextKey struct{}
+
+type queryCancelTarget struct {
+	operation string
+	sqlPrefix string
+	cancel    context.CancelFunc
+	fired     atomic.Bool
+}
+
+// OnStart runs before pgx sends the marked statement. Only private context
+// markers cancel callers; other queries retain their original context.
 type commitCancelProcessor struct{}
 
 func (*commitCancelProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
 	if cancel, ok := ctx.Value(commitCancelContextKey{}).(context.CancelFunc); ok && span.Name() == "COMMIT" {
 		cancel()
+	}
+	target, ok := ctx.Value(queryCancelContextKey{}).(*queryCancelTarget)
+	if !ok || span.Name() != target.operation {
+		return
+	}
+	for _, attribute := range span.Attributes() {
+		if attribute.Key == "db.query.text" && strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), target.sqlPrefix) {
+			target.fired.Store(true)
+			target.cancel()
+			return
+		}
 	}
 }
 func (*commitCancelProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
@@ -183,4 +204,14 @@ func TestIntegrationCancelReplayCommitCancellationPreservesSnapshot(t *testing.T
 		t.Fatalf("retry=%+v error=%v, want %+v", retry, err, first)
 	}
 	assertNoOutboxEffect(t.Context(), t, pg, fixture)
+}
+
+// Operation and SQL are both required: command reservation and recovery each
+// begin WITH, so matching only an operation would cancel before the target phase.
+func cancelAtQueryContext(t *testing.T, operation, sqlPrefix string) (context.Context, *queryCancelTarget) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	target := &queryCancelTarget{operation: operation, sqlPrefix: strings.TrimSpace(sqlPrefix), cancel: cancel}
+	return context.WithValue(ctx, queryCancelContextKey{}, target), target
 }

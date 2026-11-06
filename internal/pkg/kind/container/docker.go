@@ -566,6 +566,8 @@ func (w *DockerWorkflow) Execute(
 				return
 			}
 
+			// timeoutCtx, not the caller ctx: the internal deadline is the only
+			// signal available when the wait error races the deadline.
 			w.publishExecutionFailure(timeoutCtx, containerID, errs, err)
 
 			stopLogStream()

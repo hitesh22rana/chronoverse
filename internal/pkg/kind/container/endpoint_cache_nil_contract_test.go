@@ -63,3 +63,38 @@ func TestEndpointCacheRetriesRejectedNilFactoryResult(t *testing.T) {
 		t.Fatalf("valid client closed %d times", want.closes)
 	}
 }
+
+func TestEndpointCacheRejectsTypedNilPointerFactoryResult(t *testing.T) {
+	cache := container.NewEndpointCache(func(string) (*nilContractClient, error) {
+		//nolint:nilnil // Reproduces an invalid public factory result that the cache must reject.
+		return nil, nil
+	})
+	client, err := cache.Get("runtime")
+	if client != nil || status.Code(err) != codes.Internal {
+		t.Fatalf("typed nil factory result = %v, %v", client, err)
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("Close after rejected typed nil panicked: %v", recovered)
+		}
+	}()
+	if err := cache.Close(); err != nil {
+		t.Fatalf("Close after rejected typed nil = %v", err)
+	}
+}
+
+type valueContractClient struct{}
+
+func (valueContractClient) Close() error { return nil }
+
+func TestEndpointCacheAcceptsValueClient(t *testing.T) {
+	cache := container.NewEndpointCache(func(string) (valueContractClient, error) {
+		return valueContractClient{}, nil
+	})
+	if _, err := cache.Get("runtime"); err != nil {
+		t.Fatalf("value client = %v", err)
+	}
+	if err := cache.Close(); err != nil {
+		t.Fatalf("Close value client = %v", err)
+	}
+}

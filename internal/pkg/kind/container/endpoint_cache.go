@@ -2,6 +2,7 @@ package container
 
 import (
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -76,7 +77,7 @@ func (c *EndpointCache[T]) Get(endpoint string) (T, error) {
 		if err != nil {
 			return zero, err
 		}
-		if any(client) == nil {
+		if isNilEndpointClient(client) {
 			return zero, status.Error(codes.Internal, "endpoint factory returned nil client")
 		}
 
@@ -100,6 +101,21 @@ func (c *EndpointCache[T]) Get(endpoint string) (T, error) {
 	// Every successful flight returns T; nil interface factory results are rejected.
 	//nolint:errcheck,forcetypeassert // Cache entries and successful factory results have type T.
 	return value.(T), nil
+}
+
+// isNilEndpointClient reports whether a factory returned a nil client. A typed
+// nil is non-nil as any, but Close or any other method call can still panic.
+func isNilEndpointClient[T closeable](client T) bool {
+	value := reflect.ValueOf(client)
+	if !value.IsValid() {
+		return true
+	}
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func (c *EndpointCache[T]) evictExpiredLocked(now time.Time) []T {

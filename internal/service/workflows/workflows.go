@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -366,8 +365,10 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
 	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+		// The cache wraps its own failures in a gRPC status, so read cancellation
+		// from the caller's context instead of inspecting the cache error.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = status.FromContextError(ctxErr).Err()
 			return nil, err
 		}
 	} else {
@@ -708,8 +709,8 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
 	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.FromContextError(cacheErr).Err()
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = status.FromContextError(ctxErr).Err()
 			return nil, err
 		}
 	} else {

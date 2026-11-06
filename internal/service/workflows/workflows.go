@@ -365,6 +365,8 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
 	if cacheErr != nil {
+		// The cache wraps its own failures in a gRPC status, so read cancellation
+		// from the caller's context instead of inspecting the cache error.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = status.FromContextError(ctxErr).Err()
 			return nil, err

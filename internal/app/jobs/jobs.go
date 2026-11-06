@@ -205,9 +205,6 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		config, err := grpcserverpkg.LoadTLSConfig(cfg.TLSConfig.CAFile, cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
 		if err != nil {
 			loggerpkg.FromContext(ctx).Fatal("failed to load TLS credentials", zap.Error(err))
-			// Fatal terminates the process; keep a custom fatal hook from starting
-			// the server without the credentials it was configured to require.
-			panic("unreachable: TLS credentials must fail startup")
 		}
 
 		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(config)))

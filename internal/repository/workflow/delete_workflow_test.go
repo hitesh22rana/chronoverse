@@ -284,6 +284,8 @@ func TestDeleteWorkflowStatusErrorMapping(t *testing.T) {
 	tests := []struct {
 		name     string
 		err      error
+		canceled bool
+		expired  bool
 		wantCode codes.Code
 		want     string
 	}{
@@ -312,6 +314,20 @@ func TestDeleteWorkflowStatusErrorMapping(t *testing.T) {
 			want:     "exec: context canceled",
 		},
 		{
+			name:     "canceled caller overrides a client error that does not unwrap",
+			err:      status.Error(codes.Internal, "meilisearch communication error: context canceled"),
+			canceled: true,
+			wantCode: codes.Canceled,
+			want:     context.Canceled.Error(),
+		},
+		{
+			name:     "expired caller overrides a client error that does not unwrap",
+			err:      status.Error(codes.Internal, "meilisearch communication error: context deadline exceeded"),
+			expired:  true,
+			wantCode: codes.DeadlineExceeded,
+			want:     context.DeadlineExceeded.Error(),
+		},
+		{
 			name:     "other errors are internal with the caller message",
 			err:      errors.New("storage failure"),
 			wantCode: codes.Internal,
@@ -323,7 +339,19 @@ func TestDeleteWorkflowStatusErrorMapping(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := deleteWorkflowStatusError("delete logs", tt.err)
+			ctx := t.Context()
+			switch {
+			case tt.canceled:
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			case tt.expired:
+				expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				defer cancel()
+				ctx = expired
+			}
+
+			got := deleteWorkflowStatusError(ctx, "delete logs", tt.err)
 			if code := status.Code(got); code != tt.wantCode {
 				t.Fatalf("deleteWorkflowStatusError() code = %s, want %s: %v", code, tt.wantCode, got)
 			}

@@ -387,7 +387,7 @@ func (r *Repository) deleteLogsFromClickHouseByEventID(parentCtx context.Context
     `, clickhouse.TableJobLogs, placeholders(len(eventIDs)))
 
 	if err := r.ch.Exec(ctx, query, toAnySlice(eventIDs)...); err != nil {
-		return jobLogsStatusError("failed to delete skipped ClickHouse logs", err)
+		return jobLogsStatusError(ctx, "failed to delete skipped ClickHouse logs", err)
 	}
 
 	return nil
@@ -410,7 +410,7 @@ func (r *Repository) deleteLogsFromMeiliSearchByID(parentCtx context.Context, ev
 	}
 	taskInfo, err := r.ms.Index(indexJobLogs.Name).DeleteDocumentsWithContext(ctx, meiliLogDocumentIDs(eventIDs), nil)
 	if err != nil {
-		return jobLogsStatusError("failed to delete skipped Meilisearch logs", err)
+		return jobLogsStatusError(ctx, "failed to delete skipped Meilisearch logs", err)
 	}
 	if taskInfo == nil {
 		return status.Error(codes.Internal, "failed to delete skipped Meilisearch logs: empty task response")
@@ -505,7 +505,7 @@ func (r *Repository) waitForMeiliSearchTask(parentCtx context.Context, taskUID i
 
 	task, err := r.ms.WaitForTaskWithContext(ctx, taskUID, jobLogsMeiliSearchPollPeriod)
 	if err != nil {
-		return jobLogsStatusError(fmt.Sprintf("failed waiting for Meilisearch %s task %d", operation, taskUID), err)
+		return jobLogsStatusError(ctx, fmt.Sprintf("failed waiting for Meilisearch %s task %d", operation, taskUID), err)
 	}
 
 	if task.Status != meilisearch.TaskStatusSucceeded {
@@ -522,7 +522,14 @@ func (r *Repository) waitForMeiliSearchTask(parentCtx context.Context, taskUID i
 	return nil
 }
 
-func jobLogsStatusError(message string, err error) error {
+// jobLogsStatusError prefers the caller's context because the Meilisearch
+// client wraps transport failures in an error type that does not unwrap to the
+// context cause, while the polling helper returns ctx.Err() directly.
+func jobLogsStatusError(ctx context.Context, message string, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return status.FromContextError(ctxErr).Err()
+	}
+
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	}

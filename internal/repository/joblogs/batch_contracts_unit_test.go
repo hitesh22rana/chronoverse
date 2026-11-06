@@ -69,18 +69,46 @@ func TestDeleteLogsFromClickHouseByEventIDWithoutEvents(t *testing.T) {
 
 func TestJobLogsStatusError(t *testing.T) {
 	tests := []struct {
-		name string
-		err  error
-		code codes.Code
-		want string
+		name     string
+		err      error
+		canceled bool
+		expired  bool
+		code     codes.Code
+		want     string
 	}{
 		{name: "deadline", err: context.DeadlineExceeded, code: codes.DeadlineExceeded, want: context.DeadlineExceeded.Error()},
 		{name: "canceled", err: context.Canceled, code: codes.Canceled, want: context.Canceled.Error()},
 		{name: "internal", err: errors.New("boom"), code: codes.Internal, want: "failed: boom"},
+		{
+			name:     "canceled caller overrides a client error that does not unwrap",
+			err:      status.Error(codes.Internal, "meilisearch communication error: context canceled"),
+			canceled: true,
+			code:     codes.Canceled,
+			want:     context.Canceled.Error(),
+		},
+		{
+			name:    "expired caller overrides a client error that does not unwrap",
+			err:     status.Error(codes.Internal, "meilisearch communication error: context deadline exceeded"),
+			expired: true,
+			code:    codes.DeadlineExceeded,
+			want:    context.DeadlineExceeded.Error(),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := jobLogsStatusError("failed", tt.err)
+			ctx := t.Context()
+			switch {
+			case tt.canceled:
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			case tt.expired:
+				expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				defer cancel()
+				ctx = expired
+			}
+
+			err := jobLogsStatusError(ctx, "failed", tt.err)
 			if status.Code(err) != tt.code || !strings.Contains(status.Convert(err).Message(), tt.want) {
 				t.Fatalf("status error = %v, want %v containing %q", err, tt.code, tt.want)
 			}

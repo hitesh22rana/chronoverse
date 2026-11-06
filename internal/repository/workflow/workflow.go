@@ -212,25 +212,20 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 
 func (r *Repository) sendNotification(ctx context.Context, userID, workflowID, jobID, title, message, kind, notificationType, occurrenceKey string) error {
 	var payload, notificationKey string
-	var err error
 	switch notificationType {
 	case notificationsmodel.EntityJob.ToString():
-		payload, err = notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
-		if err != nil {
-			return err
-		}
+		//nolint:errcheck // The helper marshals only a fixed map of string values.
+		payload, _ = notificationsmodel.CreateJobsNotificationPayload(title, message, workflowID, jobID)
 		notificationKey = idempotency.JobNotificationEventKey(jobID, title)
 	case notificationsmodel.EntityWorkflow.ToString():
-		payload, err = notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
-		if err != nil {
-			return err
-		}
+		//nolint:errcheck // The helper marshals only a fixed map of string values.
+		payload, _ = notificationsmodel.CreateWorkflowsNotificationPayload(title, message, workflowID)
 		notificationKey = idempotency.WorkflowNotificationEventKey(workflowID, title, occurrenceKey)
 	default:
 		return status.Error(codes.InvalidArgument, "invalid notification kind")
 	}
 
-	_, err = r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
+	_, err := r.svc.Notifications.CreateNotification(ctx, &notificationspb.CreateNotificationRequest{
 		UserId:         userID,
 		Kind:           kind,
 		Payload:        payload,

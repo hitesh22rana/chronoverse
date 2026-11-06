@@ -236,10 +236,8 @@ func (r *Repository) replayCanceledJobContainerLogs(
 			}
 			return err
 		case <-ctx.Done():
-			if ctx.Err() == context.DeadlineExceeded {
-				return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
-			}
-			return status.Error(codes.Canceled, ctx.Err().Error())
+			// Parent cancellation is detached; the only active cancel is this timeout.
+			return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
 		}
 	}
 

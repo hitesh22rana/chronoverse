@@ -37,12 +37,12 @@ type ledgerSnapshotReader interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
-func readBoundaryLedger(t *testing.T, reader ledgerSnapshotReader, scope, key string) boundaryLedgerSnapshot {
+func readBoundaryLedger(t *testing.T, reader ledgerSnapshotReader, scope string) boundaryLedgerSnapshot {
 	t.Helper()
 	var state boundaryLedgerSnapshot
 	err := reader.QueryRow(t.Context(), `SELECT request_hash,status,request_hash_aliases,resource_id,response::text,
  created_at,updated_at,completed_at,expires_at FROM command_idempotency_keys
- WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`, scope, ledger.OperationUserRegister, key).Scan(
+ WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`, scope, ledger.OperationUserRegister, "command").Scan(
 		&state.Hash, &state.Status, &state.Aliases, &state.Resource, &state.Response, &state.Created, &state.Updated, &state.Completed, &state.Expires,
 	)
 	require.NoError(t, err)
@@ -70,17 +70,17 @@ func TestIntegrationLedgerCompletionValidationKeepsTransactionAndOwner(t *testin
 	reservation, err := ledger.Reserve(t.Context(), tx, scope, ledger.OperationUserRegister, key, hash)
 	require.NoError(t, err)
 	require.False(t, reservation.Replay)
-	before := readBoundaryLedger(t, tx, scope, key)
+	before := readBoundaryLedger(t, tx, scope)
 	err = ledger.Complete(t.Context(), tx, scope, ledger.OperationUserRegister, "bad\nkey", hash, "resource", map[string]string{"id": "resource"}, time.Hour)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
-	require.Equal(t, before, readBoundaryLedger(t, tx, scope, key))
+	require.Equal(t, before, readBoundaryLedger(t, tx, scope))
 	err = ledger.Complete(t.Context(), tx, scope, ledger.OperationUserRegister, key, hash, "resource", math.Inf(1), time.Hour)
 	require.Equal(t, codes.Internal, status.Code(err))
 	require.Contains(t, err.Error(), "failed to encode idempotency response")
-	require.Equal(t, before, readBoundaryLedger(t, tx, scope, key))
+	require.Equal(t, before, readBoundaryLedger(t, tx, scope))
 	require.NoError(t, ledger.Complete(t.Context(), tx, scope, ledger.OperationUserRegister, key, hash, "resource", map[string]string{"id": "resource"}, time.Hour))
 	require.NoError(t, tx.Commit(t.Context()))
-	after := readBoundaryLedger(t, pg, scope, key)
+	after := readBoundaryLedger(t, pg, scope)
 	require.Equal(t, "COMPLETED", after.Status)
 	require.Equal(t, hash, after.Hash)
 	require.Equal(t, "resource", after.Resource.String)
@@ -102,7 +102,7 @@ func TestIntegrationLedgerReplaysSharedAliasWithoutRenewingOwnership(t *testing.
 	require.False(t, reservation.Replay)
 	require.NoError(t, ledger.Complete(t.Context(), tx, scope, ledger.OperationUserRegister, key, oldHash, "resource", map[string]string{"id": "resource"}, time.Hour))
 	require.NoError(t, tx.Commit(t.Context()))
-	before := readBoundaryLedger(t, pg, scope, key)
+	before := readBoundaryLedger(t, pg, scope)
 	replayTx := reserveTx(t.Context(), t, pg)
 	cleanupBoundaryTx(t, replayTx)
 	replay, err := ledger.Reserve(t.Context(), replayTx, scope, ledger.OperationUserRegister, key, newHash, commonHash)
@@ -111,7 +111,7 @@ func TestIntegrationLedgerReplaysSharedAliasWithoutRenewingOwnership(t *testing.
 	require.Equal(t, "resource", replay.ResourceID)
 	require.JSONEq(t, `{"id":"resource"}`, string(replay.Response))
 	require.NoError(t, replayTx.Commit(t.Context()))
-	require.Equal(t, before, readBoundaryLedger(t, pg, scope, key))
+	require.Equal(t, before, readBoundaryLedger(t, pg, scope))
 }
 
 type (
@@ -175,7 +175,7 @@ func TestIntegrationLedgerReplayReadFailurePreservesCompletedCommand(t *testing.
 	require.False(t, initial.Replay)
 	require.NoError(t, ledger.Complete(t.Context(), initialTx, scope, ledger.OperationUserRegister, key, hash, "resource", json.RawMessage(`{"id":"resource"}`), time.Hour))
 	require.NoError(t, initialTx.Commit(t.Context()))
-	before := readBoundaryLedger(t, pg, scope, key)
+	before := readBoundaryLedger(t, pg, scope)
 	replayTx := reserveTx(t.Context(), t, pg)
 	cleanupBoundaryTx(t, replayTx)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -194,7 +194,7 @@ func TestIntegrationLedgerReplayReadFailurePreservesCompletedCommand(t *testing.
 	cleanup, cancelCleanup := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 	defer cancelCleanup()
 	require.NoError(t, replayTx.Rollback(cleanup))
-	require.Equal(t, before, readBoundaryLedger(t, pg, scope, key))
+	require.Equal(t, before, readBoundaryLedger(t, pg, scope))
 	retryTx := reserveTx(t.Context(), t, pg)
 	cleanupBoundaryTx(t, retryTx)
 	retry, err := ledger.Reserve(t.Context(), retryTx, scope, ledger.OperationUserRegister, key, hash)
@@ -203,5 +203,5 @@ func TestIntegrationLedgerReplayReadFailurePreservesCompletedCommand(t *testing.
 	require.Equal(t, "resource", retry.ResourceID)
 	require.JSONEq(t, `{"id":"resource"}`, string(retry.Response))
 	require.NoError(t, retryTx.Commit(t.Context()))
-	require.Equal(t, before, readBoundaryLedger(t, pg, scope, key))
+	require.Equal(t, before, readBoundaryLedger(t, pg, scope))
 }

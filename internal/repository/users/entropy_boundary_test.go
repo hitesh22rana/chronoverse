@@ -44,6 +44,7 @@ func TestRegistrationReportsEntropyFailureBeforeDatabaseAccess(t *testing.T) {
 	command := exec.CommandContext(ctx, executable, "-test.run=^TestRegistrationReportsEntropyFailureBeforeDatabaseAccess$")
 	command.Env = append(os.Environ(), child+"=1")
 	if directory := flag.Lookup("test.gocoverdir").Value.String(); directory != "" {
+		command.Args = append(command.Args, "-test.gocoverdir="+directory)
 		command.Env = append(command.Env, "GOCOVERDIR="+directory)
 	}
 	output, err := command.CombinedOutput()

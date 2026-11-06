@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -202,4 +203,31 @@ func TestRequestLoggingKeepsTraceAndResponseStatus(t *testing.T) {
 	require.EqualValues(t, http.StatusAccepted, fields["status"])
 	require.Equal(t, "/jobs", fields["path"])
 	require.NotContains(t, entries.All()[0].Message, "private")
+}
+
+func TestEventStreamRejectsWritersWithoutFlushing(t *testing.T) {
+	t.Parallel()
+	response := httptest.NewRecorder()
+	(&Server{}).handleJobEvents(nonStreamingLogResponse{response}, newJobLogsHandlerRequest("/events"))
+	require.Equal(t, http.StatusInternalServerError, response.Code)
+	require.Equal(t, "Streaming unsupported\n", response.Body.String())
+}
+
+func TestRequestLoggingClassifiesClientAndServerFailures(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		status int
+		level  zapcore.Level
+	}{{http.StatusBadRequest, zap.WarnLevel}, {http.StatusServiceUnavailable, zap.ErrorLevel}} {
+		core, entries := observer.New(zap.InfoLevel)
+		response := httptest.NewRecorder()
+		handler := (&Server{logger: zap.New(core)}).withRequestLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+		}))
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/jobs", http.NoBody))
+		require.Equal(t, tc.status, response.Code)
+		require.Len(t, entries.All(), 1)
+		require.Equal(t, tc.level, entries.All()[0].Level)
+		require.EqualValues(t, tc.status, entries.All()[0].ContextMap()["status"])
+	}
 }

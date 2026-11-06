@@ -255,3 +255,17 @@ func TestPublisherWarnsOnFailureWithoutBlockingDurableCaller(t *testing.T) {
 	require.EqualValues(t, 3, fields["sequence_num"])
 	require.Contains(t, fields["error"], "marshal job log event")
 }
+
+func TestMarshalDerivesStableCanonicalEventIdentity(t *testing.T) {
+	t.Parallel()
+	event := &jobsmodel.JobLogEvent{JobID: "550E8400-E29B-41D4-A716-446655440000", Stream: "stderr", SequenceNum: 5}
+	payload, err := Marshal(event)
+	require.NoError(t, err)
+	require.Equal(t, "log:550e8400-e29b-41d4-a716-446655440000:stderr:5", event.EventKey)
+	var decoded jobsmodel.JobLogEvent
+	require.NoError(t, json.Unmarshal(payload, &decoded))
+	require.Equal(t, *event, decoded)
+	repeated, err := Marshal(event)
+	require.NoError(t, err)
+	require.Equal(t, payload, repeated)
+}

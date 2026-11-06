@@ -122,3 +122,16 @@ func TestListProtocolSeparatesInternalPlacementFromPublicStatus(t *testing.T) {
 	require.Empty(t, public.Jobs[0].RuntimeNodeId)
 	require.Empty(t, public.Jobs[0].RuntimeEndpoint)
 }
+
+func TestListedFailureExposesSafeTerminalReason(t *testing.T) {
+	t.Parallel()
+	response := (&jobs.ListJobsResponse{Jobs: []*jobs.JobByWorkflowIDResponse{{
+		ID: "job", JobStatus: "FAILED",
+		TerminalReasonCode: sql.NullString{String: "NON_ZERO_EXIT", Valid: true},
+		LastErrorMessage:   sql.NullString{String: "secret backend diagnostic", Valid: true},
+	}}}).ToProto(false)
+	require.Len(t, response.Jobs, 1)
+	require.Equal(t, "NON_ZERO_EXIT", response.Jobs[0].StatusReasonCode)
+	require.Equal(t, "Process exited with non zero exit code", response.Jobs[0].StatusReasonMessage)
+	require.NotContains(t, response.Jobs[0].StatusReasonMessage, "secret")
+}

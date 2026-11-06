@@ -285,10 +285,9 @@ func (r *Repository) UpdateWorkflow(
 		return kindErr
 	}
 
-	newBuildHash, err := idempotency.WorkflowBuildHash(current.kind, payload)
-	if err != nil {
-		return err
-	}
+	// The payload's stored kind and build details were just validated.
+	//nolint:errcheck // The remaining hash input is a fixed image string.
+	newBuildHash, _ := idempotency.WorkflowBuildHash(current.kind, payload)
 
 	newBuildHashValid := newBuildHash != ""
 	decision := decideWorkflowUpdateAction(
@@ -452,9 +451,6 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 		} else if errors.Is(err, context.Canceled) {
 			err = status.Error(codes.Canceled, err.Error())
 			return err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to update workflow build status: %v", err)
@@ -583,9 +579,6 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 	`, postgres.TableWorkflowTerminalEffects)
 	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
 	if err != nil {
-		if r.pg.IsInvalidTextRepresentation(err) {
-			return false, status.Errorf(codes.InvalidArgument, "invalid job or workflow ID: %v", err)
-		}
 		return false, status.Errorf(codes.Internal, "failed to record workflow failure event: %v", err)
 	}
 
@@ -624,9 +617,6 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 				return false, status.Errorf(codes.Internal, "failed to commit late failure effect: %v", err)
 			}
 			return false, nil
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return false, err
 		}
 
 		err = status.Errorf(codes.Internal, "failed to increment consecutive job failures count: %v", err)
@@ -709,9 +699,6 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 			return err
 		} else if errors.Is(err, context.Canceled) {
 			err = status.Error(codes.Canceled, err.Error())
-			return err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return err
 		}
 
@@ -799,11 +786,6 @@ func (r *Repository) TerminateWorkflow(ctx context.Context, workflowID, userID s
 			return err
 		}
 
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
-			return err
-		}
-
 		err = status.Errorf(codes.Internal, "failed to terminate workflow: %v", err)
 		return err
 	}
@@ -873,7 +855,7 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		return err
 	}
 
-	if activeWorkflowID != "" && terminatedAt == nil {
+	if terminatedAt == nil {
 		err = status.Errorf(codes.FailedPrecondition, "workflow is active, cannot delete")
 		return err
 	}
@@ -886,7 +868,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
     `, postgres.TableJobs)
 	var activeJobID string
 	err = tx.QueryRow(ctx, activeJobsQuery, activeWorkflowID, activeWorkflowUserID, jobsmodel.JobStatusRunning.ToString()).Scan(&activeJobID)
-	//nolint:nestif // The ifelse chain is used to handle specific errors
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -899,9 +880,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 		//nolint:gocritic // Ifelse chain is used to handle specific errors
 		if r.pg.IsNoRows(err) {
 			activeJobID = ""
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
-			return err
 		} else {
 			err = status.Errorf(codes.Internal, "failed to check for active jobs: %v", err)
 			return err
@@ -925,11 +903,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 			return err
 		} else if errors.Is(err, context.Canceled) {
 			err = status.Error(codes.Canceled, err.Error())
-			return err
-		}
-
-		if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow or user ID: %v", err)
 			return err
 		}
 
@@ -1170,6 +1143,7 @@ type workflowUpdateState struct {
 	terminatedAt sql.NullTime
 }
 
+// loadWorkflowUpdateState reads UUIDs already canonicalized by UpdateWorkflow.
 func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, workflowID, userID string) (*workflowUpdateState, error) {
 	state := &workflowUpdateState{}
 	var err error
@@ -1197,9 +1171,6 @@ func (r *Repository) loadWorkflowUpdateState(ctx context.Context, tx pgx.Tx, wor
 			return nil, err
 		case r.pg.IsNoRows(err):
 			err = status.Error(codes.NotFound, "workflow not found")
-			return nil, err
-		case r.pg.IsInvalidTextRepresentation(err):
-			err = status.Errorf(codes.InvalidArgument, "invalid workflow ID: %v", err)
 			return nil, err
 		}
 

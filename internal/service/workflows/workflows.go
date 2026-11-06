@@ -366,8 +366,8 @@ func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowR
 	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
 	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.Error(codes.DeadlineExceeded, cacheErr.Error())
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = status.FromContextError(ctxErr).Err()
 			return nil, err
 		}
 	} else {

@@ -1,3 +1,4 @@
+//nolint:testpackage // Exercises the unexported lock mapping and the private delete path.
 package workflow
 
 import (
@@ -11,21 +12,25 @@ import (
 func TestDistributedLockErrorMapping(t *testing.T) {
 	t.Parallel()
 
-	canceled, cancel := context.WithCancel(t.Context())
-	cancel()
-
 	for _, tt := range []struct {
-		name string
-		ctx  context.Context
-		want codes.Code
+		name     string
+		canceled bool
+		want     codes.Code
 	}{
-		{name: "healthy caller", ctx: t.Context(), want: codes.Aborted},
-		{name: "canceled caller", ctx: canceled, want: codes.Canceled},
+		{name: "healthy caller", want: codes.Aborted},
+		{name: "canceled caller", canceled: true, want: codes.Canceled},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := status.Code(distributedLockError(tt.ctx)); got != tt.want {
+			ctx := t.Context()
+			if tt.canceled {
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			}
+
+			if got := status.Code(distributedLockError(ctx)); got != tt.want {
 				t.Fatalf("distributedLockError() code = %s, want %s", got, tt.want)
 			}
 		})

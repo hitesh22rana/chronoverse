@@ -242,6 +242,8 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 	cacheKey := fmt.Sprintf("user:%s", req.GetId())
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &usersmodel.GetUserResponse{})
 	if cacheErr != nil {
+		// The cache wraps its own failures in a gRPC status, so read cancellation
+		// from the caller's context instead of inspecting the cache error.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			err = status.FromContextError(ctxErr).Err()
 			return nil, err

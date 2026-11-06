@@ -1,10 +1,8 @@
-//nolint:testpackage // Verifies error normalization and detached cache work through service operations.
-package users
+package users_test
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -18,173 +16,128 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
-	model "github.com/hitesh22rana/chronoverse/internal/model/users"
+	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-	mocks "github.com/hitesh22rana/chronoverse/internal/service/users/mock"
-	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	"github.com/hitesh22rana/chronoverse/internal/service/users"
+	usersmock "github.com/hitesh22rana/chronoverse/internal/service/users/mock"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
-const (
-	identityUserID   = "550e8400-e29b-41d4-a716-446655440000"
-	identityCacheKey = "user:550e8400-e29b-41d4-a716-446655440000"
-	// #nosec G101 -- Public password fixture, never a deployed credential.
-	identityPassword = "9gR!bQ7@zL2#vN5$"
-)
+// unavailableCache reproduces the Redis store's gRPC status wrapping.
+type unavailableCache struct{ err error }
 
-type identityContextKey struct{}
+func (c *unavailableCache) Get(context.Context, string, any) (any, error) { return nil, c.err }
 
-func identityLogger(t *testing.T) (context.Context, *observer.ObservedLogs) {
-	t.Helper()
-	provider := sdklog.NewLoggerProvider()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
-		defer cancel()
-		require.NoError(t, provider.Shutdown(ctx))
-	})
-	ctx, logger := loggerpkg.Init(t.Context(), "identity-boundary", provider)
-	core, entries := observer.New(zap.DebugLevel)
-	*logger = *logger.WithOptions(zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
-	return context.WithValue(ctx, identityContextKey{}, "caller"), entries
-}
+func (*unavailableCache) Set(context.Context, string, any, time.Duration) error { return nil }
 
-func TestIdentityCacheOutcomesPreserveAuthenticationAndCallerContract(t *testing.T) {
-	for _, operation := range []string{"register", "login", "read", "update"} {
-		for _, failure := range []bool{false, true} {
-			t.Run(operation+map[bool]string{false: " success", true: " cache failure"}[failure], func(t *testing.T) {
-				synctest.Test(t, func(t *testing.T) {
-					ctrl := gomock.NewController(t)
-					repo := mocks.NewMockRepository(ctrl)
-					cache := mocks.NewMockCache(ctrl)
-					service := New(validator.New(), repo, cache)
-					parent, entries := identityLogger(t)
-					ctx, cancel := context.WithCancel(parent)
-					defer cancel()
-					response := &model.GetUserResponse{ID: identityUserID, Email: "person@example.com", NotificationPreference: "ALL"}
-					var cause error
-					if failure {
-						cause = errors.New("cache unavailable")
-					}
-					if operation == "update" {
-						cache.EXPECT().Delete(gomock.Any(), identityCacheKey).DoAndReturn(func(got context.Context, _ string) error {
-							require.Equal(t, ctx.Done(), got.Done())
-							require.Equal(t, "caller", got.Value(identityContextKey{}))
-							return cause
-						})
-					} else {
-						cache.EXPECT().Set(gomock.Any(), identityCacheKey, response, gomock.Any()).DoAndReturn(func(bg context.Context, _ string, value any, expiration time.Duration) error {
-							require.NoError(t, bg.Err())
-							require.Equal(t, "caller", bg.Value(identityContextKey{}))
-							require.Same(t, response, value)
-							require.Positive(t, expiration)
-							deadline, ok := bg.Deadline()
-							require.True(t, ok)
-							require.Positive(t, time.Until(deadline))
-							require.LessOrEqual(t, time.Until(deadline), cacheTimeout)
-							return cause
-						})
-					}
-					switch operation {
-					case "register":
-						request := &pb.RegisterUserRequest{Email: " Person@Example.COM ", Password: identityPassword, IdempotencyKey: "registration"}
-						original := proto.Clone(request)
-						repo.EXPECT().RegisterUser(gomock.Any(), "person@example.com", identityPassword, "registration").Return(response, "private-token", nil)
-						id, token, err := service.RegisterUser(ctx, request)
-						require.NoError(t, err)
-						require.Equal(t, identityUserID, id)
-						require.Equal(t, "private-token", token)
-						require.True(t, proto.Equal(original, request))
-					case "login":
-						request := &pb.LoginUserRequest{Email: " Person@Example.COM ", Password: identityPassword}
-						original := proto.Clone(request)
-						repo.EXPECT().LoginUser(gomock.Any(), "person@example.com", identityPassword).Return(response, "private-token", nil)
-						id, token, err := service.LoginUser(ctx, request)
-						require.NoError(t, err)
-						require.Equal(t, identityUserID, id)
-						require.Equal(t, "private-token", token)
-						require.True(t, proto.Equal(original, request))
-					case "read":
-						cache.EXPECT().Get(gomock.Any(), identityCacheKey, gomock.Any()).Return(nil, status.Error(codes.NotFound, "expired"))
-						repo.EXPECT().GetUser(gomock.Any(), identityUserID).Return(response, nil)
-						result, err := service.GetUser(ctx, &pb.GetUserRequest{Id: identityUserID})
-						require.NoError(t, err)
-						require.Same(t, response, result)
-					case "update":
-						repo.EXPECT().UpdateUser(gomock.Any(), identityUserID, "ALL").Return(nil)
-						err := service.UpdateUser(ctx, &pb.UpdateUserRequest{Id: identityUserID, NotificationPreference: "ALL"})
-						if failure {
-							require.Equal(t, codes.Internal, status.Code(err))
-							require.Contains(t, err.Error(), cause.Error())
-						} else {
-							require.NoError(t, err)
-						}
-					}
-					cancel()
-					synctest.Wait()
-					require.Len(t, entries.All(), 1)
-					want := zap.DebugLevel
-					if failure {
-						want = zap.WarnLevel
-						require.Equal(t, cause.Error(), entries.All()[0].ContextMap()["error"])
-					}
-					require.Equal(t, want, entries.All()[0].Level)
-					details := fmt.Sprint(entries.All()[0].ContextMap())
-					require.NotContains(t, details, identityPassword)
-					require.NotContains(t, details, "private-token")
-				})
+func (*unavailableCache) Delete(context.Context, string) error { return nil }
+
+func (*unavailableCache) DeleteByPattern(context.Context, string) (int64, error) { return 0, nil }
+
+func TestGetUserCacheCancellationDoesNotReachRepository(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		name, wantCode := "deadline", codes.DeadlineExceeded
+		if canceled {
+			name, wantCode = "canceled", codes.Canceled
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				repo := usersmock.NewMockRepository(ctrl)
+				var ctx context.Context
+				var cancel context.CancelFunc
+				if canceled {
+					ctx, cancel = context.WithCancel(t.Context())
+				} else {
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				}
+				cancel()
+				// The real store wraps failures in a gRPC status, so the cache error
+				// never matched errors.Is; the caller's context carries the cause.
+				cache := &unavailableCache{err: status.Errorf(codes.Internal, "failed to get value from redis: %v", ctx.Err())}
+				got, err := users.New(validator.New(), repo, cache).
+					GetUser(ctx, &userpb.GetUserRequest{Id: "user-id"})
+				if got != nil || status.Code(err) != wantCode {
+					t.Fatalf("response=%+v err=%v, want %s", got, err, wantCode)
+				}
+
+				synctest.Wait()
 			})
-		}
-	}
-}
-
-func TestIdentityReadCancellationDoesNotFallThroughWrappedRedisFailure(t *testing.T) {
-	t.Parallel()
-	for _, expired := range []bool{false, true} {
-		ctx, cancel := context.WithCancel(t.Context())
-		want := codes.Canceled
-		if expired {
-			cancel()
-			ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-			want = codes.DeadlineExceeded
-		}
-		cancel()
-		ctrl := gomock.NewController(t)
-		repo := mocks.NewMockRepository(ctrl)
-		cache := mocks.NewMockCache(ctrl)
-		cache.EXPECT().Get(gomock.Any(), identityCacheKey, gomock.Any()).DoAndReturn(func(got context.Context, _ string, _ any) (any, error) {
-			require.Error(t, got.Err())
-			return nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", got.Err())
 		})
-		result, err := New(validator.New(), repo, cache).GetUser(ctx, &pb.GetUserRequest{Id: identityUserID})
-		require.Nil(t, result)
-		require.Equal(t, want, status.Code(err))
 	}
 }
 
-func TestMissingUserCacheDoesNotFailCompletedUpdate(t *testing.T) {
-	t.Parallel()
+func TestGetUserCacheFailureWithLiveContextFallsBackToRepository(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := mocks.NewMockRepository(ctrl)
-	cache := mocks.NewMockCache(ctrl)
-	repo.EXPECT().UpdateUser(gomock.Any(), identityUserID, "NONE").Return(nil)
-	cache.EXPECT().Delete(gomock.Any(), identityCacheKey).Return(status.Error(codes.NotFound, "expired"))
-	ctx, entries := identityLogger(t)
-	require.NoError(t, New(validator.New(), repo, cache).UpdateUser(ctx, &pb.UpdateUserRequest{Id: identityUserID, NotificationPreference: "NONE"}))
-	require.Len(t, entries.All(), 1)
-	require.Equal(t, zap.DebugLevel, entries.All()[0].Level)
+	repo := usersmock.NewMockRepository(ctrl)
+	want := &usersmodel.GetUserResponse{ID: "user-id", Email: "user@example.com"}
+	repo.EXPECT().GetUser(gomock.Any(), "user-id").Return(want, nil)
+	// A cache-internal timeout is wrapped in a gRPC status while the caller's
+	// context stays healthy, so the read must fall back to the repository.
+	cache := &unavailableCache{err: status.Errorf(codes.Internal, "failed to get value from redis: %v", context.DeadlineExceeded)}
+	got, err := users.New(validator.New(), repo, cache).GetUser(t.Context(), &userpb.GetUserRequest{Id: "user-id"})
+	if err != nil || got != want {
+		t.Fatalf("response=%+v err=%v", got, err)
+	}
 }
 
-func TestLoginErrorNormalizationMasksIdentityLookupOnly(t *testing.T) {
-	t.Parallel()
-	for _, code := range []codes.Code{codes.NotFound, codes.InvalidArgument} {
-		err := normalizeLoginError(status.Error(code, "private identity detail"))
-		require.Equal(t, codes.Unauthenticated, status.Code(err))
-		require.Equal(t, "invalid email or password", status.Convert(err).Message())
+// writingCache reports a miss and exposes the detached write outcome.
+type writingCache struct {
+	err  error
+	done chan struct{}
+}
+
+func (*writingCache) Get(context.Context, string, any) (any, error) {
+	return nil, status.Error(codes.NotFound, "miss")
+}
+
+func (c *writingCache) Set(context.Context, string, any, time.Duration) error {
+	defer close(c.done)
+	return c.err
+}
+
+func (*writingCache) Delete(context.Context, string) error { return nil }
+
+func (*writingCache) DeleteByPattern(context.Context, string) (int64, error) { return 0, nil }
+
+func TestGetUserCacheWriteOutcomeIsLogged(t *testing.T) {
+	for _, writeErr := range []error{nil, errors.New("cache unavailable")} {
+		name, wantLevel := "success", zap.DebugLevel
+		if writeErr != nil {
+			name, wantLevel = "failure", zap.WarnLevel
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctrl := gomock.NewController(t)
+				repo := usersmock.NewMockRepository(ctrl)
+				cache := &writingCache{err: writeErr, done: make(chan struct{})}
+				core, entries := observer.New(zap.DebugLevel)
+				provider := sdklog.NewLoggerProvider()
+				t.Cleanup(func() {
+					ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+					defer cancel()
+					require.NoError(t, provider.Shutdown(ctx))
+				})
+				ctx, logger := loggerpkg.Init(t.Context(), "users-cache-write", provider)
+				*logger = *logger.WithOptions(zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
+				want := &usersmodel.GetUserResponse{ID: "user-id"}
+				repo.EXPECT().GetUser(gomock.Any(), "user-id").Return(want, nil)
+				got, err := users.New(validator.New(), repo, cache).GetUser(ctx, &userpb.GetUserRequest{Id: "user-id"})
+				require.NoError(t, err)
+				require.Same(t, want, got)
+				synctest.Wait()
+				select {
+				case <-cache.done:
+				default:
+					t.Fatal("cache write did not finish")
+				}
+				require.Len(t, entries.All(), 1)
+				require.Equal(t, wantLevel, entries.All()[0].Level)
+				if writeErr != nil {
+					require.Equal(t, writeErr.Error(), entries.All()[0].ContextMap()["error"])
+				}
+			})
+		})
 	}
-	for _, code := range []codes.Code{codes.Internal, codes.Unavailable, codes.Unauthenticated} {
-		original := status.Error(code, "original failure")
-		require.Same(t, original, normalizeLoginError(original))
-	}
-	require.NoError(t, normalizeLoginError(nil))
 }

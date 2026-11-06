@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/meilisearch/meilisearch-go"
@@ -184,10 +185,9 @@ func (r *Repository) ScheduleJob(
 		scope = commandidempotency.UserScope(userID)
 		operation = commandidempotency.ManualScheduleOperation(workflowID)
 	}
-	requestHash, err := idempotency.HashCanonical(hashFields)
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash schedule command: %v", err)
-	}
+	// These fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(hashFields)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return "", err
@@ -307,12 +307,11 @@ func validateStoredScheduleCommand(
 	if workflowGeneration.Valid {
 		storedGeneration = workflowGeneration.Int64
 	}
-	storedRequestHash, err := idempotency.HashCanonical(
+	// These fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	storedRequestHash, _ := idempotency.HashCanonical(
 		scheduleJobHashFields(workflowID, userID, trigger, storedGeneration),
 	)
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to hash stored schedule command: %v", err)
-	}
 	if storedRequestHash != requestHash {
 		return status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
@@ -451,27 +450,19 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	requestHash, err := idempotency.HashCanonical(map[string]string{
+	// A string map always has a JSON representation.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]string{
 		"job_id":                jobID,
 		terminalReasonCodeField: terminalReasonCode,
 	})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to hash cancel command: %v", err)
-	}
 	scope := commandidempotency.JobScope(jobID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobCancel, commandID, requestHash)
 	if err != nil {
 		return nil, err
 	}
 	if reservation.Replay {
-		snapshot = &jobsmodel.CancelJobSnapshot{}
-		if err = json.Unmarshal(reservation.Response, snapshot); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
-		}
-		return snapshot, nil
+		return finishCancelReplay(ctx, tx, reservation.Response)
 	}
 
 	snapshot = &jobsmodel.CancelJobSnapshot{}
@@ -730,42 +721,9 @@ func (r *Repository) GetJobLogs(
 		}
 		defer rows.Close()
 
-		fetched := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
-		fetchedCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
-		for rows.Next() {
-			var (
-				ts      time.Time
-				msg     string
-				seq     uint32
-				strm    string
-				eventID string
-			)
-			if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
-				return status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
-			}
-			fetched = append(fetched, &jobsmodel.JobLog{
-				EventID:     eventID,
-				Timestamp:   ts,
-				Message:     msg,
-				SequenceNum: seq,
-				Stream:      strm,
-			})
-			fetchedCursors = append(fetchedCursors, jobLogsCursor{
-				SequenceNum: seq,
-				Stream:      strm,
-				EventID:     eventID,
-			})
-		}
-		if rowsErr := rows.Err(); rowsErr != nil {
-			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
-		}
-
-		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
-		if hasMore {
-			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
-		}
-		logs = fetched
-		return nil
+		var collectErr error
+		logs, nextCursor, collectErr = collectJobLogPage(rows, r.cfg.LogsFetchLimit)
+		return collectErr
 	})
 
 	eg.Go(func() error {
@@ -793,6 +751,47 @@ func (r *Repository) GetJobLogs(
 		JobLogs:    logs,
 		Cursor:     encodeJobLogsCursor(nextCursor),
 	}, fetchedStatus, nil
+}
+
+// collectJobLogPage decodes the driver rows and retains the first omitted row as
+// the inclusive pagination cursor. The caller owns closing the result set.
+func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, cursor jobLogsCursor, err error) {
+	var nextCursor jobLogsCursor
+	fetched := make([]*jobsmodel.JobLog, 0, limit+1)
+	fetchedCursors := make([]jobLogsCursor, 0, limit+1)
+	for rows.Next() {
+		var (
+			ts      time.Time
+			msg     string
+			seq     uint32
+			strm    string
+			eventID string
+		)
+		if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
+			return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
+		}
+		fetched = append(fetched, &jobsmodel.JobLog{
+			EventID:     eventID,
+			Timestamp:   ts,
+			Message:     msg,
+			SequenceNum: seq,
+			Stream:      strm,
+		})
+		fetchedCursors = append(fetchedCursors, jobLogsCursor{
+			SequenceNum: seq,
+			Stream:      strm,
+			EventID:     eventID,
+		})
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "rows error: %v", rowsErr)
+	}
+
+	fetched, hasMore := paginate.Trim(fetched, limit)
+	if hasMore {
+		nextCursor = fetchedCursors[limit]
+	}
+	return fetched, nextCursor, nil
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -981,12 +980,7 @@ func (r *Repository) SearchJobLogs(
 	)
 	highlightToken := ""
 	if !options.DisableHighlight {
-		var tokenErr error
-		highlightToken, tokenErr = newJobLogsHighlightToken()
-		if tokenErr != nil {
-			err = tokenErr
-			return nil, "", err
-		}
+		highlightToken = newJobLogsHighlightToken()
 	}
 
 	eg.Go(func() error {
@@ -1152,10 +1146,9 @@ func encodeJobLogsCursor(cursor jobLogsCursor) string {
 		return ""
 	}
 
-	payload, err := json.Marshal(cursor)
-	if err != nil {
-		return ""
-	}
+	// The cursor contains only strings and an unsigned integer.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	payload, _ := json.Marshal(cursor)
 
 	return base64.StdEncoding.EncodeToString(payload)
 }
@@ -1168,13 +1161,11 @@ func encodeListJobsCursor(cursor string) string {
 	return base64.StdEncoding.EncodeToString([]byte(cursor))
 }
 
-func newJobLogsHighlightToken() (string, error) {
+func newJobLogsHighlightToken() string {
 	token := make([]byte, jobLogsHighlightTokenBytes)
-	if _, err := rand.Read(token); err != nil {
-		return "", status.Errorf(codes.Internal, "failed to generate log highlight token: %v", err)
-	}
-
-	return hex.EncodeToString(token), nil
+	// crypto/rand.Read fills the buffer or terminates the process.
+	_, _ = rand.Read(token)
+	return hex.EncodeToString(token)
 }
 
 func jobLogsHighlightTags(token string) (startTag, endTag string) {
@@ -1399,4 +1390,17 @@ func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowG
 	}
 
 	return status.Errorf(codes.Internal, "failed to insert job: %v", err)
+}
+
+// finishCancelReplay validates the persisted response before committing its replay.
+// The caller retains rollback ownership.
+func finishCancelReplay(ctx context.Context, tx pgx.Tx, response []byte) (*jobsmodel.CancelJobSnapshot, error) {
+	snapshot := &jobsmodel.CancelJobSnapshot{}
+	if err := json.Unmarshal(response, snapshot); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
+	}
+	return snapshot, nil
 }

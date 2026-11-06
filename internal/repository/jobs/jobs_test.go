@@ -540,10 +540,7 @@ func TestEncodeJobLogsCursorEmpty(t *testing.T) {
 }
 
 func TestNewJobLogsHighlightToken(t *testing.T) {
-	got, err := newJobLogsHighlightToken()
-	if err != nil {
-		t.Fatalf("expected token generation to succeed: %v", err)
-	}
+	got := newJobLogsHighlightToken()
 
 	if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(got) {
 		t.Fatalf("unexpected highlight token format: %q", got)

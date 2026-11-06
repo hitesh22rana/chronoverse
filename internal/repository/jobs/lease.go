@@ -79,7 +79,9 @@ func (r *Repository) ClaimJob(
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	requestHash, err := idempotency.HashCanonical(map[string]any{
+	// These command fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]any{
 		"job_id":                 jobID,
 		"workflow_id":            workflowID,
 		"worker_id":              workerID,
@@ -87,9 +89,6 @@ func (r *Repository) ClaimJob(
 		"lease_duration_seconds": leaseSeconds(leaseDuration),
 		"dispatch_attempt":       dispatchAttempt,
 	})
-	if err != nil {
-		return nil, false, "", status.Errorf(grpccodes.Internal, "failed to hash claim command: %v", err)
-	}
 	scope := commandidempotency.WorkerScope(processInstanceID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobClaim, commandID, requestHash)
 	if err != nil {
@@ -469,11 +468,8 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start complete job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback complete job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobComplete, commandID, map[string]any{leaseTokenField: leaseToken})
 	if err != nil {
 		return err
@@ -535,11 +531,8 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start fail job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback fail job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobFail, commandID, map[string]any{
 		leaseTokenField: leaseToken, "failure_kind": failureKind, "error_code": errorCode,
 		"error_message": truncateJobError(errorMessage), terminalReasonCodeField: terminalReasonCode,
@@ -609,11 +602,8 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start cancel claimed job transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback cancel claimed job transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobCancelClaimed, commandID, map[string]any{
 		leaseTokenField: leaseToken, terminalReasonCodeField: terminalReasonCode,
 	})
@@ -682,11 +672,8 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "start release job for retry transaction")
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) && err == nil {
-			err = r.mapJobLeaseWriteError(rollbackErr, "rollback release job for retry transaction")
-		}
-	}()
+	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
+	defer tx.Rollback(ctx)
 	// Hashing the normalized instant rather than the supplied text keeps one retry one
 	// request: the stored next_attempt_at is UTC either way, so two spellings of the same
 	// instant must not reserve two command identities or reject the second as a mismatch.
@@ -779,13 +766,12 @@ func (r *Repository) RecoverExpiredJobLeases(
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
-	requestHash, err := idempotency.HashCanonical(map[string]any{
+	// These command fields contain only strings and integers.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	requestHash, _ := idempotency.HashCanonical(map[string]any{
 		"batch_size": batchSize, "worker_id": workerID, "process_instance_id": processInstanceID,
 		"lease_duration_seconds": leaseSeconds(leaseDuration),
 	})
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to hash recovery command: %v", err)
-	}
 	scope := commandidempotency.WorkerScope(processInstanceID)
 	reservation, err := commandidempotency.Reserve(ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases, commandID, requestHash)
 	if err != nil {
@@ -805,20 +791,7 @@ func (r *Repository) RecoverExpiredJobLeases(
 		}
 	}
 
-	jobs, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
-	}
-	if completeErr := commandidempotency.Complete(
-		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
-		commandID, requestHash, "", jobs, commandidempotency.ClientCommandRetention,
-	); completeErr != nil {
-		return nil, completeErr
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
-	}
-	return jobs, nil
+	return r.completeExpiredRecovery(ctx, tx, scope, commandID, requestHash, rows)
 }
 
 type recoveryReplayIdentity struct {
@@ -837,10 +810,9 @@ func (r *Repository) renewRecoveryReplay(
 		return stored, nil
 	}
 	identities := recoveryReplayIdentities(stored)
-	encoded, err := json.Marshal(identities)
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to encode recovery replay identities: %v", err)
-	}
+	// Recovery identities contain only strings.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	encoded, _ := json.Marshal(identities)
 
 	rows, err := tx.Query(
 		ctx,
@@ -853,17 +825,7 @@ func (r *Repository) renewRecoveryReplay(
 	if err != nil {
 		return nil, r.mapJobLeaseWriteError(err, "renew recovery replay")
 	}
-	renewedIDs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
-		var id string
-		if scanErr := row.Scan(&id); scanErr != nil {
-			return "", scanErr
-		}
-		return id, nil
-	})
-	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
-	}
-	return activeRecoveryReplayJobs(stored, renewedIDs), nil
+	return collectRenewedRecoveryJobs(rows, stored)
 }
 
 func validateClaimReplayQuery() string {
@@ -1157,12 +1119,11 @@ func (r *Repository) insertTerminalJobOutboxEvents(
 	errorMessage string,
 ) error {
 	duration := job.executionDurationSeconds()
-	data, err := json.Marshal(&analyticsmodel.EventTypeJobsData{
+	// Job analytics data contains only an unsigned integer.
+	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
+	data, _ := json.Marshal(&analyticsmodel.EventTypeJobsData{
 		JobExecutionDuration: duration,
 	})
-	if err != nil {
-		return status.Errorf(grpccodes.Internal, "failed to marshal job analytics event data: %v", err)
-	}
 
 	analyticsEvent := &analyticsmodel.AnalyticEvent{
 		EventKey:   idempotency.JobCompletedAnalyticsEventKey(job.ID),
@@ -1432,4 +1393,38 @@ func activeRecoveryReplayJobs(stored []*jobsmodel.ExpiredJobLease, renewedIDs []
 		}
 	}
 	return active
+}
+
+// collectRenewedRecoveryJobs decodes renewed authorities and retains their stored
+// response entries in order. CollectRows closes its result set.
+func collectRenewedRecoveryJobs(rows pgx.Rows, stored []*jobsmodel.ExpiredJobLease) ([]*jobsmodel.ExpiredJobLease, error) {
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
+	}
+	return activeRecoveryReplayJobs(stored, ids), nil
+}
+
+// completeExpiredRecovery consumes the recovery result and atomically completes
+// its command. CollectRows closes the result set; the caller owns rollback.
+func (r *Repository) completeExpiredRecovery(
+	ctx context.Context,
+	tx pgx.Tx,
+	scope, commandID, requestHash string,
+	rows pgx.Rows,
+) ([]*jobsmodel.ExpiredJobLease, error) {
+	jobs, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
+	}
+	if completeErr := commandidempotency.Complete(
+		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
+		commandID, requestHash, "", jobs, commandidempotency.ClientCommandRetention,
+	); completeErr != nil {
+		return nil, completeErr
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
+	}
+	return jobs, nil
 }

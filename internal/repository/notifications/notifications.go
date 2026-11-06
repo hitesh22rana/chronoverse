@@ -242,14 +242,13 @@ func notificationRequestHash(userID, kind, payload string) (string, error) {
 	if err != nil {
 		return "", status.Errorf(codes.InvalidArgument, "invalid notification payload: %v", err)
 	}
-	hash, err := idempotency.HashCanonical(map[string]string{
+	// A map of strings cannot fail JSON encoding.
+	//nolint:errcheck // HashCanonical only marshals this fixed string map.
+	hash, _ := idempotency.HashCanonical(map[string]string{
 		"user_id": userID,
 		"kind":    kind,
 		"payload": string(canonicalPayload),
 	})
-	if err != nil {
-		return "", status.Errorf(codes.Internal, "failed to hash notification command: %v", err)
-	}
 	return hash, nil
 }
 

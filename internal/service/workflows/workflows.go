@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -708,8 +707,10 @@ func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkfl
 
 	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
 	if cacheErr != nil {
-		if errors.Is(cacheErr, context.DeadlineExceeded) || errors.Is(cacheErr, context.Canceled) {
-			err = status.FromContextError(cacheErr).Err()
+		// The cache wraps its own failures in a gRPC status, so read cancellation
+		// from the caller's context instead of inspecting the cache error.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = status.FromContextError(ctxErr).Err()
 			return nil, err
 		}
 	} else {

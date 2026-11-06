@@ -222,9 +222,9 @@ func TestHeartbeatBuildCompletesThroughWorkerEntry(t *testing.T) {
 }
 
 func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
-	for _, tc := range []struct{ name, kind string }{
-		{"heartbeat", "HEARTBEAT"},
-		{"container not started", "CONTAINER"},
+	for _, tc := range []struct{ name, kind, containerID string }{
+		{"heartbeat", "HEARTBEAT", "container-recovery"},
+		{"container not started", "CONTAINER", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			factoryCalls := 0
@@ -236,7 +236,7 @@ func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
 			workflow.Kind = tc.kind
 			// Valid routing keeps the missing-endpoint fallback from masking this guard.
 			job := &jobspb.JobsResponse{
-				Id: "00000000-0000-4000-8000-000000000091", ContainerId: "",
+				Id: "00000000-0000-4000-8000-000000000091", ContainerId: tc.containerID,
 				RuntimeNodeId: "00000000-0000-4000-8000-000000000092", RuntimeEndpoint: "http://runtime.example:2375",
 			}
 			if err := repo.cleanupCanceledJobContainer(t.Context(), workflow, job); err != nil || factoryCalls != 0 {

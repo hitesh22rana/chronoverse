@@ -86,11 +86,15 @@ type Config struct {
 	AwaitingReconciliationLimit int
 }
 
+type kafkaProducer interface {
+	ProduceSync(context.Context, ...*kgo.Record) kgo.ProduceResults
+}
+
 // Repository provides executor repository.
 type Repository struct {
 	tp            trace.Tracer
 	cfg           Config
-	kfk           *kgo.Client
+	kfk           kafkaProducer
 	auth          auth.IAuth
 	slots         chan struct{}
 	processID     string
@@ -121,7 +125,6 @@ func New(
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		cfg:       normalizedCfg,
 		auth:      auth,
-		kfk:       kfk,
 		svc:       svc,
 		slots:     make(chan struct{}, normalizedCfg.Concurrency),
 		processID: uuid.NewString(),
@@ -130,6 +133,9 @@ func New(
 			BufferSize:     normalizedCfg.JobLogLiveBufferSize,
 			PublishTimeout: normalizedCfg.JobLogLiveTimeout,
 		}),
+	}
+	if kfk != nil {
+		r.kfk = kfk
 	}
 	r.runner = kafka.NewPartitionRunner(kfk, r.processRecord, &kafka.PartitionRunnerConfig{
 		Name:         "executor.worker",

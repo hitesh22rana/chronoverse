@@ -462,11 +462,15 @@ func TestWorkflowAnalyticsPublicationFailurePreservesOccurrenceIdentity(t *testi
 
 type recoveryCleanupContainer struct {
 	recoveryContainer
-	removed int
+	removed  int
+	replayed int
 }
 
 func (*recoveryCleanupContainer) Terminate(context.Context, string) error { return nil }
 func (c *recoveryCleanupContainer) Remove(ctx context.Context, id string) error {
+	if c.replayed != 1 {
+		return errors.New("container removed before log replay")
+	}
 	if ctx.Err() != nil || id != "container-recovery" {
 		return errors.New("incorrect cleanup context or identity")
 	}
@@ -479,9 +483,11 @@ func TestCleanupRemovesContainerAfterReplayFailure(t *testing.T) {
 	cancel()
 	workflow := buildContractWorkflow()
 	workflow.Kind = "CONTAINER"
-	container := &recoveryCleanupContainer{recoveryContainer: recoveryContainer{logs: func(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+	container := &recoveryCleanupContainer{}
+	container.logs = func(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
+		container.replayed++
 		return nil, nil, status.Error(codes.Unavailable, "log stream unavailable")
-	}}}
+	}
 	repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
 	if err := repo.cleanupCanceledJobContainer(parent, workflow, &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}); err != nil || container.removed != 1 {
 		t.Fatalf("removed=%d error=%v", container.removed, err)

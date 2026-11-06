@@ -50,14 +50,9 @@ func TestContainerExecutionFailurePreservesAttachmentOrdering(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			csvc := &boundaryContainer{}
-			attached := make(chan struct{})
 			var attachErr error
 			jobs := &scriptedJobsClient{attachJobContainer: func(_ context.Context, req *jobspb.AttachJobContainerRequest) error {
 				assertAttachedRuntime(t, req)
-				if csvc.executionCount() != 1 {
-					t.Error("container attached before execution created it")
-				}
-				close(attached)
 				return attachErr
 			}}
 			fixture := newClaimedRunFixture(jobs, &scriptedWorkflowsClient{}, nil, csvc)
@@ -91,22 +86,6 @@ func TestContainerExecutionFailurePreservesAttachmentOrdering(t *testing.T) {
 			case "fallback image":
 				workflow.ResolvedImageDigest = ""
 			}
-			if wantCode == codes.OK {
-				logs := make(chan *jobsmodel.JobLog)
-				csvc.logs = logs
-				go func() {
-					defer close(logs)
-					select {
-					case logs <- &jobsmodel.JobLog{Stream: "stdout", Message: "output"}:
-						select {
-						case <-attached:
-						default:
-							t.Error("logs consumed before container attachment")
-						}
-					case <-t.Context().Done():
-					}
-				}()
-			}
 			id, err := fixture.repo.executeContainerWorkflow(t.Context(), csvc, claimedJobID, claimedLeaseToken, "runtime-1", 1, workflow)
 			if id != wantID || status.Code(err) != wantCode {
 				t.Fatalf("execution=(%q,%v), want %q/%s", id, err, wantID, wantCode)
@@ -124,6 +103,38 @@ func TestContainerExecutionFailurePreservesAttachmentOrdering(t *testing.T) {
 				t.Fatal("execution helper settled or removed container")
 			}
 		})
+	}
+}
+
+func TestContainerLogsWaitForAttachment(t *testing.T) {
+	t.Parallel()
+	logs := make(chan *jobsmodel.JobLog)
+	csvc := &boundaryContainer{logs: logs}
+	attached := make(chan struct{})
+	jobs := &scriptedJobsClient{attachJobContainer: func(_ context.Context, req *jobspb.AttachJobContainerRequest) error {
+		assertAttachedRuntime(t, req)
+		if csvc.executionCount() != 1 {
+			t.Error("container attached before execution created it")
+		}
+		close(attached)
+		return nil
+	}}
+	fixture := newClaimedRunFixture(jobs, &scriptedWorkflowsClient{}, nil, csvc)
+	go func() {
+		defer close(logs)
+		select {
+		case logs <- &jobsmodel.JobLog{Stream: "stdout", Message: "output"}:
+			select {
+			case <-attached:
+			default:
+				t.Error("logs consumed before container attachment")
+			}
+		case <-t.Context().Done():
+		}
+	}()
+	id, err := fixture.repo.executeContainerWorkflow(t.Context(), csvc, claimedJobID, claimedLeaseToken, "runtime-1", 1, containerWorkflow())
+	if id != "container-1" || err != nil {
+		t.Fatalf("execution=(%q,%v), want container-1/nil", id, err)
 	}
 }
 

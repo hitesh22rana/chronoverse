@@ -172,10 +172,9 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 		return nil, status.Errorf(codes.Internal, "failed to connect to Redis: %v", err)
 	}
 
-	if err := redisotel.InstrumentTracing(client); err != nil {
-		_ = client.Close()
-		return nil, status.Errorf(codes.Internal, "failed to instrument tracing: %v", err)
-	}
+	// InstrumentTracing unconditionally succeeds for the concrete *redis.Client.
+	//nolint:errcheck // redisotel's *redis.Client branch installs a hook and returns nil.
+	redisotel.InstrumentTracing(client)
 
 	if err := redisotel.InstrumentMetrics(client); err != nil {
 		_ = client.Close()

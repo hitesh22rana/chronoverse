@@ -101,10 +101,10 @@ func TestIntegrationLateFailureLookupCancellationRollsBackIdentity(t *testing.T)
 	require.Zero(t, countWorkflowActionEvents(t.Context(), t, pg, fixture.WorkflowID, "TERMINATE"))
 }
 
-func skipBuildTransition(t *testing.T, fixture *workflowFixture) func() {
+func skipWorkflowWrite(t *testing.T, fixture *workflowFixture, predicate string) func() {
 	t.Helper()
 	pg := testkit.Postgres(t)
-	name := "skip_build_" + fixtureTag()
+	name := "skip_workflow_" + fixtureTag()
 	_, err := pg.Exec(t.Context(), fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$`, name))
 	require.NoError(t, err)
 	remove := func() {
@@ -117,7 +117,7 @@ func skipBuildTransition(t *testing.T, fixture *workflowFixture) func() {
 	}
 	t.Cleanup(remove)
 	_, err = pg.Exec(t.Context(), fmt.Sprintf(`CREATE TRIGGER %s BEFORE UPDATE ON workflows FOR EACH ROW
- WHEN (NEW.id='%s'::uuid AND NEW.build_status='STARTED') EXECUTE FUNCTION %s()`, name, fixture.WorkflowID, name))
+ WHEN (NEW.id='%s'::uuid AND (%s)) EXECUTE FUNCTION %s()`, name, fixture.WorkflowID, predicate, name))
 	require.NoError(t, err)
 	return remove
 }
@@ -128,7 +128,7 @@ func TestIntegrationBuildTransitionRequiresOneChangedRow(t *testing.T) {
 	fixture := seedWorkflowFixture(t.Context(), t, pg, repo, 3)
 	before := readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID)
 	events := countWorkflowEvents(t.Context(), t, pg, fixture.WorkflowID)
-	remove := skipBuildTransition(t, fixture)
+	remove := skipWorkflowWrite(t, fixture, "NEW.build_status='STARTED'")
 	err := repo.UpdateWorkflowBuildStatus(t.Context(), fixture.WorkflowID, fixture.UserID, "STARTED", fixture.Generation, "", "")
 	require.Equal(t, codes.Internal, status.Code(err))
 	require.Contains(t, err.Error(), "workflow build transition invariant violated")
@@ -153,11 +153,12 @@ func TestIntegrationDatabaseDataFaultDoesNotBlameValidatedIdentity(t *testing.T)
 			table, event := postgres.TableWorkflows, "UPDATE"
 			condition := fmt.Sprintf("NEW.id='%s'::uuid", fixture.WorkflowID)
 			message := "failed to update workflow build status"
-			if operation == "record failure" {
+			switch operation {
+			case "record failure":
 				table, event = postgres.TableWorkflowTerminalEffects, "INSERT"
 				condition = fmt.Sprintf("NEW.job_id='%s'::uuid", jobID)
 				message = "failed to record workflow failure event"
-			} else if operation == "increment failure" {
+			case "increment failure":
 				message = "failed to increment consecutive job failures count"
 			}
 			installFailureEffectFault(t.Context(), t, pg, table, event, condition, "22P02", false, false)
@@ -175,5 +176,31 @@ func TestIntegrationDatabaseDataFaultDoesNotBlameValidatedIdentity(t *testing.T)
 			assertMutationState(t, "database data fault", readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID), before)
 			require.Zero(t, countTerminalEffects(t.Context(), t, pg, jobID))
 		})
+	}
+}
+
+func TestIntegrationWorkflowUpdateRequiresOneChangedRow(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedWorkflowFixture(t.Context(), t, pg, repo, 3)
+	completeFixtureBuild(t.Context(), t, repo, fixture)
+	before := readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID)
+	events := countWorkflowEvents(t.Context(), t, pg, fixture.WorkflowID)
+	command := "metadata-rowcount-" + fixtureTag()
+	remove := skipWorkflowWrite(t, fixture, "NEW.name='metadata update'")
+	err := repo.UpdateWorkflow(t.Context(), fixture.WorkflowID, fixture.UserID, "metadata update", fixturePayload, fixture.Interval, fixture.MaxConsecutiveJobFailures, command)
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.Contains(t, err.Error(), "workflow update invariant violated")
+	assertMutationState(t, "skipped metadata write", readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID), before)
+	require.Zero(t, countCommandKeys(t.Context(), t, pg, command))
+	require.Equal(t, events, countWorkflowEvents(t.Context(), t, pg, fixture.WorkflowID))
+	remove()
+	expected := *before
+	expected.Name = "metadata update"
+	for range 2 {
+		require.NoError(t, repo.UpdateWorkflow(t.Context(), fixture.WorkflowID, fixture.UserID, "metadata update", fixturePayload, fixture.Interval, fixture.MaxConsecutiveJobFailures, command))
+		assertMutationState(t, "metadata retry/replay", readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID), &expected)
+		require.Equal(t, 1, countCommandKeys(t.Context(), t, pg, command))
+		require.Equal(t, events, countWorkflowEvents(t.Context(), t, pg, fixture.WorkflowID))
 	}
 }

@@ -328,8 +328,8 @@ func (r *Repository) UpdateWorkflow(
 	if err != nil {
 		return mapWorkflowWriteError(err, "failed to update workflow")
 	}
-	if ct.RowsAffected() == 0 {
-		return status.Error(codes.NotFound, "workflow not found")
+	if ct.RowsAffected() != 1 {
+		return status.Error(codes.Internal, "workflow update invariant violated")
 	}
 
 	if decision.buildRequired || decision.rescheduleRequired {
@@ -443,7 +443,6 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 		WHERE id = $2 AND user_id = $3 AND generation = $6;
 	`, postgres.TableWorkflows)
 	ct, err := tx.Exec(ctx, query, buildStatus, workflowID, userID, resolvedImageRef, resolvedImageDigest, generation)
-	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -692,7 +691,6 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		ON CONFLICT DO NOTHING;
 	`, postgres.TableWorkflowTerminalEffects, postgres.TableWorkflows)
 	ct, err := tx.Exec(ctx, query, jobID, workflowID, userID)
-	//nolint:gocritic // Ifelse is used to handle different error types
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			err = status.Error(codes.DeadlineExceeded, err.Error())
@@ -877,7 +875,6 @@ func (r *Repository) DeleteWorkflow(ctx context.Context, workflowID, userID stri
 			return err
 		}
 
-		//nolint:gocritic // Ifelse chain is used to handle specific errors
 		if r.pg.IsNoRows(err) {
 			activeJobID = ""
 		} else {

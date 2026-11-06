@@ -77,11 +77,8 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
-	requestHash, err := idempotency.HashCanonical(map[string]string{"email": email})
-	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to hash registration request: %v", err)
-		return nil, "", err
-	}
+	//nolint:errcheck // The registration hash contains only an email string.
+	requestHash, _ := idempotency.HashCanonical(map[string]string{"email": email})
 	reservation, err := commandidempotency.Reserve(
 		ctx,
 		tx,
@@ -151,10 +148,7 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 			err = status.Errorf(codes.AlreadyExists, "user already exists: %v", err)
 			return nil, "", err
 		} else if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "user not found: %v", err)
-			return nil, "", err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+			err = status.Errorf(codes.Internal, "registration insert returned no user: %v", err)
 			return nil, "", err
 		}
 
@@ -221,15 +215,9 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			// Keep missing-user attempts on the same expensive path as invalid passwords.
-			compareErr := bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(pass))
-			if compareErr != nil && !errors.Is(compareErr, bcrypt.ErrMismatchedHashAndPassword) {
-				err = status.Errorf(codes.Internal, "failed to verify password: %v", compareErr)
-				return nil, "", err
-			}
+			//nolint:errcheck // This fixed, tested hash is used only for timing; authentication always fails.
+			_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(pass))
 			err = invalidCredentialsError()
-			return nil, "", err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
-			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
 			return nil, "", err
 		}
 
@@ -350,10 +338,7 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 			return err
 		}
 
-		if r.pg.IsNoRows(err) {
-			err = status.Errorf(codes.NotFound, "user not found: %v", err)
-			return err
-		} else if r.pg.IsInvalidTextRepresentation(err) {
+		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
 			return err
 		}

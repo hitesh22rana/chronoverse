@@ -141,7 +141,7 @@ func issuingAuth(t *testing.T) auth.IAuth {
 	return mockAuth
 }
 
-func TestIntegrationLoginMapsDatabaseInvalidText(t *testing.T) {
+func TestIntegrationLoginReportsStoredDataFaultAsInternal(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	email := "invalid-text-" + uuid.NewString() + "@chronoverse.test"
@@ -149,7 +149,7 @@ func TestIntegrationLoginMapsDatabaseInvalidText(t *testing.T) {
 	repo, recorder := newTracedRepository(t, authmock.NewMockIAuth(gomock.NewController(t)), pg)
 	remove := installUsersReadFault(t, pg, "RAISE EXCEPTION 'invalid stored value' USING ERRCODE = '22P02';")
 	user, token, err := repo.LoginUser(ctx, email, "password")
-	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "invalid user ID") || user != nil || token != "" {
+	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to fetch user") || user != nil || token != "" {
 		t.Fatalf("login = %v, %q, %v", user, token, err)
 	}
 	assertUserErrorSpan(t, recorder, "LoginUser", err)

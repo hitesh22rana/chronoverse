@@ -160,9 +160,9 @@ func TestIntegrationRegistrationRollsBackDatabaseFaults(t *testing.T) {
 		{"reserve", postgres.TableCommandIdempotencyKeys, "INSERT", "NEW.idempotency_key", "RAISE EXCEPTION 'registration fault';", "reserve command", codes.Internal, false},
 		{"complete", postgres.TableCommandIdempotencyKeys, "UPDATE", "NEW.idempotency_key", "RAISE EXCEPTION 'registration fault';", "complete command", codes.Internal, false},
 		{"commit", postgres.TableCommandIdempotencyKeys, "UPDATE", "NEW.idempotency_key", "RAISE EXCEPTION 'registration fault';", "commit registration transaction", codes.Internal, true},
-		{"invalid input", postgres.TableUsers, "INSERT", "NEW.email", "RAISE EXCEPTION 'registration fault' USING ERRCODE = '22P02';", "invalid user ID", codes.InvalidArgument, false},
+		{"database data fault", postgres.TableUsers, "INSERT", "NEW.email", "RAISE EXCEPTION 'registration fault' USING ERRCODE = '22P02';", "failed to fetch user", codes.Internal, false},
 		{"insert failure", postgres.TableUsers, "INSERT", "NEW.email", "RAISE EXCEPTION 'registration fault';", "failed to fetch user", codes.Internal, false},
-		{"missing returning row", postgres.TableUsers, "INSERT", "NEW.email", "RETURN NULL;", "user not found", codes.NotFound, false},
+		{"missing returning row", postgres.TableUsers, "INSERT", "NEW.email", "RETURN NULL;", "registration insert returned no user", codes.Internal, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()

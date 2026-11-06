@@ -110,6 +110,7 @@ func isNilEndpointClient[T closeable](client T) bool {
 	if !value.IsValid() {
 		return true
 	}
+	//nolint:exhaustive // Only nil-able kinds can hold a nil client; the default is its non-nil branch.
 	switch value.Kind() {
 	case reflect.Chan, reflect.Func, reflect.Map, reflect.Pointer, reflect.Slice:
 		return value.IsNil()

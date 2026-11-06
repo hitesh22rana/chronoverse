@@ -64,6 +64,7 @@ func (r *Repository) deleteWorkflowLogsFromClickHouse(parentCtx context.Context,
 		err := r.ch.Exec(ctx, query, workflowID, userID)
 		if err != nil {
 			return deleteWorkflowStatusError(
+				ctx,
 				fmt.Sprintf("failed to delete ClickHouse logs for workflow %s", workflowID),
 				err,
 			)
@@ -101,6 +102,7 @@ func (r *Repository) deleteWorkflowLogsFromMeiliSearch(parentCtx context.Context
 		taskInfo, err := r.ms.Index(index.Name).DeleteDocumentsByFilterWithContext(ctx, filter, nil)
 		if err != nil {
 			return deleteWorkflowStatusError(
+				ctx,
 				fmt.Sprintf("failed to enqueue Meilisearch logs deletion for workflow %s", workflowID),
 				err,
 			)
@@ -126,6 +128,7 @@ func (r *Repository) waitForMeiliSearchDeleteTask(parentCtx context.Context, wor
 		task, err := r.ms.WaitForTaskWithContext(ctx, taskUID, deleteWorkflowMeiliSearchPollPeriod)
 		if err != nil {
 			return deleteWorkflowStatusError(
+				ctx,
 				fmt.Sprintf("failed waiting for Meilisearch logs deletion task %d for workflow %s", taskUID, workflowID),
 				err,
 			)
@@ -157,7 +160,14 @@ func distributedLockError(ctx context.Context) error {
 	return status.Error(codes.Aborted, "failed to acquire distributed lock")
 }
 
-func deleteWorkflowStatusError(message string, err error) error {
+// deleteWorkflowStatusError prefers the caller's context because the Meilisearch
+// client wraps transport failures in an error type that does not unwrap to the
+// context cause, while the polling helper returns ctx.Err() directly.
+func deleteWorkflowStatusError(ctx context.Context, message string, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return status.FromContextError(ctxErr).Err()
+	}
+
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, err.Error())
 	}

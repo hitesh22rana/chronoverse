@@ -33,6 +33,14 @@ const (
 // the broker is ready to serve admin requests. It is safe to call repeatedly;
 // topics that already exist are left untouched.
 func EnsureTopics(ctx context.Context, client *kgo.Client, topics ...string) error {
+	return ensureTopics(ctx, client, topics...)
+}
+
+type topicRequester interface {
+	Request(context.Context, kmsg.Request) (kmsg.Response, error)
+}
+
+func ensureTopics(ctx context.Context, client topicRequester, topics ...string) error {
 	var lastErr error
 	for attempt := range maxCreateTopicsAttempts {
 		lastErr = createTopicsOnce(ctx, client, topics...)
@@ -55,7 +63,7 @@ func EnsureTopics(ctx context.Context, client *kgo.Client, topics ...string) err
 }
 
 // createTopicsOnce issues a single CreateTopics request.
-func createTopicsOnce(ctx context.Context, client *kgo.Client, topics ...string) error {
+func createTopicsOnce(ctx context.Context, client topicRequester, topics ...string) error {
 	req := &kmsg.CreateTopicsRequest{TimeoutMillis: createTopicsTimeoutMillis}
 	for _, topic := range topics {
 		req.Topics = append(req.Topics, kmsg.CreateTopicsRequestTopic{

@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +38,7 @@ func TestJobEndpointsRejectMissingRouteAndOwnerBeforeRPC(t *testing.T) {
 				continue
 			}
 			t.Run(endpoint.name+"/"+missing, func(t *testing.T) {
+				t.Parallel()
 				request := newJobLogsHandlerRequest("/logs")
 				request.Header.Set(idempotencyKeyHeader, "manual-command")
 				want := http.StatusBadRequest
@@ -83,6 +85,9 @@ func (c *logBoundaryClient) GetJob(context.Context, *jobspb.GetJobRequest, ...gr
 
 func (c *logBoundaryClient) GetJobLogs(context.Context, *jobspb.GetJobLogsRequest, ...grpc.CallOption) (*jobspb.GetJobLogsResponse, error) {
 	c.fetches++
+	if c.fetches > 1 {
+		return nil, status.Error(codes.Internal, "unexpected next page")
+	}
 	return &jobspb.GetJobLogsResponse{Logs: c.logs, Cursor: "next"}, c.err
 }
 
@@ -136,16 +141,26 @@ func TestDownloadRequiresFlushingAndStopsOnHeaderOrRecordWriteFailure(t *testing
 		require.Equal(t, 0, client.fetches)
 		require.Contains(t, writer.Body.String(), "failed to write logs")
 	}
-	client = &logBoundaryClient{status: "COMPLETED", logs: []*jobspb.Log{{Message: "line"}}}
-	writer := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: 1}
-	core, entries := observer.New(zap.ErrorLevel)
-	(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(writer, newJobLogsHandlerRequest("/download"))
-	require.Equal(t, 1, client.fetches)
-	require.True(t, writer.Flushed)
-	require.Contains(t, writer.Body.String(), "--- ERROR: stream failed ---")
-	require.Len(t, entries.All(), 1)
-	require.Equal(t, "failed to write log", entries.All()[0].Message)
-	require.Equal(t, io.ErrClosedPipe.Error(), entries.All()[0].ContextMap()["error"])
+	for _, tc := range []struct {
+		target string
+		failAt int
+	}{{"/download", 1}, {"/download?format=json", 3}} {
+		client := &logBoundaryClient{status: "COMPLETED", logs: []*jobspb.Log{{Message: "line"}}}
+		writer := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: tc.failAt}
+		core, entries := observer.New(zap.ErrorLevel)
+		(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(writer, newJobLogsHandlerRequest(tc.target))
+		require.Equal(t, 1, client.fetches)
+		require.True(t, writer.Flushed)
+		if tc.failAt == 3 {
+			require.True(t, json.Valid(writer.Body.Bytes()), writer.Body.String())
+			require.JSONEq(t, `{"id":"550e8400-e29b-41d4-a716-446655440000","workflow_id":"workflow_id","filters":{"q":"","stream":"all"},"logs":[],"error":{"message":"stream failed"}}`, writer.Body.String())
+		} else {
+			require.Contains(t, writer.Body.String(), "--- ERROR: stream failed ---")
+		}
+		require.Len(t, entries.All(), 1)
+		require.Equal(t, "failed to write log", entries.All()[0].Message)
+		require.Equal(t, io.ErrClosedPipe.Error(), entries.All()[0].ContextMap()["error"])
+	}
 }
 
 func TestLogoutWithoutSessionExpiresCookiesAndRejectsRequest(t *testing.T) {

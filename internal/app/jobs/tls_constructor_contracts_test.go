@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
@@ -75,6 +78,46 @@ func TestJobServerRejectsInvalidTLS(t *testing.T) {
 	require.Equal(t, 1, exit.ExitCode(), "%s", output)
 	require.Contains(t, string(output), "failed to load TLS credentials")
 	require.Contains(t, string(output), "failed to read CA certificate file")
+}
+
+// continueAfterFatal models a fatal hook that returns instead of exiting.
+type continueAfterFatal struct{}
+
+func (continueAfterFatal) OnWrite(*zapcore.CheckedEntry, []zapcore.Field) {}
+
+func TestJobServerRefusesToStartAfterSuppressedTLSFatal(t *testing.T) {
+	const child = "CHRONOVERSE_TEST_JOB_SUPPRESSED_TLS_FATAL"
+	if os.Getenv(child) == "1" {
+		// A fatal hook that does not exit is the one path where the guard after
+		// Fatal is reachable; it must not let the server start unauthenticated.
+		ctx, logger := loggerpkg.Init(t.Context(), "job-tls-guard", sdklog.NewLoggerProvider())
+		*logger = *logger.WithOptions(zap.WithFatalHook(continueAfterFatal{}))
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					_, _ = fmt.Fprintf(os.Stdout, "guard: %v\n", recovered)
+				}
+			}()
+			jobs.New(ctx, &jobs.Config{TLSConfig: &jobs.TLSConfig{Enabled: true}}, nil, nil)
+			_, _ = fmt.Fprintf(os.Stdout, "server-start-returned\n")
+		}()
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.CommandContext(ctx, executable, "-test.run=^TestJobServerRefusesToStartAfterSuppressedTLSFatal$")
+	cmd.Env = append(os.Environ(), child+"=1")
+	if directory := flag.Lookup("test.gocoverdir").Value.String(); directory != "" {
+		cmd.Env = append(cmd.Env, "GOCOVERDIR="+directory)
+	}
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	require.Contains(t, string(output), "failed to load TLS credentials")
+	require.Contains(t, string(output), "guard: unreachable: TLS credentials must fail startup")
+	require.NotContains(t, string(output), "server-start-returned")
 }
 
 func jobContractTLSCertificate(t *testing.T) (server *jobs.TLSConfig, client *tls.Config) {

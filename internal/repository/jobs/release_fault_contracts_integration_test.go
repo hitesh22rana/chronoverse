@@ -122,3 +122,24 @@ func TestIntegrationTerminatedReleaseRejectsStaleLeaseWithoutEffects(t *testing.
 	}
 	assertNoOutboxEffect(t.Context(), t, pg, fixture)
 }
+
+func TestIntegrationReleaseCanceledBeforeBeginPreservesAuthority(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedClaimedJob(t.Context(), t, pg, repo)
+	before := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
+	command := "release-before-begin-" + fixtureTag()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := repo.ReleaseJobForRetry(ctx, fixture.JobID, fixture.LeaseToken, time.Now().UTC().Format(time.RFC3339Nano), "Unavailable", "retry", command)
+	if status.Code(err) != codes.Canceled {
+		t.Fatalf("error=%v, want canceled caller", err)
+	}
+	if after := readTerminalJobState(t.Context(), t, pg, fixture.JobID); !reflect.DeepEqual(after, before) {
+		t.Fatalf("canceled caller changed job: %+v -> %+v", before, after)
+	}
+	if ledger, ok := readJobCommand(t.Context(), t, pg, fixture.JobID, commandidempotency.OperationJobReleaseForRetry, command); ok {
+		t.Fatalf("canceled caller retained command: %+v", ledger)
+	}
+	assertNoOutboxEffect(t.Context(), t, pg, fixture)
+}

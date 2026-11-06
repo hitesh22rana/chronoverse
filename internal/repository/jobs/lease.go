@@ -791,9 +791,9 @@ func (r *Repository) RecoverExpiredJobLeases(
 		}
 	}
 
-	jobs, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
+	jobs, err = collectExpiredJobLeases(rows)
 	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
+		return nil, err
 	}
 	if completeErr := commandidempotency.Complete(
 		ctx, tx, scope, commandidempotency.OperationJobRecoverExpiredLeases,
@@ -838,15 +838,9 @@ func (r *Repository) renewRecoveryReplay(
 	if err != nil {
 		return nil, r.mapJobLeaseWriteError(err, "renew recovery replay")
 	}
-	renewedIDs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
-		var id string
-		if scanErr := row.Scan(&id); scanErr != nil {
-			return "", scanErr
-		}
-		return id, nil
-	})
+	renewedIDs, err := collectRecoveryReplayIDs(rows)
 	if err != nil {
-		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
+		return nil, err
 	}
 	return activeRecoveryReplayJobs(stored, renewedIDs), nil
 }
@@ -1416,4 +1410,23 @@ func activeRecoveryReplayJobs(stored []*jobsmodel.ExpiredJobLease, renewedIDs []
 		}
 	}
 	return active
+}
+
+// collectRecoveryReplayIDs maps result decoding failures independently of the
+// transaction and renewal query. CollectRows closes its result set.
+func collectRecoveryReplayIDs(rows pgx.Rows) ([]string, error) {
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
+	}
+	return ids, nil
+}
+
+// collectExpiredJobLeases preserves the recovery response's named-column mapping.
+func collectExpiredJobLeases(rows pgx.Rows) ([]*jobsmodel.ExpiredJobLease, error) {
+	jobs, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
+	if err != nil {
+		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
+	}
+	return jobs, nil
 }

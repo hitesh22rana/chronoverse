@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/meilisearch/meilisearch-go"
@@ -461,9 +462,9 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		return nil, err
 	}
 	if reservation.Replay {
-		snapshot = &jobsmodel.CancelJobSnapshot{}
-		if err = json.Unmarshal(reservation.Response, snapshot); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
+		snapshot, err = decodeCancelJobSnapshot(reservation.Response)
+		if err != nil {
+			return nil, err
 		}
 		if err = tx.Commit(ctx); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to commit cancel replay: %v", err)
@@ -727,42 +728,9 @@ func (r *Repository) GetJobLogs(
 		}
 		defer rows.Close()
 
-		fetched := make([]*jobsmodel.JobLog, 0, r.cfg.LogsFetchLimit+1)
-		fetchedCursors := make([]jobLogsCursor, 0, r.cfg.LogsFetchLimit+1)
-		for rows.Next() {
-			var (
-				ts      time.Time
-				msg     string
-				seq     uint32
-				strm    string
-				eventID string
-			)
-			if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
-				return status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
-			}
-			fetched = append(fetched, &jobsmodel.JobLog{
-				EventID:     eventID,
-				Timestamp:   ts,
-				Message:     msg,
-				SequenceNum: seq,
-				Stream:      strm,
-			})
-			fetchedCursors = append(fetchedCursors, jobLogsCursor{
-				SequenceNum: seq,
-				Stream:      strm,
-				EventID:     eventID,
-			})
-		}
-		if rowsErr := rows.Err(); rowsErr != nil {
-			return status.Errorf(codes.Internal, "rows error: %v", rowsErr)
-		}
-
-		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
-		if hasMore {
-			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
-		}
-		logs = fetched
-		return nil
+		var collectErr error
+		logs, nextCursor, collectErr = collectJobLogPage(rows, r.cfg.LogsFetchLimit)
+		return collectErr
 	})
 
 	eg.Go(func() error {
@@ -790,6 +758,47 @@ func (r *Repository) GetJobLogs(
 		JobLogs:    logs,
 		Cursor:     encodeJobLogsCursor(nextCursor),
 	}, fetchedStatus, nil
+}
+
+// collectJobLogPage decodes the driver rows and retains the first omitted row as
+// the inclusive pagination cursor. The caller owns closing the result set.
+func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, cursor jobLogsCursor, err error) {
+	var nextCursor jobLogsCursor
+	fetched := make([]*jobsmodel.JobLog, 0, limit+1)
+	fetchedCursors := make([]jobLogsCursor, 0, limit+1)
+	for rows.Next() {
+		var (
+			ts      time.Time
+			msg     string
+			seq     uint32
+			strm    string
+			eventID string
+		)
+		if scanErr := rows.Scan(&ts, &msg, &seq, &strm, &eventID); scanErr != nil {
+			return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "failed to scan logs: %v", scanErr)
+		}
+		fetched = append(fetched, &jobsmodel.JobLog{
+			EventID:     eventID,
+			Timestamp:   ts,
+			Message:     msg,
+			SequenceNum: seq,
+			Stream:      strm,
+		})
+		fetchedCursors = append(fetchedCursors, jobLogsCursor{
+			SequenceNum: seq,
+			Stream:      strm,
+			EventID:     eventID,
+		})
+	}
+	if rowsErr := rows.Err(); rowsErr != nil {
+		return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "rows error: %v", rowsErr)
+	}
+
+	fetched, hasMore := paginate.Trim(fetched, limit)
+	if hasMore {
+		nextCursor = fetchedCursors[limit]
+	}
+	return fetched, nextCursor, nil
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -1388,4 +1397,13 @@ func (r *Repository) mapScheduleInsertError(err error, trigger string, workflowG
 	}
 
 	return status.Errorf(codes.Internal, "failed to insert job: %v", err)
+}
+
+// decodeCancelJobSnapshot validates a persisted replay before the caller commits.
+func decodeCancelJobSnapshot(response []byte) (*jobsmodel.CancelJobSnapshot, error) {
+	snapshot := &jobsmodel.CancelJobSnapshot{}
+	if err := json.Unmarshal(response, snapshot); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to decode cancel replay: %v", err)
+	}
+	return snapshot, nil
 }

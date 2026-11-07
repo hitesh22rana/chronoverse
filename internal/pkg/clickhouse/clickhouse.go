@@ -52,9 +52,13 @@ type Client struct {
 	conn driver.Conn
 }
 
-// healthCheck checks the health of the ClickHouse connection.
-func healthCheck(ctx context.Context, conn driver.Conn) error {
-	var err error
+// healthCheck checks startup health and closes the connection on failure.
+func healthCheck(ctx context.Context, conn driver.Conn) (err error) {
+	defer func() {
+		if err != nil {
+			_ = conn.Close()
+		}
+	}()
 
 	backoff := 100 * time.Millisecond
 	for i := 1; i <= MaxHealthCheckRetries; i++ {
@@ -147,7 +151,6 @@ func New(ctx context.Context, cfg *Config) (*Client, error) {
 	}
 
 	if err := healthCheck(ctx, conn); err != nil {
-		_ = conn.Close()
 		return nil, status.Errorf(codes.Internal, "initial health check failed: %v", err)
 	}
 

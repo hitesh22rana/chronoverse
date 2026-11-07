@@ -25,7 +25,10 @@ type boundaryConn struct {
 	query      func(string) (driver.Rows, error)
 	batch      driver.Batch
 	prepareErr error
+	closed     bool
 }
+
+func (c *boundaryConn) Close() error { c.closed = true; return nil }
 
 func (c *boundaryConn) Ping(ctx context.Context) error { return c.ping(ctx) }
 func (c *boundaryConn) Exec(_ context.Context, q string, args ...any) error {
@@ -97,6 +100,7 @@ func TestHealthRetryAndCancellationBoundaries(t *testing.T) {
 					return cause
 				}}
 				err := healthCheck(t.Context(), conn)
+				require.Equal(t, successAt == 0, conn.closed)
 				if successAt == 0 {
 					require.ErrorIs(t, err, cause)
 					require.Equal(t, 3, calls)
@@ -111,9 +115,49 @@ func TestHealthRetryAndCancellationBoundaries(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	calls := 0
-	err := healthCheck(ctx, &boundaryConn{ping: func(context.Context) error { calls++; return ctx.Err() }})
+	conn := &boundaryConn{ping: func(context.Context) error { calls++; return ctx.Err() }}
+	err := healthCheck(ctx, conn)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Equal(t, 1, calls)
+	require.True(t, conn.closed)
+}
+
+func TestHealthCancellationInterruptsBackoffAndClosesConnection(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		name := "cancel"
+		if deadline {
+			name = "deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const interruptAfter = 25 * time.Millisecond
+				ctx, cancel := context.WithCancel(t.Context())
+				want := context.Canceled
+				if deadline {
+					cancel()
+					ctx, cancel = context.WithTimeout(t.Context(), interruptAfter)
+					want = context.DeadlineExceeded
+				} else {
+					go func() {
+						time.Sleep(interruptAfter)
+						cancel()
+					}()
+				}
+				defer cancel()
+				calls := 0
+				conn := &boundaryConn{ping: func(context.Context) error {
+					calls++
+					return errors.New("connection unavailable")
+				}}
+				start := time.Now()
+				err := healthCheck(ctx, conn)
+				require.ErrorIs(t, err, want)
+				require.Equal(t, interruptAfter, time.Since(start))
+				require.Equal(t, 1, calls)
+				require.True(t, conn.closed)
+			})
+		})
+	}
 }
 
 func TestBatchFailureStagesPreserveDriverCause(t *testing.T) {

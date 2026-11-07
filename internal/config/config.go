@@ -7,6 +7,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
@@ -337,4 +338,9 @@ func (c AnalyticsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceC
 			ClientKeyFile:  clientTLS.KeyFile,
 		},
 	}
+}
+
+// ClientConfig converts Meilisearch settings without loading credential files.
+func (c *MeiliSearch) ClientConfig() *meilisearch.Config {
+	return &meilisearch.Config{URI: c.URI, MasterKey: c.MasterKey, TLSConfig: &meilisearch.TLSConfig{Enabled: c.TLS.Enabled, CAFile: c.TLS.CAFile, CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}}
 }

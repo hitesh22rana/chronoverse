@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/config"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -36,11 +36,6 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
-	if cfg.RuntimeAgentConfig.ID == "" || cfg.RuntimeAgentConfig.NodeName == "" ||
-		cfg.RuntimeAgentConfig.DockerEndpoint == "" || cfg.RuntimeAgentConfig.DockerHealthEndpoint == "" {
-		fmt.Fprintln(os.Stderr, "runtime agent id, node name, Docker health endpoint, and advertised Docker endpoint are required")
-		return ExitError
-	}
 
 	pdb, err := postgres.New(ctx, cfg.Postgres.ClientConfig())
 	if err != nil {
@@ -49,16 +44,7 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	health, err := container.NewDockerWorkflow(
-		container.WithDockerHost(cfg.RuntimeAgentConfig.DockerHealthEndpoint),
-		container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
-			CAFile:     cfg.DockerProxy.TLS.CAFile,
-			CertFile:   cfg.DockerProxy.TLS.CertFile,
-			KeyFile:    cfg.DockerProxy.TLS.KeyFile,
-			ServerName: cfg.DockerProxy.TLS.ServerName,
-		}),
-		container.WithDockerProxyToken(cfg.DockerProxy.Token),
-	)
+	health, err := newDockerHealthProvider(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to ping runtime Docker endpoint: %v\n", err)
 		return ExitError

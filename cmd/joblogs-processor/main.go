@@ -63,12 +63,7 @@ func run() int {
 	}
 	defer cdb.Close()
 
-	msdb, err := meilisearch.New(
-		ctx,
-		meilisearch.WithURI(cfg.MeiliSearch.URI),
-		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
-		meilisearch.WithTLS(&cfg.MeiliSearch),
-	)
+	msdb, err := meilisearch.New(ctx, cfg.MeiliSearch.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

@@ -80,3 +80,22 @@ func TestClientConfigKeepsEnvironmentSettingsSeparate(t *testing.T) {
 		require.Equal(t, "caller-key.pem", client.TLS.ClientKeyFile)
 	}
 }
+
+func TestMeilisearchClientConfigMapsTLSWithoutLoadingFiles(t *testing.T) {
+	var cfg config.MeiliSearch
+	cfg.URI = "https://search.test"
+	cfg.MasterKey = "public-test-key"
+	cfg.TLS.Enabled = true
+	cfg.TLS.CAFile = "missing-ca.pem"
+	cfg.TLS.CertFile = "missing-cert.pem"
+	cfg.TLS.KeyFile = "missing-key.pem"
+	client := cfg.ClientConfig()
+	require.Equal(t, "https://search.test", client.URI)
+	require.Equal(t, "public-test-key", client.MasterKey)
+	require.True(t, client.TLSConfig.Enabled)
+	require.Equal(t, "missing-ca.pem", client.TLSConfig.CAFile)
+	require.Equal(t, "missing-cert.pem", client.TLSConfig.CertFile)
+	require.Equal(t, "missing-key.pem", client.TLSConfig.KeyFile)
+	client.TLSConfig.CAFile = "changed"
+	require.Equal(t, "missing-ca.pem", cfg.TLS.CAFile)
+}

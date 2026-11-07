@@ -53,9 +53,6 @@ func InitRuntimeAgentConfig() (*RuntimeAgent, error) {
 		cfg.RuntimeAgentConfig.ID = cfg.RuntimeAgentConfig.NodeName
 	}
 	if cfg.RuntimeAgentConfig.DockerAdvertiseHost != "" {
-		if cfg.RuntimeAgentConfig.DockerAdvertisePort < 1 || cfg.RuntimeAgentConfig.DockerAdvertisePort > 65535 {
-			return nil, errors.New("runtime agent Docker advertise port must be between 1 and 65535")
-		}
 		cfg.RuntimeAgentConfig.DockerEndpoint = "tcp://" + net.JoinHostPort(
 			cfg.RuntimeAgentConfig.DockerAdvertiseHost,
 			strconv.Itoa(cfg.RuntimeAgentConfig.DockerAdvertisePort),
@@ -71,5 +68,19 @@ func InitRuntimeAgentConfig() (*RuntimeAgent, error) {
 		cfg.RuntimeAgentConfig.DockerHealthEndpoint = cfg.RuntimeAgentConfig.DockerEndpoint
 	}
 
+	if err := cfg.RuntimeAgentConfig.validate(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+// validate checks the resolved runtime identity and Docker endpoints.
+func (c *RuntimeAgentConfig) validate() error {
+	if c.DockerAdvertiseHost != "" && (c.DockerAdvertisePort < 1 || c.DockerAdvertisePort > 65535) {
+		return errors.New("runtime agent Docker advertise port must be between 1 and 65535")
+	}
+	if c.ID == "" || c.NodeName == "" || c.DockerEndpoint == "" || c.DockerHealthEndpoint == "" {
+		return errors.New("runtime agent id, node name, Docker health endpoint, and advertised Docker endpoint are required")
+	}
+	return nil
 }

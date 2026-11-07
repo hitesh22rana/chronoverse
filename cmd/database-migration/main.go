@@ -51,12 +51,7 @@ func run() int {
 	}
 	defer clickhouseClient.Close()
 
-	meilisearchClient, err := meilisearch.New(
-		ctx,
-		meilisearch.WithURI(cfg.MeiliSearch.URI),
-		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
-		meilisearch.WithTLS(&cfg.MeiliSearch),
-	)
+	meilisearchClient, err := meilisearch.New(ctx, cfg.MeiliSearch.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

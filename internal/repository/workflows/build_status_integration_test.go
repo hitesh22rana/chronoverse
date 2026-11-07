@@ -81,19 +81,12 @@ func lockBuildStatusUpdate(*workflowFixture) interruptionLock {
 	return lockWorkflowWrite("%UPDATE " + postgres.TableWorkflows + "%SET build_status%")
 }
 
-// TestIntegrationUpdateWorkflowBuildStatusReportsAMalformedIdentityAsAServerFault
-// pins what a caller that sent a malformed identity actually receives. The
-// service layer checks only that the field is present, so the id reaches the
-// command as given, and the command hands it to PostgreSQL unvalidated. Its state
-// read then classifies every failure that is not a missing row as an internal
-// one, so a malformed identity is answered with the server-fault code rather than
-// the invalid-argument code the other mutation paths return for the same input.
-//
-// The case exists to pin what a caller receives, not to endorse it: a caller that
-// sent a malformed id is told the server faulted, which is the wrong answer, and
-// this assertion will change when the command classifies the failure the way its
-// siblings do.
-func TestIntegrationUpdateWorkflowBuildStatusReportsAMalformedIdentityAsAServerFault(t *testing.T) {
+// TestIntegrationUpdateWorkflowBuildStatusRejectsMalformedIdentity
+// pins what a caller that sent a malformed identity receives. The service layer
+// checks only that the field is present, so the id reaches the command as given;
+// the command canonicalizes both identities before its state read, so malformed
+// values are rejected as invalid arguments without touching the database.
+func TestIntegrationUpdateWorkflowBuildStatusRejectsMalformedIdentity(t *testing.T) {
 	const started = "STARTED"
 
 	for _, tc := range []struct {
@@ -124,9 +117,9 @@ func TestIntegrationUpdateWorkflowBuildStatusReportsAMalformedIdentityAsAServerF
 			err := repo.UpdateWorkflowBuildStatus(
 				ctx, tc.workflowID(fixture), tc.userID(fixture), started, fixture.Generation, "", "",
 			)
-			assertBuildStatusCode(t, tc.name, err, codes.Internal)
-			if message := status.Convert(err).Message(); !strings.Contains(message, "failed to read workflow build state") {
-				t.Errorf("%s message = %q, want it to name the state read that refused", tc.name, message)
+			assertBuildStatusCode(t, tc.name, err, codes.InvalidArgument)
+			if message := status.Convert(err).Message(); !strings.Contains(message, "must be a valid UUID") {
+				t.Errorf("%s message = %q, want UUID validation detail", tc.name, message)
 			}
 			assertBuildStateUndone(ctx, t, pg, fixture, before, eventsBefore, tc.name)
 		})

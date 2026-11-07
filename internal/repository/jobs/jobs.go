@@ -139,11 +139,7 @@ func (r *Repository) ScheduleJob(
 		}
 		span.End()
 	}()
-	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return "", err
-	}
-	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return "", err
 	}

@@ -68,6 +68,7 @@ func startClickHouseWith(ctx context.Context, s *suite, startup clickHouseStartu
 
 	// Reuse the production migration runner against the embedded migrations.
 	if err := startup.migrate(ctx, ch); err != nil {
+		//nolint:errcheck // Preserve the migration failure if best-effort cleanup also fails.
 		_ = startup.closeClient(ch)
 		return nil, "", fmt.Errorf("apply clickhouse migrations: %w", err)
 	}

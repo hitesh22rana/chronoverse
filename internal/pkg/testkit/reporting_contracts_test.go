@@ -140,7 +140,9 @@ func reportingChild(t *testing.T, mode, message string, fails, short bool) {
 	if directory := flag.Lookup("test.gocoverdir"); directory != nil && directory.Value.String() != "" {
 		args = append(args, "-test.gocoverdir="+directory.Value.String())
 	}
-	command := exec.CommandContext(ctx, os.Args[0], args...)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := exec.CommandContext(ctx, executable, args...)
 	command.Env = append(os.Environ(), "CHRONOVERSE_TESTKIT_CONTRACT="+mode, "TESTCONTAINERS_SESSION_ID="+uuid.NewString())
 	output, err := command.CombinedOutput()
 	require.NoError(t, ctx.Err(), "%s", output)
@@ -244,7 +246,7 @@ func exerciseDockerReporting(t *testing.T, mode string) {
 			return
 		}
 		w.Header().Set("API-Version", "1.48")
-		_, _ = w.Write([]byte("OK"))
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(server.URL, "http://"))

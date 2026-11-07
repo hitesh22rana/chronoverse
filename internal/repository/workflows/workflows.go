@@ -203,20 +203,6 @@ func (r *Repository) replayCreatedWorkflow(
 	return res, nil
 }
 
-// canonicalWorkflowIdentity canonicalizes workflow and user identities so
-// repository queries receive normalized UUIDs.
-func canonicalWorkflowIdentity(workflowID, userID string) (canonicalWorkflowID, canonicalUserID string, err error) {
-	canonicalWorkflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return "", "", err
-	}
-	canonicalUserID, err = commandidempotency.CanonicalUUID(userID, "user ID")
-	if err != nil {
-		return "", "", err
-	}
-	return canonicalWorkflowID, canonicalUserID, nil
-}
-
 // UpdateWorkflow updates the workflow details.
 //
 //nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
@@ -239,7 +225,7 @@ func (r *Repository) UpdateWorkflow(
 		span.End()
 	}()
 	rawWorkflowID, rawUserID := workflowID, userID
-	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
+	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}
@@ -409,7 +395,7 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 	if generation < 1 {
 		return status.Error(codes.InvalidArgument, "workflow generation must be at least 1")
 	}
-	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
+	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}
@@ -567,7 +553,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		}
 		span.End()
 	}()
-	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
+	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return false, err
 	}
@@ -678,7 +664,7 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		}
 		span.End()
 	}()
-	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
+	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}

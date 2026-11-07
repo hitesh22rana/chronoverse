@@ -136,6 +136,36 @@ func TestUUIDDerivedIdentitiesUseCanonicalText(t *testing.T) {
 	}
 }
 
+func TestCanonicalWorkflowIdentity(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workflowID = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
+		userID     = "11111111-2222-4333-8444-555555555555"
+	)
+	gotWorkflowID, gotUserID, err := commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
+	if err != nil {
+		t.Fatalf("CanonicalWorkflowIdentity() error = %v", err)
+	}
+	if gotWorkflowID != "a0b1c2d3-e4f5-4678-9abc-def012345678" || gotUserID != userID {
+		t.Fatalf("CanonicalWorkflowIdentity() = (%q, %q), want canonical IDs", gotWorkflowID, gotUserID)
+	}
+	for _, tc := range []struct {
+		name, workflowID, userID string
+	}{
+		{name: "workflow", workflowID: "not-a-uuid", userID: userID},
+		{name: "user", workflowID: workflowID, userID: "not-a-uuid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := commandidempotency.CanonicalWorkflowIdentity(tc.workflowID, tc.userID)
+			if code := status.Code(err); code != codes.InvalidArgument {
+				t.Fatalf("CanonicalWorkflowIdentity() code = %s, want %s: %v", code, codes.InvalidArgument, err)
+			}
+		})
+	}
+}
+
 func TestLegacyWorkflowOperationsPreserveRawIdentity(t *testing.T) {
 	t.Parallel()
 

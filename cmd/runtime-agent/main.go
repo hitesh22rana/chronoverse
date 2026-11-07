@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"runtime"
 	"runtime/debug"
-	"time"
 
 	_ "github.com/KimMachineGun/automemlimit"
 	_ "go.uber.org/automaxprocs"
@@ -65,11 +63,7 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "failed to ping runtime Docker endpoint: %v\n", err)
 		return ExitError
 	}
-	defer func() {
-		if err := health.Close(); err != nil {
-			loggerpkg.FromContext(ctx).Warn("failed to close Docker health checker", zap.Error(err))
-		}
-	}()
+	defer svcpkg.CloseAndLog(ctx, health.Close, "failed to close Docker health checker")
 
 	repo := runtimerepo.New(runtimerepo.Config{
 		ID:             cfg.RuntimeAgentConfig.ID,
@@ -100,11 +94,7 @@ func run() int {
 		return ExitError
 	}
 
-	drainCtx, drainCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer drainCancel()
-	if err := repo.MarkDraining(drainCtx); err != nil {
-		loggerpkg.FromContext(ctx).Warn("failed to mark runtime node draining", zap.Error(err))
-	}
+	drainRuntime(ctx, repo)
 
 	return ExitOk
 }

@@ -51,11 +51,8 @@ func run() int {
 		return ExitError
 	}
 
-	crypto, err := crypto.New(cfg.Crypto.Secret)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
+	//nolint:errcheck // InitServerConfig already requires the exact 32-byte key length.
+	crypto, _ := crypto.New(cfg.Crypto.Secret)
 
 	usersConn, err := grpcclient.NewClient(
 		cfg.UsersService.ClientConfig(cfg.ClientTLS),
@@ -161,10 +158,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := srv.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.ExitCode(srv.Start(), os.Stderr)
 }

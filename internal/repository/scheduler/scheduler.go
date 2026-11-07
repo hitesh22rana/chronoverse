@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,7 +32,7 @@ type Config struct {
 type Repository struct {
 	tp  trace.Tracer
 	cfg *Config
-	pg  *postgres.Postgres
+	pg  transactionStarter
 }
 
 type jobDispatchOutboxEvent struct {
@@ -38,6 +40,10 @@ type jobDispatchOutboxEvent struct {
 	workflowID string
 	eventKey   string
 	payload    json.RawMessage
+}
+
+type transactionStarter interface {
+	BeginTx(context.Context) (pgx.Tx, error)
 }
 
 // New creates a new scheduler repository.
@@ -62,6 +68,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.Run")
 	defer func() {
 		if err != nil {
+			span.SetStatus(otelcodes.Error, err.Error())
 			span.RecordError(err)
 		}
 		span.End()
@@ -219,10 +226,8 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 			DispatchAttempt:    dispatchAttempt,
 			WorkflowGeneration: workflowGeneration,
 		}
-		scheduledJobEntryBytes, _err := json.Marshal(scheduledJobEntry)
-		if _err != nil {
-			continue
-		}
+		//nolint:errcheck // Dispatch fields contain only strings and integers.
+		scheduledJobEntryBytes, _ := json.Marshal(scheduledJobEntry)
 
 		events = append(events, jobDispatchOutboxEvent{
 			jobID:      id,

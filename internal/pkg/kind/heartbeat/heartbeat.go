@@ -453,10 +453,6 @@ func (h *HeartBeat) Execute(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) && errors.Is(urlErr.Err, ErrDisallowedTarget) {
-			return status.Errorf(codes.FailedPrecondition, "endpoint is not allowed: %v", ErrDisallowedTarget)
-		}
 		if errors.Is(err, ErrDisallowedTarget) {
 			return status.Errorf(codes.FailedPrecondition, "endpoint is not allowed: %v", ErrDisallowedTarget)
 		}

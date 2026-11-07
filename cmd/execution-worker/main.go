@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
@@ -87,36 +86,10 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	resourceLimits, err := workloadResourceLimits(&cfg.ExecutionWorkerConfig)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	imagePullLockConfig := imagepull.Config{
-		TTL:           cfg.ImagePullLockTTL,
-		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
-		RetryInterval: cfg.ImagePullLockRetryInterval,
-	}
-	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
-		return container.NewDockerWorkflow(
-			container.WithDockerHost(endpoint),
-			container.WithResourceLimits(resourceLimits),
-			container.WithWorkloadNetwork(cfg.ExecutionWorkerConfig.WorkloadNetwork),
-			container.WithWorkloadSubnet(cfg.ExecutionWorkerConfig.WorkloadSubnet),
-			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
-				CAFile:     cfg.DockerProxy.TLS.CAFile,
-				CertFile:   cfg.DockerProxy.TLS.CertFile,
-				KeyFile:    cfg.DockerProxy.TLS.KeyFile,
-				ServerName: cfg.DockerProxy.TLS.ServerName,
-			}),
-			container.WithDockerProxyToken(cfg.DockerProxy.Token),
-		)
-	})
-	defer func() {
-		if closeErr := dockerClients.Close(); closeErr != nil {
-			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
-		}
-	}()
+	//nolint:errcheck // InitExecutionJobConfig has already validated the same memory conversion.
+	resourceLimits, _ := workloadResourceLimits(&cfg.ExecutionWorkerConfig)
+	containerProvider, closeContainers := newContainerProvider(cfg, resourceLimits, rdb)
+	defer svcpkg.CloseAndLog(ctx, closeContainers, "failed to close docker endpoint clients")
 
 	workflowsConn, err := grpcclient.NewClient(
 		cfg.WorkflowsService.ClientConfig(cfg.ClientTLS),
@@ -158,19 +131,10 @@ func run() int {
 		JobLogLiveTimeout:           cfg.ExecutionWorkerConfig.JobLogLiveTimeout,
 		JobLogLiveBufferSize:        cfg.ExecutionWorkerConfig.JobLogLiveBufferSize,
 	}, auth, kfk, rdb, kafkaLifecycle, &executorrepo.Services{
-		Workflows: workflowspb.NewWorkflowsServiceClient(workflowsConn),
-		Jobs:      jobspb.NewJobsServiceClient(jobsConn),
-		CsvcForEndpoint: func(runtimeNodeID, endpoint string) (executorrepo.ContainerSvc, error) {
-			endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
-			csvc, csvcErr := dockerClients.Get(endpoint)
-			if csvcErr != nil {
-				return nil, csvcErr
-			}
-			cfg := imagePullLockConfig
-			cfg.LockScope = runtimeNodeID
-			return executorrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
-		},
-		Hsvc: heartbeat.New(),
+		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
+		Jobs:            jobspb.NewJobsServiceClient(jobsConn),
+		CsvcForEndpoint: containerProvider,
+		Hsvc:            heartbeat.New(),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -189,12 +153,7 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.WorkerExitCode(ctx, app.Run(ctx), os.Stderr)
 }
 
 func executionWorkerRetryConfig() *grpcclient.RetryConfig {

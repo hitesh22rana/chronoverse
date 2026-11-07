@@ -96,8 +96,14 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					}
 					if path == "/tasks" {
 						polls++
+						ids, limit, failedID := "1", "1", 1
+						if polls > 1 {
+							ids, limit, failedID = "2,3,4", "3", 2
+						}
+						require.Equal(t, ids, r.URL.Query().Get("uids"))
+						require.Equal(t, limit, r.URL.Query().Get("limit"))
 						if polls == map[string]int{"create task": 1, "update task": 2}[stage] {
-							return taskResponse(200, `{"results":[{"uid":1,"status":"failed","error":{"code":"bad_task","message":"failed"}}]}`), nil
+							return taskResponse(200, fmt.Sprintf(`{"results":[{"uid":%d,"status":"failed","error":{"code":"bad_task","message":"failed"}}]}`, failedID)), nil
 						}
 						if polls == 1 {
 							return taskResponse(200, `{"results":[{"uid":1,"status":"succeeded"}]}`), nil
@@ -121,10 +127,10 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					require.Error(t, err)
 					require.Contains(t, err.Error(), map[string]string{
 						"create": "create index", "create task": "task 1 failed", "searchable": "update searchable",
-						"filterable": "update filterable", "sortable": "update sortable", "update task": "task 1 failed",
+						"filterable": "update filterable", "sortable": "update sortable", "update task": "task 2 failed",
 					}[stage])
 				}
-				size := map[string]int{"create": 1, "searchable": 3, "filterable": 4, "sortable": 5}[stage]
+				size := map[string]int{"create": 1, "create task": 2, "searchable": 3, "filterable": 4, "sortable": 5, "update task": 6}[stage]
 				if size > 0 {
 					require.Len(t, paths, size)
 				}

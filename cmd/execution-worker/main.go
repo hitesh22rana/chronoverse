@@ -23,7 +23,6 @@ import (
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
@@ -50,11 +49,9 @@ func run() int {
 		return ExitError
 	}
 
-	// Register the deployment's RFC 6052 network-specific Pref64 prefixes so
-	// heartbeat egress validation decodes and re-checks their embedded IPv4
-	// addresses (NAT64 must not bypass the private-address policy).
-	if nat64Err := heartbeat.ConfigureNAT64Prefixes(cfg.ExecutionWorkerConfig.HeartbeatNAT64Prefixes); nat64Err != nil {
-		fmt.Fprintln(os.Stderr, nat64Err)
+	heartbeatProvider, err := newHeartbeatProvider(cfg.ExecutionWorkerConfig.HeartbeatNAT64Prefixes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 
@@ -134,7 +131,7 @@ func run() int {
 		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:            jobspb.NewJobsServiceClient(jobsConn),
 		CsvcForEndpoint: containerProvider,
-		Hsvc:            heartbeat.New(),
+		Hsvc:            heartbeatProvider,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

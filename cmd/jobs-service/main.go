@@ -69,15 +69,7 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	clickhouseCfg := cfg.ClickHouse.ClientConfig()
-	// Preserve the existing jobs-service TLS source during config deduplication.
-	clickhouseCfg.TLSConfig = &clickhouse.TLSConfig{
-		Enabled:  cfg.Redis.TLS.Enabled,
-		CAFile:   cfg.Redis.TLS.CAFile,
-		CertFile: cfg.Redis.TLS.CertFile,
-		KeyFile:  cfg.Redis.TLS.KeyFile,
-	}
-	cdb, err := clickhouse.New(ctx, clickhouseCfg)
+	cdb, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError

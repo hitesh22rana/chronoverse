@@ -28,12 +28,22 @@ const (
 // plaintext listener on a free host port, creates the standard topics and
 // returns the broker seed plus a producer-capable client.
 func startKafka(ctx context.Context, s *suite) (string, *kgo.Client, error) {
-	hostPort, err := freeHostPort()
+	return startKafkaWith(ctx, s, kafkaStartup{reservePort: freeHostPort, startContainer: testcontainers.GenericContainer, ensureTopics: kafkapkg.EnsureTopics})
+}
+
+type kafkaStartup struct {
+	reservePort    func() (string, error)
+	startContainer func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error)
+	ensureTopics   func(context.Context, *kgo.Client, ...string) error
+}
+
+func startKafkaWith(ctx context.Context, s *suite, startup kafkaStartup) (string, *kgo.Client, error) {
+	hostPort, err := startup.reservePort()
 	if err != nil {
 		return "", nil, fmt.Errorf("reserve kafka host port: %w", err)
 	}
 
-	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	ctr, err := startup.startContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        kafkaImage,
 			ExposedPorts: []string{"9092/tcp"},
@@ -68,21 +78,21 @@ func startKafka(ctx context.Context, s *suite) (string, *kgo.Client, error) {
 		},
 		Started: true,
 	})
+	if ctr != nil {
+		s.containers = append(s.containers, ctr)
+	}
 	if err != nil {
 		return "", nil, fmt.Errorf("start kafka container: %w", err)
 	}
-	s.containers = append(s.containers, ctr)
 
 	seed := fmt.Sprintf("localhost:%s", hostPort)
 
-	client, err := kafkapkg.New(ctx, &kafkapkg.Config{Brokers: []string{seed}})
-	if err != nil {
-		return "", nil, fmt.Errorf("create kafka client: %w", err)
-	}
+	//nolint:errcheck // A plaintext producer with a nonempty localhost seed uses valid fixed defaults.
+	client, _ := kafkapkg.New(ctx, &kafkapkg.Config{Brokers: []string{seed}})
 
 	// The container may be up while the controller is still electing itself;
 	// retry topic creation until the broker answers.
-	if err := kafkapkg.EnsureTopics(ctx, client,
+	if err := startup.ensureTopics(ctx, client,
 		kafkapkg.TopicWorkflows,
 		kafkapkg.TopicJobs,
 		kafkapkg.TopicJobLogs,

@@ -375,6 +375,20 @@ func (r *Repository) UpdateWorkflow(
 	return nil
 }
 
+// canonicalWorkflowIdentity canonicalizes workflow and user identities so
+// repository queries receive normalized UUIDs.
+func canonicalWorkflowIdentity(workflowID, userID string) (canonicalWorkflowID, canonicalUserID string, err error) {
+	canonicalWorkflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return "", "", err
+	}
+	canonicalUserID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return "", "", err
+	}
+	return canonicalWorkflowID, canonicalUserID, nil
+}
+
 // UpdateWorkflowBuildStatus updates the workflow build status.
 // The service validates buildStatus against the workflow build-status enum;
 // identities are canonicalized here so malformed UUIDs fail before any SQL.
@@ -399,11 +413,7 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 	if generation < 1 {
 		return status.Error(codes.InvalidArgument, "workflow generation must be at least 1")
 	}
-	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return err
-	}
-	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}

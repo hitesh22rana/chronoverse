@@ -92,7 +92,7 @@ func checkPostgresStartup(t *testing.T, stage string) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s := &suite{}
-	calls, migrated, closed, terminated := 0, 0, 0
+	var calls, migrated, closed, terminated int
 	client := &postgrespkg.Postgres{}
 	fixture := mappedFixture{port: network.MustParsePort("15432/tcp"), terminationContainer: terminationContainer{terminate: func(context.Context) error { terminated++; return nil }}}
 	if stage == "host" {

@@ -163,14 +163,12 @@ func checkPostgresStartup(t *testing.T, stage string) {
 	require.Equal(t, map[string]int{"connect": 30, "canceled": 1, "cancel waiting": 1, "migration": 1, "retry success": 2, "success": 1}[stage], calls)
 	require.Equal(t, map[bool]int{true: 1}[stage == "migration" || success], migrated)
 	require.Equal(t, map[bool]int{true: 1}[stage == "migration"], closed)
-	if stage == "connect" {
-		require.Equal(t, 30, calls)
-		require.Equal(t, 29*time.Second, time.Since(start))
-	}
-	if stage == "retry success" {
-		require.Equal(t, 2, calls)
-		require.Equal(t, time.Second, time.Since(start))
-	}
+	require.Equal(t, map[string]time.Duration{
+		"connect":        29 * time.Second,
+		"retry success":  time.Second,
+		"cancel waiting": 500 * time.Millisecond,
+	}[stage], time.Since(start))
+
 	s.terminate(t.Context())
 	s.terminate(t.Context())
 	require.Equal(t, map[bool]int{true: 1}[stage != "container"], terminated)

@@ -44,38 +44,36 @@ func startKafkaWith(ctx context.Context, s *suite, startup kafkaStartup) (string
 	}
 
 	ctr, err := startup.startContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        kafkaImage,
-			ExposedPorts: []string{"9092/tcp"},
-			Env: map[string]string{
-				"KAFKA_KRAFT_MODE":                               "true",
-				"KAFKA_NODE_ID":                                  "1",
-				"KAFKA_PROCESS_ROLES":                            "controller,broker",
-				"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9093",
-				"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
-				"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
-				"KAFKA_ADVERTISED_LISTENERS":                     fmt.Sprintf("PLAINTEXT://localhost:%s", hostPort),
-				"KAFKA_INTER_BROKER_LISTENER_NAME":               "PLAINTEXT",
-				"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
-				"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
-				"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
-				"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
-				"KAFKA_MIN_INSYNC_REPLICAS":                      "1",
-				"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                "false",
-				"CLUSTER_ID":                                     kafkaClusterID,
-			},
-			HostConfigModifier: func(hc *container.HostConfig) {
-				hc.PortBindings = network.PortMap{
-					network.MustParsePort("9092/tcp"): []network.PortBinding{
-						{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort},
-					},
-				}
-			},
-			WaitingFor: wait.ForAll(
-				wait.ForLog("Kafka Server started"),
-				wait.ForListeningPort("9092/tcp"),
-			).WithDeadline(3 * time.Minute),
+		Image:        kafkaImage,
+		ExposedPorts: []string{"9092/tcp"},
+		Env: map[string]string{
+			"KAFKA_KRAFT_MODE":                               "true",
+			"KAFKA_NODE_ID":                                  "1",
+			"KAFKA_PROCESS_ROLES":                            "controller,broker",
+			"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9093",
+			"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+			"KAFKA_ADVERTISED_LISTENERS":                     fmt.Sprintf("PLAINTEXT://localhost:%s", hostPort),
+			"KAFKA_INTER_BROKER_LISTENER_NAME":               "PLAINTEXT",
+			"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
+			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
+			"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+			"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
+			"KAFKA_MIN_INSYNC_REPLICAS":                      "1",
+			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                "false",
+			"CLUSTER_ID":                                     kafkaClusterID,
 		},
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.PortBindings = network.PortMap{
+				network.MustParsePort("9092/tcp"): []network.PortBinding{
+					{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort},
+				},
+			}
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForLog("Kafka Server started"),
+			wait.ForListeningPort("9092/tcp"),
+		).WithDeadline(3 * time.Minute),
 		Started: true,
 	})
 	if ctr != nil {

@@ -93,13 +93,10 @@ func TestKafkaStartupFailuresRetainOwnershipAndCause(t *testing.T) {
 			require.Len(t, s.containers, expectedOwned)
 			require.Equal(t, map[string]int{"topics": 1, "success": 1}[stage], ensured)
 			if created != nil {
-				ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-				defer cancel()
-				pingErr := created.Ping(ctx)
 				if stage == "topics" {
-					require.ErrorIs(t, pingErr, kgo.ErrClientClosed)
+					require.ErrorIs(t, created.Context().Err(), context.Canceled)
 				} else {
-					require.NotErrorIs(t, pingErr, kgo.ErrClientClosed)
+					require.NoError(t, created.Context().Err())
 				}
 			}
 			s.terminate(t.Context())

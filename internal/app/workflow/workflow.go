@@ -36,5 +36,5 @@ func (e *Workflow) Run(ctx context.Context) error {
 		e.logger.Info("successfully exited the workflow job")
 	}
 
-	return nil
+	return err
 }

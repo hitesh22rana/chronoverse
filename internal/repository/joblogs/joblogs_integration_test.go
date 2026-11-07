@@ -53,7 +53,7 @@ func TestIntegrationProcessesJobLogsEndToEnd(t *testing.T) {
 	// Wire the consumer like the real service.
 	lifecycle := kafkapkg.NewPartitionLifecycle()
 	kfk, err := kafkapkg.New(ctx,
-		kafkapkg.WithBrokers(testkit.KafkaSeed(t)),
+		&kafkapkg.Config{Brokers: []string{testkit.KafkaSeed(t)}},
 		kafkapkg.WithConsumerGroup("joblogs-integration-"+t.Name()),
 		kafkapkg.WithConsumeTopics(kafkapkg.TopicJobLogs),
 		kafkapkg.WithDisableAutoCommit(),
@@ -166,7 +166,7 @@ func TestIntegrationDropsLogsForUnknownWorkflows(t *testing.T) {
 
 	lifecycle := kafkapkg.NewPartitionLifecycle()
 	kfk, err := kafkapkg.New(ctx,
-		kafkapkg.WithBrokers(testkit.KafkaSeed(t)),
+		&kafkapkg.Config{Brokers: []string{testkit.KafkaSeed(t)}},
 		kafkapkg.WithConsumerGroup("joblogs-integration-drop-"+t.Name()),
 		kafkapkg.WithConsumeTopics(kafkapkg.TopicJobLogs),
 		kafkapkg.WithDisableAutoCommit(),

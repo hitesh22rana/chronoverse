@@ -60,8 +60,8 @@ func TestRunWithoutMaintenance(t *testing.T) {
 					return 0, nil
 				},
 			}}
-			if err := app.Run(t.Context()); err != nil {
-				t.Fatalf("Run()=%v", err)
+			if err := app.Run(t.Context()); !errors.Is(err, tc.runErr) {
+				t.Fatalf("Run()=%v, want %v", err, tc.runErr)
 			}
 			if calls != 1 || serviceCtx == nil {
 				t.Fatalf("calls=%d context=%v", calls, serviceCtx)

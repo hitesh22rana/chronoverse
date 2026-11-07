@@ -19,26 +19,38 @@ const (
 // application uses (searchable, filterable and sortable attributes), reusing the
 // production index setup.
 func startMeilisearch(ctx context.Context, s *suite) (meilisearch.ServiceManager, error) {
-	ctr, err := tcmeili.Run(ctx, meilisearchImage, tcmeili.WithMasterKey(meilisearchKey))
+	return startMeilisearchWith(ctx, s, meilisearchStartup{
+		startContainer: func(ctx context.Context) (*tcmeili.MeilisearchContainer, error) {
+			return tcmeili.Run(ctx, meilisearchImage, tcmeili.WithMasterKey(meilisearchKey))
+		},
+		setupIndexes: meilisearchpkg.SetupIndexes,
+	})
+}
+
+type meilisearchStartup struct {
+	startContainer func(context.Context) (*tcmeili.MeilisearchContainer, error)
+	setupIndexes   func(context.Context, meilisearch.ServiceManager) error
+}
+
+func startMeilisearchWith(ctx context.Context, s *suite, startup meilisearchStartup) (meilisearch.ServiceManager, error) {
+	ctr, err := startup.startContainer(ctx)
+	if ctr != nil {
+		s.containers = append(s.containers, ctr)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("start meilisearch container: %w", err)
 	}
-	s.containers = append(s.containers, ctr)
 
 	addr, err := ctr.Address(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("meilisearch address: %w", err)
 	}
 
-	client, err := meilisearchpkg.New(ctx,
-		meilisearchpkg.WithURI(addr),
-		meilisearchpkg.WithMasterKey(meilisearchKey),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create meilisearch client: %w", err)
-	}
+	//nolint:errcheck // Address returns a nonempty HTTP endpoint; the key is fixed and TLS is disabled.
+	client, _ := meilisearchpkg.New(ctx, &meilisearchpkg.Config{URI: addr, MasterKey: meilisearchKey})
 
-	if err := meilisearchpkg.SetupIndexes(ctx, client); err != nil {
+	if err := startup.setupIndexes(ctx, client); err != nil {
+		client.Close()
 		return nil, fmt.Errorf("setup meilisearch indexes: %w", err)
 	}
 

@@ -3,37 +3,43 @@ package kafka
 import (
 	"testing"
 
-	"github.com/hitesh22rana/chronoverse/internal/config"
+	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func TestKafkaTLSOptionsCanRecoverFromRejectedCredentials(t *testing.T) {
-	invalid := &config.Kafka{}
-	invalid.TLS.Enabled = true
-	if client, err := New(t.Context(), WithBrokers("127.0.0.1:1"), WithTLS(invalid)); client != nil || err == nil {
-		t.Fatal("constructor accepted invalid TLS credentials")
+func TestKafkaConnectionConfigAndConsumerOptions(t *testing.T) {
+	for _, cfg := range []*Config{nil, {}} {
+		client, err := New(t.Context(), cfg)
+		require.Nil(t, client)
+		require.ErrorContains(t, err, "missing brokers")
 	}
-	cfg := &Config{}
-	WithTLS(invalid)(cfg)
-	if cfg.tlsErr == nil {
-		t.Fatal("invalid TLS option did not retain error")
-	}
+	cfg := &Config{Brokers: []string{"127.0.0.1:1"}, TLSConfig: &TLSConfig{Enabled: true}}
+	client, err := New(t.Context(), cfg)
+	require.Nil(t, client)
+	require.ErrorContains(t, err, "client key pair")
 	cert, key := adapterTLSIdentity(t)
-	valid := &config.Kafka{}
-	valid.TLS.Enabled = true
-	valid.TLS.CertFile = cert
-	valid.TLS.KeyFile = key
-	valid.TLS.CAFile = cert
-	WithTLS(valid)(cfg)
-	if cfg.tlsErr != nil || cfg.TLS == nil {
-		t.Fatalf("valid TLS did not clear earlier error: %v", cfg.tlsErr)
-	}
-	client, err := New(t.Context(), WithBrokers("127.0.0.1:1"), WithTLS(valid))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg.TLSConfig = &TLSConfig{Enabled: true, CertFile: cert, KeyFile: key, CAFile: cert}
+	client, err = New(t.Context(), cfg)
+	require.NoError(t, err)
 	client.Close()
-	WithTLS(&config.Kafka{})(cfg)
-	if cfg.tlsErr != nil || cfg.TLS != nil {
-		t.Fatal("disabled TLS retained credentials or error")
-	}
+	cfg.TLSConfig.Enabled = false
+	cfg.TLSConfig.CertFile = "missing"
+	cfg.ConsumerGroup = "original-group"
+	lifecycle := NewPartitionLifecycle()
+	client, err = New(t.Context(), cfg, WithConsumerGroup("consumer-group"), WithConsumeTopics("topic"), WithDisableAutoCommit(), WithPartitionLifecycle(lifecycle))
+	require.NoError(t, err)
+	defer client.Close()
+	require.Equal(t, "original-group", cfg.ConsumerGroup)
+	require.Empty(t, cfg.ConsumeTopics)
+	require.False(t, cfg.DisableAutoCommit)
+	require.Nil(t, cfg.PartitionLifecycle)
+	require.Equal(t, "consumer-group", client.OptValue(kgo.ConsumerGroup))
+	require.Equal(t, []string{"topic"}, client.GetConsumeTopics())
+	require.Equal(t, true, client.OptValue(kgo.DisableAutoCommit))
+	require.NotNil(t, client.OptValue(kgo.OnPartitionsAssigned))
+	require.NotNil(t, client.OptValue(kgo.OnPartitionsRevoked))
+	require.NotNil(t, client.OptValue(kgo.OnPartitionsLost))
+	plain, err := New(t.Context(), &Config{Brokers: []string{"127.0.0.1:1"}})
+	require.NoError(t, err)
+	plain.Close()
 }

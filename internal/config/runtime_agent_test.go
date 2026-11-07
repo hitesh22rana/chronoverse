@@ -61,3 +61,15 @@ func TestInitRuntimeAgentConfigRejectsInvalidAdvertisePort(t *testing.T) {
 		t.Fatal("InitRuntimeAgentConfig() error = nil, want invalid port error")
 	}
 }
+
+func TestInitRuntimeAgentConfigRejectsMissingResolvedEndpoints(t *testing.T) {
+	t.Setenv("NODE_NAME", "runtime-a")
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("RUNTIME_AGENT_DOCKER_ENDPOINT", "")
+	t.Setenv("RUNTIME_AGENT_DOCKER_HEALTH_ENDPOINT", "")
+	t.Setenv("RUNTIME_AGENT_DOCKER_ADVERTISE_HOST", "")
+	cfg, err := config.InitRuntimeAgentConfig()
+	if err == nil || cfg != nil {
+		t.Fatalf("configuration=%+v error=%v, want rejection", cfg, err)
+	}
+}

@@ -28,61 +28,69 @@ const (
 // plaintext listener on a free host port, creates the standard topics and
 // returns the broker seed plus a producer-capable client.
 func startKafka(ctx context.Context, s *suite) (string, *kgo.Client, error) {
-	hostPort, err := freeHostPort()
+	return startKafkaWith(ctx, s, kafkaStartup{reservePort: freeHostPort, startContainer: testcontainers.GenericContainer, ensureTopics: kafkapkg.EnsureTopics})
+}
+
+type kafkaStartup struct {
+	reservePort    func() (string, error)
+	startContainer func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error)
+	ensureTopics   func(context.Context, *kgo.Client, ...string) error
+}
+
+func startKafkaWith(ctx context.Context, s *suite, startup kafkaStartup) (string, *kgo.Client, error) {
+	hostPort, err := startup.reservePort()
 	if err != nil {
 		return "", nil, fmt.Errorf("reserve kafka host port: %w", err)
 	}
 
-	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        kafkaImage,
-			ExposedPorts: []string{"9092/tcp"},
-			Env: map[string]string{
-				"KAFKA_KRAFT_MODE":                               "true",
-				"KAFKA_NODE_ID":                                  "1",
-				"KAFKA_PROCESS_ROLES":                            "controller,broker",
-				"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9093",
-				"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
-				"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
-				"KAFKA_ADVERTISED_LISTENERS":                     fmt.Sprintf("PLAINTEXT://localhost:%s", hostPort),
-				"KAFKA_INTER_BROKER_LISTENER_NAME":               "PLAINTEXT",
-				"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
-				"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
-				"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
-				"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
-				"KAFKA_MIN_INSYNC_REPLICAS":                      "1",
-				"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                "false",
-				"CLUSTER_ID":                                     kafkaClusterID,
-			},
-			HostConfigModifier: func(hc *container.HostConfig) {
-				hc.PortBindings = network.PortMap{
-					network.MustParsePort("9092/tcp"): []network.PortBinding{
-						{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort},
-					},
-				}
-			},
-			WaitingFor: wait.ForAll(
-				wait.ForLog("Kafka Server started"),
-				wait.ForListeningPort("9092/tcp"),
-			).WithDeadline(3 * time.Minute),
+	ctr, err := startup.startContainer(ctx, testcontainers.GenericContainerRequest{
+		Image:        kafkaImage,
+		ExposedPorts: []string{"9092/tcp"},
+		Env: map[string]string{
+			"KAFKA_KRAFT_MODE":                               "true",
+			"KAFKA_NODE_ID":                                  "1",
+			"KAFKA_PROCESS_ROLES":                            "controller,broker",
+			"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9093",
+			"KAFKA_LISTENERS":                                "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+			"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+			"KAFKA_ADVERTISED_LISTENERS":                     fmt.Sprintf("PLAINTEXT://localhost:%s", hostPort),
+			"KAFKA_INTER_BROKER_LISTENER_NAME":               "PLAINTEXT",
+			"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
+			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
+			"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+			"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
+			"KAFKA_MIN_INSYNC_REPLICAS":                      "1",
+			"KAFKA_AUTO_CREATE_TOPICS_ENABLE":                "false",
+			"CLUSTER_ID":                                     kafkaClusterID,
 		},
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.PortBindings = network.PortMap{
+				network.MustParsePort("9092/tcp"): []network.PortBinding{
+					{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: hostPort},
+				},
+			}
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForLog("Kafka Server started"),
+			wait.ForListeningPort("9092/tcp"),
+		).WithDeadline(3 * time.Minute),
 		Started: true,
 	})
+	if ctr != nil {
+		s.containers = append(s.containers, ctr)
+	}
 	if err != nil {
 		return "", nil, fmt.Errorf("start kafka container: %w", err)
 	}
-	s.containers = append(s.containers, ctr)
 
 	seed := fmt.Sprintf("localhost:%s", hostPort)
 
-	client, err := kafkapkg.New(ctx, kafkapkg.WithBrokers(seed))
-	if err != nil {
-		return "", nil, fmt.Errorf("create kafka client: %w", err)
-	}
+	//nolint:errcheck // A plaintext producer with a nonempty localhost seed uses valid fixed defaults.
+	client, _ := kafkapkg.New(ctx, &kafkapkg.Config{Brokers: []string{seed}})
 
 	// The container may be up while the controller is still electing itself;
 	// retry topic creation until the broker answers.
-	if err := kafkapkg.EnsureTopics(ctx, client,
+	if err := startup.ensureTopics(ctx, client,
 		kafkapkg.TopicWorkflows,
 		kafkapkg.TopicJobs,
 		kafkapkg.TopicJobLogs,

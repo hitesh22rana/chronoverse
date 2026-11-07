@@ -64,10 +64,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.WorkerExitCode(ctx, app.Run(ctx), os.Stderr)
 }

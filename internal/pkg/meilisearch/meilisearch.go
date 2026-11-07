@@ -5,100 +5,41 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"os"
-	"time"
 
 	"github.com/meilisearch/meilisearch-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/hitesh22rana/chronoverse/internal/config"
 )
 
-const (
-	initTimeout time.Duration = 10 * time.Second
-)
+// TLSConfig holds Meilisearch client TLS credentials.
+type TLSConfig struct {
+	Enabled                   bool
+	CAFile, CertFile, KeyFile string
+}
 
-// Config represents the configuration for the MeiliSearch client.
+// Config represents the Meilisearch client configuration.
 type Config struct {
-	URI       string
-	MasterKey string
-	TLS       *tls.Config
-	tlsErr    error
+	URI, MasterKey string
+	TLSConfig      *TLSConfig
 }
 
-// Option configures the MeiliSearch client.
-type Option func(*Config)
-
-// New creates a new MeiliSearch client.
-func New(ctx context.Context, options ...Option) (meilisearch.ServiceManager, error) {
-	_, cancel := context.WithTimeout(ctx, initTimeout)
-	defer cancel()
-
-	c := &Config{}
-
-	for _, opt := range options {
-		opt(c)
+// New creates a Meilisearch client; request contexts bound individual operations.
+func New(_ context.Context, cfg *Config) (meilisearch.ServiceManager, error) {
+	if cfg == nil || cfg.URI == "" {
+		return nil, status.Error(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing uri")
 	}
-
-	if c.tlsErr != nil {
-		return nil, c.tlsErr
+	if cfg.MasterKey == "" {
+		return nil, status.Error(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing masterkey")
 	}
-
-	var opts []meilisearch.Option
-	if c.URI == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing uri")
-	}
-	if c.MasterKey == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing masterkey")
-	}
-
-	opts = append(opts, meilisearch.WithAPIKey(c.MasterKey))
-	if c.TLS != nil {
-		opts = append(opts, meilisearch.WithCustomClientWithTLS(c.TLS))
-	}
-
-	return meilisearch.New(c.URI, opts...), nil
-}
-
-// WithURI sets the MeiliSearch uri config.
-func WithURI(uri string) Option {
-	return func(c *Config) {
-		if uri == "" {
-			return
-		}
-
-		c.URI = uri
-	}
-}
-
-// WithMasterKey sets the MeiliSearch masterkey config.
-func WithMasterKey(masterKey string) Option {
-	return func(c *Config) {
-		if masterKey == "" {
-			return
-		}
-
-		c.MasterKey = masterKey
-	}
-}
-
-// WithTLS sets the MeiliSearch TLS config.
-func WithTLS(cfg *config.MeiliSearch) Option {
-	return func(c *Config) {
-		if !cfg.TLS.Enabled {
-			c.TLS = nil
-			c.tlsErr = nil
-			return
-		}
-
-		tlsConfig, err := newTLSConfig(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
+	opts := []meilisearch.Option{meilisearch.WithAPIKey(cfg.MasterKey)}
+	if cfg.TLSConfig != nil && cfg.TLSConfig.Enabled {
+		tlsConfig, err := newTLSConfig(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile, cfg.TLSConfig.CAFile)
 		if err != nil {
-			c.tlsErr = err
-			return
+			return nil, err
 		}
-		c.TLS = tlsConfig
-		c.tlsErr = nil
+		opts = append(opts, meilisearch.WithCustomClientWithTLS(tlsConfig))
 	}
+	return meilisearch.New(cfg.URI, opts...), nil
 }
 
 // newTLSConfig creates a new TLS config for the MeiliSearch client.

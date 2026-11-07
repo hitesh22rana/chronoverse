@@ -10,7 +10,6 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
-	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 	jobpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -21,7 +20,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -69,12 +68,7 @@ func run() int {
 	}
 	defer cdb.Close()
 
-	msdb, err := meilisearch.New(
-		ctx,
-		meilisearch.WithURI(cfg.MeiliSearch.URI),
-		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
-		meilisearch.WithTLS(&cfg.MeiliSearch),
-	)
+	msdb, err := meilisearch.New(ctx, cfg.MeiliSearch.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -82,13 +76,11 @@ func run() int {
 	defer msdb.Close()
 
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
+	kfk, err := kafka.New(ctx, cfg.Kafka.ClientConfig(),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(kafka.TopicWorkflows),
 		kafka.WithDisableAutoCommit(),
 		kafka.WithPartitionLifecycle(kafkaLifecycle),
-		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -98,38 +90,8 @@ func run() int {
 
 	// Workflow workers resolve image metadata through the runtime registry.
 	// Runtime identity scopes image pull locks to the owning Docker daemon.
-	imagePullLockConfig := imagepull.Config{
-		TTL:           cfg.ImagePullLockTTL,
-		WaitTimeout:   cfg.ImagePullLockWaitTimeout,
-		RetryInterval: cfg.ImagePullLockRetryInterval,
-	}
-	dockerClients := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
-		return container.NewDockerWorkflow(
-			container.WithDockerHost(endpoint),
-			container.WithDockerProxyTLS(container.DockerProxyTLSConfig{
-				CAFile:     cfg.DockerProxy.TLS.CAFile,
-				CertFile:   cfg.DockerProxy.TLS.CertFile,
-				KeyFile:    cfg.DockerProxy.TLS.KeyFile,
-				ServerName: cfg.DockerProxy.TLS.ServerName,
-			}),
-			container.WithDockerProxyToken(cfg.DockerProxy.Token),
-		)
-	})
-	defer func() {
-		if closeErr := dockerClients.Close(); closeErr != nil {
-			loggerpkg.FromContext(ctx).Warn("failed to close docker endpoint clients", zap.Error(closeErr))
-		}
-	}()
-	containerSvcForEndpoint := func(runtimeNodeID, endpoint string) (workflowrepo.ContainerSvc, error) {
-		endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
-		csvc, csvcErr := dockerClients.Get(endpoint)
-		if csvcErr != nil {
-			return nil, csvcErr
-		}
-		cfg := imagePullLockConfig
-		cfg.LockScope = runtimeNodeID
-		return workflowrepo.NewImagePullLockedContainerSvc(csvc, rdb, cfg), nil
-	}
+	containerProvider, closeContainers := newContainerProvider(cfg, rdb)
+	defer svcpkg.CloseAndLog(ctx, closeContainers, "failed to close docker endpoint clients")
 
 	workflowsConn, err := grpcclient.NewClient(
 		cfg.WorkflowsService.ClientConfig(cfg.ClientTLS),
@@ -168,7 +130,7 @@ func run() int {
 		Workflows:       workflowspb.NewWorkflowsServiceClient(workflowsConn),
 		Jobs:            jobpb.NewJobsServiceClient(jobsConn),
 		Notifications:   notificationspb.NewNotificationsServiceClient(notificationsConn),
-		CsvcForEndpoint: containerSvcForEndpoint,
+		CsvcForEndpoint: containerProvider,
 		ImagePrefetch: workflowrepo.ImagePrefetchConfig{
 			Enabled:   cfg.ImagePrefetchEnabled,
 			MaxFanout: cfg.ImagePrefetchMaxFanout,
@@ -188,10 +150,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.WorkerExitCode(ctx, app.Run(ctx), os.Stderr)
 }

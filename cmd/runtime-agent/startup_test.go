@@ -40,6 +40,7 @@ func TestRunRejectsInvalidConfiguration(t *testing.T) {
 	child.Env = append(child.Env,
 		"CHRONOVERSE_COMMAND_CONFIG_CHILD=1",
 		"ENV=development",
+		"DOCKER_HOST=tcp://127.0.0.1:2376",
 		"CRYPTO_SECRET="+strings.Repeat("a", 32),
 		"SERVER_CSRF_HMAC_SECRET="+strings.Repeat("b", 32),
 		"GRPC_PORT=8080",

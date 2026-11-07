@@ -141,7 +141,6 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 		config, err := grpcserverpkg.LoadTLSConfig(cfg.TLSConfig.CAFile, cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile)
 		if err != nil {
 			loggerpkg.FromContext(ctx).Fatal("failed to load TLS credentials", zap.Error(err))
-			return nil
 		}
 
 		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(config)))

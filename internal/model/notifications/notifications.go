@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
@@ -45,32 +42,28 @@ func (e Entity) ToString() string {
 
 // CreateWorkflowsNotificationPayload creates a notification payload for workflows.
 func CreateWorkflowsNotificationPayload(title, message, workflowID string) (string, error) {
-	payload, err := json.Marshal(map[string]any{
+	//nolint:errcheck // All payload fields are strings.
+	payload, _ := json.Marshal(map[string]string{
 		"title":       title,
 		"message":     message,
 		"entity_id":   workflowID,
 		"entity_type": EntityWorkflow.ToString(),
 		"action_url":  fmt.Sprintf("/workflows/%s", workflowID),
 	})
-	if err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "failed to marshal payload: %v", err)
-	}
 
 	return string(payload), nil
 }
 
 // CreateJobsNotificationPayload creates a notification payload for jobs.
 func CreateJobsNotificationPayload(title, message, workflowID, jobID string) (string, error) {
-	payload, err := json.Marshal(map[string]any{
+	//nolint:errcheck // All payload fields are strings.
+	payload, _ := json.Marshal(map[string]string{
 		"title":       title,
 		"message":     message,
 		"entity_id":   jobID,
 		"entity_type": EntityJob.ToString(),
 		"action_url":  fmt.Sprintf("/workflows/%s/jobs/%s", workflowID, jobID),
 	})
-	if err != nil {
-		return "", status.Errorf(codes.InvalidArgument, "failed to marshal payload: %v", err)
-	}
 
 	return string(payload), nil
 }

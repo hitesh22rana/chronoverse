@@ -28,6 +28,11 @@ type migration struct {
 // mirroring golang-migrate: partially applied migrations cannot be safely
 // re-run, so manual resolution of schema_migrations is required.
 func Migrate(ctx context.Context, client *Client) error {
+	return migrate(ctx, client, migrationsFS)
+}
+
+// migrate accepts a filesystem so migration discovery and execution share one source.
+func migrate(ctx context.Context, client *Client, source fs.FS) error {
 	if err := createSchemaMigrationsTable(ctx, client); err != nil {
 		return fmt.Errorf("create schema_migrations table: %w", err)
 	}
@@ -37,7 +42,7 @@ func Migrate(ctx context.Context, client *Client) error {
 		return fmt.Errorf("get applied migrations: %w", err)
 	}
 
-	pending, err := getPendingMigrations(applied)
+	pending, err := getPendingMigrations(source, applied)
 	if err != nil {
 		return fmt.Errorf("get pending migrations: %w", err)
 	}
@@ -92,10 +97,10 @@ func getAppliedMigrations(ctx context.Context, client *Client) (map[int]bool, er
 }
 
 // Returns unapplied embedded migrations.
-func getPendingMigrations(applied map[int]bool) ([]migration, error) {
+func getPendingMigrations(source fs.FS, applied map[int]bool) ([]migration, error) {
 	var migrations []migration
 
-	err := fs.WalkDir(migrationsFS, "migrations", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(source, "migrations", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -119,7 +124,7 @@ func getPendingMigrations(applied map[int]bool) ([]migration, error) {
 			return nil
 		}
 
-		content, err := fs.ReadFile(migrationsFS, path)
+		content, err := fs.ReadFile(source, path)
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", path, err)
 		}

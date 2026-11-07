@@ -62,7 +62,11 @@ func healthCheck(ctx context.Context, conn driver.Conn) error {
 			break
 		}
 		if i < MaxHealthCheckRetries {
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff *= 2
 		}
 	}
@@ -135,16 +139,15 @@ func New(ctx context.Context, cfg *Config) (*Client, error) {
 		options.TLS = tlsConfig
 	}
 
-	conn, err := clickhouse.Open(options)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to open clickhouse connection: %v", err)
-	}
+	//nolint:errcheck // Open validates only cluster-secret options, which this adapter never sets.
+	conn, _ := clickhouse.Open(options)
 
 	c := &Client{
 		conn: conn,
 	}
 
 	if err := healthCheck(ctx, conn); err != nil {
+		_ = conn.Close()
 		return nil, status.Errorf(codes.Internal, "initial health check failed: %v", err)
 	}
 

@@ -540,6 +540,14 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	return res, nil
 }
 
+// mapTerminalLookupError classifies a failed late-failure existence lookup.
+func mapTerminalLookupError(ctx context.Context, lookupErr error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return status.FromContextError(ctxErr).Err()
+	}
+	return status.Errorf(codes.Internal, "failed to check terminal workflow: %v", lookupErr)
+}
+
 // IncrementWorkflowConsecutiveJobFailuresCount increments the consecutive failures counter.
 // Returns whether threshold was reached or not.
 //
@@ -605,10 +613,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		if r.pg.IsNoRows(err) {
 			var exists bool
 			if lookupErr := tx.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1 AND user_id = $2)`, postgres.TableWorkflows), workflowID, userID).Scan(&exists); lookupErr != nil {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return false, status.FromContextError(ctxErr).Err()
-				}
-				return false, status.Errorf(codes.Internal, "failed to check terminal workflow: %v", lookupErr)
+				return false, mapTerminalLookupError(ctx, lookupErr)
 			}
 			if !exists {
 				return false, status.Error(codes.NotFound, "workflow not found")

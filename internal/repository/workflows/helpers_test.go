@@ -2,8 +2,11 @@
 package workflows
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -362,5 +365,27 @@ func TestUpdateWorkflowBuildStatusRejectsMalformedUUIDsBeforeDatabase(t *testing
 				t.Fatalf("UpdateWorkflowBuildStatus() code = %v, want %v (err: %v)", got, codes.InvalidArgument, err)
 			}
 		})
+	}
+}
+
+func TestMapTerminalLookupError(t *testing.T) {
+	t.Parallel()
+
+	internalErr := mapTerminalLookupError(t.Context(), errors.New("lookup failed"))
+	if got := status.Code(internalErr); got != codes.Internal {
+		t.Fatalf("mapTerminalLookupError() code = %v, want %v (err: %v)", got, codes.Internal, internalErr)
+	}
+	if !strings.Contains(internalErr.Error(), "failed to check terminal workflow: lookup failed") {
+		t.Fatalf("mapTerminalLookupError() message = %q", internalErr)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	canceledErr := mapTerminalLookupError(ctx, errors.New("lookup failed"))
+	if got := status.Code(canceledErr); got != codes.Canceled {
+		t.Fatalf("mapTerminalLookupError() code = %v, want %v (err: %v)", got, codes.Canceled, canceledErr)
+	}
+	if !strings.Contains(canceledErr.Error(), context.Canceled.Error()) {
+		t.Fatalf("mapTerminalLookupError() message = %q", canceledErr)
 	}
 }

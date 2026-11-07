@@ -99,3 +99,27 @@ func TestMeilisearchClientConfigMapsTLSWithoutLoadingFiles(t *testing.T) {
 	client.TLSConfig.CAFile = "changed"
 	require.Equal(t, "missing-ca.pem", cfg.TLS.CAFile)
 }
+
+func TestKafkaClientConfigCopiesConnectionSettingsOnly(t *testing.T) {
+	var cfg config.Kafka
+	cfg.Brokers = []string{"broker-a:9093", "broker-b:9093"}
+	cfg.ConsumerGroup = "environment-group"
+	cfg.TLS.Enabled = true
+	cfg.TLS.CAFile = "ca.pem"
+	cfg.TLS.CertFile = "client.pem"
+	cfg.TLS.KeyFile = "client.key"
+	client := cfg.ClientConfig()
+	require.Equal(t, []string{"broker-a:9093", "broker-b:9093"}, client.Brokers)
+	require.Empty(t, client.ConsumerGroup)
+	require.Empty(t, client.ConsumeTopics)
+	require.False(t, client.DisableAutoCommit)
+	require.Nil(t, client.PartitionLifecycle)
+	require.True(t, client.TLSConfig.Enabled)
+	require.Equal(t, "ca.pem", client.TLSConfig.CAFile)
+	require.Equal(t, "client.pem", client.TLSConfig.CertFile)
+	require.Equal(t, "client.key", client.TLSConfig.KeyFile)
+	client.Brokers[0] = "changed"
+	client.TLSConfig.CAFile = "changed"
+	require.Equal(t, "broker-a:9093", cfg.Brokers[0])
+	require.Equal(t, "ca.pem", cfg.TLS.CAFile)
+}

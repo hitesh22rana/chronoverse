@@ -7,6 +7,7 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	grpcclient "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/client"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
@@ -343,4 +344,9 @@ func (c AnalyticsService) ClientConfig(clientTLS ClientTLS) *grpcclient.ServiceC
 // ClientConfig converts Meilisearch settings without loading credential files.
 func (c *MeiliSearch) ClientConfig() *meilisearch.Config {
 	return &meilisearch.Config{URI: c.URI, MasterKey: c.MasterKey, TLSConfig: &meilisearch.TLSConfig{Enabled: c.TLS.Enabled, CAFile: c.TLS.CAFile, CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}}
+}
+
+// ClientConfig maps Kafka connection settings; consumers select their behavior with options.
+func (c *Kafka) ClientConfig() *kafka.Config {
+	return &kafka.Config{Brokers: append([]string(nil), c.Brokers...), TLSConfig: &kafka.TLSConfig{Enabled: c.TLS.Enabled, CAFile: c.TLS.CAFile, CertFile: c.TLS.CertFile, KeyFile: c.TLS.KeyFile}}
 }

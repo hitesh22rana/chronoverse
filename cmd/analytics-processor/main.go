@@ -47,13 +47,11 @@ func run() int {
 	defer pdb.Close()
 
 	kafkaLifecycle := kafka.NewPartitionLifecycle()
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
+	kfk, err := kafka.New(ctx, cfg.Kafka.ClientConfig(),
 		kafka.WithConsumerGroup(cfg.Kafka.ConsumerGroup),
 		kafka.WithConsumeTopics(kafka.TopicAnalytics),
 		kafka.WithDisableAutoCommit(),
 		kafka.WithPartitionLifecycle(kafkaLifecycle),
-		kafka.WithTLS(&cfg.Kafka),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

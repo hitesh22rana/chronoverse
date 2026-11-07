@@ -26,7 +26,7 @@ func newTestRepository(t *testing.T) *Repository {
 
 	lifecycle := kafkapkg.NewPartitionLifecycle()
 	kfk, err := kafkapkg.New(context.Background(),
-		kafkapkg.WithBrokers(testkit.KafkaSeed(t)),
+		&kafkapkg.Config{Brokers: []string{testkit.KafkaSeed(t)}},
 		kafkapkg.WithConsumerGroup("analyticsprocessor-integration-"+t.Name()),
 		kafkapkg.WithConsumeTopics(kafkapkg.TopicAnalytics),
 		kafkapkg.WithDisableAutoCommit(),

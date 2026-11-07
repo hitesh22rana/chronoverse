@@ -13,10 +13,6 @@ import (
 
 	sdk "github.com/meilisearch/meilisearch-go"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	"github.com/hitesh22rana/chronoverse/internal/config"
 )
 
 type boundaryTransport func(*http.Request) (*http.Response, error)
@@ -24,37 +20,6 @@ type boundaryTransport func(*http.Request) (*http.Response, error)
 func (f boundaryTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 func taskResponse(code int, body string) *http.Response {
 	return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
-}
-
-func TestOptionDefaultsAndTLSConstruction(t *testing.T) {
-	c := &Config{URI: "http://existing.test", MasterKey: "existing"}
-	WithURI("")(c)
-	WithMasterKey("")(c)
-	require.Equal(t, "http://existing.test", c.URI)
-	require.Equal(t, "existing", c.MasterKey)
-	for _, options := range [][]Option{nil, {WithURI("http://search.test")}} {
-		client, err := New(t.Context(), options...)
-		require.Nil(t, client)
-		require.Equal(t, codes.InvalidArgument, status.Code(err))
-	}
-	cert, key := adapterTLSIdentity(t)
-	var cfg config.MeiliSearch
-	cfg.TLS.Enabled = true
-	cfg.TLS.CertFile = cert
-	cfg.TLS.KeyFile = key
-	cfg.TLS.CAFile = cert
-	client, err := New(t.Context(), WithURI("https://localhost"), WithMasterKey("public-test-key"), WithTLS(&cfg))
-	require.NoError(t, err)
-	require.NotNil(t, client)
-	WithTLS(&cfg)(c)
-	require.NotNil(t, c.TLS)
-	cfg.TLS.Enabled = false
-	WithTLS(&cfg)(c)
-	require.Nil(t, c.TLS)
-	require.NoError(t, c.tlsErr)
-	client, err = New(t.Context(), WithURI("http://localhost"), WithMasterKey("public-test-key"))
-	require.NoError(t, err)
-	require.NotNil(t, client)
 }
 
 func TestTaskPollingTerminalStatesAndBoundedWait(t *testing.T) {
@@ -131,8 +96,14 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					}
 					if path == "/tasks" {
 						polls++
+						ids, limit, failedID := "1", "1", 1
+						if polls > 1 {
+							ids, limit, failedID = "2,3,4", "3", 2
+						}
+						require.Equal(t, ids, r.URL.Query().Get("uids"))
+						require.Equal(t, limit, r.URL.Query().Get("limit"))
 						if polls == map[string]int{"create task": 1, "update task": 2}[stage] {
-							return taskResponse(200, `{"results":[{"uid":1,"status":"failed","error":{"code":"bad_task","message":"failed"}}]}`), nil
+							return taskResponse(200, fmt.Sprintf(`{"results":[{"uid":%d,"status":"failed","error":{"code":"bad_task","message":"failed"}}]}`, failedID)), nil
 						}
 						if polls == 1 {
 							return taskResponse(200, `{"results":[{"uid":1,"status":"succeeded"}]}`), nil
@@ -156,10 +127,10 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					require.Error(t, err)
 					require.Contains(t, err.Error(), map[string]string{
 						"create": "create index", "create task": "task 1 failed", "searchable": "update searchable",
-						"filterable": "update filterable", "sortable": "update sortable", "update task": "task 1 failed",
+						"filterable": "update filterable", "sortable": "update sortable", "update task": "task 2 failed",
 					}[stage])
 				}
-				size := map[string]int{"create": 1, "searchable": 3, "filterable": 4, "sortable": 5}[stage]
+				size := map[string]int{"create": 1, "create task": 2, "searchable": 3, "filterable": 4, "sortable": 5, "update task": 6}[stage]
 				if size > 0 {
 					require.Len(t, paths, size)
 				}

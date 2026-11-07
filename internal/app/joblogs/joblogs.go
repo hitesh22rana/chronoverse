@@ -36,5 +36,5 @@ func (e *Joblogs) Run(ctx context.Context) error {
 		e.logger.Info("successfully exited the joblogs processor")
 	}
 
-	return nil
+	return err
 }

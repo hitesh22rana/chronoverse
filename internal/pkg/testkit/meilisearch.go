@@ -30,10 +30,7 @@ func startMeilisearch(ctx context.Context, s *suite) (meilisearch.ServiceManager
 		return nil, fmt.Errorf("meilisearch address: %w", err)
 	}
 
-	client, err := meilisearchpkg.New(ctx,
-		meilisearchpkg.WithURI(addr),
-		meilisearchpkg.WithMasterKey(meilisearchKey),
-	)
+	client, err := meilisearchpkg.New(ctx, &meilisearchpkg.Config{URI: addr, MasterKey: meilisearchKey})
 	if err != nil {
 		return nil, fmt.Errorf("create meilisearch client: %w", err)
 	}

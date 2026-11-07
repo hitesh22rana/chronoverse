@@ -45,10 +45,7 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	kfk, err := kafka.New(ctx,
-		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithTLS(&cfg.Kafka),
-	)
+	kfk, err := kafka.New(ctx, cfg.Kafka.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -84,9 +81,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	return ExitOk
+	return svcpkg.WorkerExitCode(ctx, app.Run(ctx), os.Stderr)
 }

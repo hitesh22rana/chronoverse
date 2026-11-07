@@ -43,10 +43,9 @@ func TestIntegrationNativeSearchDependencies(t *testing.T) {
 				changes := append(append([]string{}, dependencies...), "POSTGRES_TLS_ENABLED=true", "POSTGRES_TLS_CA_FILE=missing-ca.pem")
 				reject(t, bin, dir, cover, "missing-ca.pem", changes...)
 			}
-			if name != "jobs-service" {
-				changes := append(append([]string{}, dependencies...), "CLICKHOUSE_TLS_ENABLED=true", "CLICKHOUSE_TLS_CERT_FILE=missing-client.pem", "CLICKHOUSE_TLS_KEY_FILE=missing-client.key")
-				reject(t, bin, dir, cover, "missing-client.pem", changes...)
-			}
+			clickhouseFailure := append(append([]string{}, dependencies...),
+				"REDIS_TLS_ENABLED=false", "CLICKHOUSE_TLS_ENABLED=true", "CLICKHOUSE_TLS_CERT_FILE=missing-client.pem", "CLICKHOUSE_TLS_KEY_FILE=missing-client.key")
+			reject(t, bin, dir, cover, "missing-client.pem", clickhouseFailure...)
 			for _, dependency := range []string{"MEILISEARCH", "KAFKA"} {
 				if dependency == "KAFKA" && name == "jobs-service" {
 					continue

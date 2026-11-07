@@ -9,9 +9,13 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/hitesh22rana/chronoverse/internal/config"
 )
+
+// TLSConfig holds Kafka client TLS credentials.
+type TLSConfig struct {
+	Enabled                   bool
+	CAFile, CertFile, KeyFile string
+}
 
 // Config represents the configuration for a Kafka client.
 type Config struct {
@@ -20,23 +24,22 @@ type Config struct {
 	ConsumerGroup      string
 	DisableAutoCommit  bool
 	PartitionLifecycle *PartitionLifecycle
-	TLS                *tls.Config
-	tlsErr             error
+	TLSConfig          *TLSConfig
 }
 
 // Option is a functional option type that allows to configure the Kafka client.
 type Option func(*Config)
 
 // New creates a new Kafka client.
-func New(_ context.Context, options ...Option) (*kgo.Client, error) {
-	c := &Config{}
+func New(_ context.Context, cfg *Config, options ...Option) (*kgo.Client, error) {
+	if cfg == nil {
+		return nil, status.Error(codes.InvalidArgument, "failed to initialize Kafka client: missing brokers")
+	}
+	settings := *cfg
+	c := &settings
 
 	for _, opt := range options {
 		opt(c)
-	}
-
-	if c.tlsErr != nil {
-		return nil, c.tlsErr
 	}
 
 	if len(c.Brokers) == 0 {
@@ -47,8 +50,12 @@ func New(_ context.Context, options ...Option) (*kgo.Client, error) {
 		kgo.SeedBrokers(c.Brokers...),
 	}
 
-	if c.TLS != nil {
-		opts = append(opts, kgo.DialTLSConfig(c.TLS))
+	if c.TLSConfig != nil && c.TLSConfig.Enabled {
+		tlsConfig, err := newTLSConfig(c.TLSConfig.CertFile, c.TLSConfig.KeyFile, c.TLSConfig.CAFile)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
 	if len(c.ConsumeTopics) != 0 {
@@ -71,13 +78,6 @@ func New(_ context.Context, options ...Option) (*kgo.Client, error) {
 	}
 
 	return kgo.NewClient(opts...)
-}
-
-// WithBrokers sets the Kafka brokers.
-func WithBrokers(brokers ...string) Option {
-	return func(c *Config) {
-		c.Brokers = brokers
-	}
 }
 
 // WithConsumeTopics sets the Kafka consume topic.
@@ -105,25 +105,6 @@ func WithDisableAutoCommit() Option {
 func WithPartitionLifecycle(lifecycle *PartitionLifecycle) Option {
 	return func(c *Config) {
 		c.PartitionLifecycle = lifecycle
-	}
-}
-
-// WithTLS sets the Kafka TLS config.
-func WithTLS(cfg *config.Kafka) Option {
-	return func(c *Config) {
-		if !cfg.TLS.Enabled {
-			c.TLS = nil
-			c.tlsErr = nil
-			return
-		}
-
-		tlsConfig, err := newTLSConfig(cfg.TLS.CertFile, cfg.TLS.KeyFile, cfg.TLS.CAFile)
-		if err != nil {
-			c.tlsErr = err
-			return
-		}
-		c.TLS = tlsConfig
-		c.tlsErr = nil
 	}
 }
 

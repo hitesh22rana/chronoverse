@@ -69,27 +69,14 @@ func run() int {
 	}
 	defer rdb.Close()
 
-	clickhouseCfg := cfg.ClickHouse.ClientConfig()
-	// Preserve the existing jobs-service TLS source during config deduplication.
-	clickhouseCfg.TLSConfig = &clickhouse.TLSConfig{
-		Enabled:  cfg.Redis.TLS.Enabled,
-		CAFile:   cfg.Redis.TLS.CAFile,
-		CertFile: cfg.Redis.TLS.CertFile,
-		KeyFile:  cfg.Redis.TLS.KeyFile,
-	}
-	cdb, err := clickhouse.New(ctx, clickhouseCfg)
+	cdb, err := clickhouse.New(ctx, cfg.ClickHouse.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
 	}
 	defer cdb.Close()
 
-	msdb, err := meilisearch.New(
-		ctx,
-		meilisearch.WithURI(cfg.MeiliSearch.URI),
-		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
-		meilisearch.WithTLS(&cfg.MeiliSearch),
-	)
+	msdb, err := meilisearch.New(ctx, cfg.MeiliSearch.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -152,13 +139,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Serve(listener); err != nil {
-		if ctx.Err() != nil {
-			return ExitOk
-		}
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.ServerExitCode(ctx, app.Serve(listener), os.Stderr)
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"strings"
 	"syscall"
 	"time"
@@ -230,30 +231,23 @@ func isGlobal192_0_0_24Exception(ip net.IP) bool {
 	return ip.Equal(net.ParseIP("192.0.0.9")) || ip.Equal(net.ParseIP("192.0.0.10"))
 }
 
+// mustCIDR preserves startup failure for an invalid compiled-in network.
+func mustCIDR(raw string) *net.IPNet {
+	prefix := netip.MustParsePrefix(raw).Masked()
+	return &net.IPNet{IP: prefix.Addr().AsSlice(), Mask: net.CIDRMask(prefix.Bits(), prefix.Addr().BitLen())}
+}
+
 func init() {
-	var err error
-	_, nat64WellKnownCIDR, err = net.ParseCIDR("64:ff9b::/96")
-	if err != nil {
-		panic(err)
-	}
-	_, nat64LocalCIDR, err = net.ParseCIDR("64:ff9b:1::/48")
-	if err != nil {
-		panic(err)
-	}
-	_, rfc2001_23CIDR, err = net.ParseCIDR("2001::/23")
-	if err != nil {
-		panic(err)
-	}
+	nat64WellKnownCIDR = mustCIDR("64:ff9b::/96")
+	nat64LocalCIDR = mustCIDR("64:ff9b:1::/48")
+	rfc2001_23CIDR = mustCIDR("2001::/23")
 	for _, cidr := range []string{
 		"2001:3::/32",
 		"2001:4:112::/48",
 		"2001:20::/28",
 		"2001:30::/28",
 	} {
-		_, n, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic(err)
-		}
+		n := mustCIDR(cidr)
 		global2001_23CIDRs = append(global2001_23CIDRs, n)
 	}
 	for _, cidr := range []string{
@@ -279,10 +273,7 @@ func init() {
 		"3fff::/20",
 		"5f00::/8",
 	} {
-		_, n, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic(err)
-		}
+		n := mustCIDR(cidr)
 		specialCIDRs = append(specialCIDRs, n)
 	}
 }

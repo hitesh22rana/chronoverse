@@ -64,7 +64,7 @@ func (e *AnalyticsProcessor) Run(ctx context.Context) error {
 		e.logger.Info("successfully exited the analytics processor")
 	}
 
-	return nil
+	return err
 }
 
 func (e *AnalyticsProcessor) runCleanup(ctx context.Context) {

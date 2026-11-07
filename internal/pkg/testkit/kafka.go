@@ -75,7 +75,7 @@ func startKafka(ctx context.Context, s *suite) (string, *kgo.Client, error) {
 
 	seed := fmt.Sprintf("localhost:%s", hostPort)
 
-	client, err := kafkapkg.New(ctx, kafkapkg.WithBrokers(seed))
+	client, err := kafkapkg.New(ctx, &kafkapkg.Config{Brokers: []string{seed}})
 	if err != nil {
 		return "", nil, fmt.Errorf("create kafka client: %w", err)
 	}

@@ -36,5 +36,5 @@ func (e *Executor) Run(ctx context.Context) error {
 		e.logger.Info("successfully exited the executor job")
 	}
 
-	return nil
+	return err
 }

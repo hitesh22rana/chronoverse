@@ -51,12 +51,7 @@ func run() int {
 	}
 	defer clickhouseClient.Close()
 
-	meilisearchClient, err := meilisearch.New(
-		ctx,
-		meilisearch.WithURI(cfg.MeiliSearch.URI),
-		meilisearch.WithMasterKey(cfg.MeiliSearch.MasterKey),
-		meilisearch.WithTLS(&cfg.MeiliSearch),
-	)
+	meilisearchClient, err := meilisearch.New(ctx, cfg.MeiliSearch.ClientConfig())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitError
@@ -80,12 +75,7 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Run(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.WorkerExitCode(ctx, app.Run(ctx), os.Stderr)
 }
 
 // postgresMigrationDSN preserves credentials and certificate paths as URL values.

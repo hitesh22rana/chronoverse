@@ -101,13 +101,5 @@ func run() int {
 		zap.Int64("gomemlimit", debug.SetMemoryLimit(-1)),
 	)
 
-	if err := app.Serve(listener); err != nil {
-		if ctx.Err() != nil {
-			return ExitOk
-		}
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-
-	return ExitOk
+	return svcpkg.ServerExitCode(ctx, app.Serve(listener), os.Stderr)
 }

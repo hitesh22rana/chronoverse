@@ -203,6 +203,20 @@ func (r *Repository) replayCreatedWorkflow(
 	return res, nil
 }
 
+// canonicalWorkflowIdentity canonicalizes workflow and user identities so
+// repository queries receive normalized UUIDs.
+func canonicalWorkflowIdentity(workflowID, userID string) (canonicalWorkflowID, canonicalUserID string, err error) {
+	canonicalWorkflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return "", "", err
+	}
+	canonicalUserID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return "", "", err
+	}
+	return canonicalWorkflowID, canonicalUserID, nil
+}
+
 // UpdateWorkflow updates the workflow details.
 //
 //nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
@@ -225,11 +239,7 @@ func (r *Repository) UpdateWorkflow(
 		span.End()
 	}()
 	rawWorkflowID, rawUserID := workflowID, userID
-	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return err
-	}
-	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}
@@ -373,20 +383,6 @@ func (r *Repository) UpdateWorkflow(
 	}
 
 	return nil
-}
-
-// canonicalWorkflowIdentity canonicalizes workflow and user identities so
-// repository queries receive normalized UUIDs.
-func canonicalWorkflowIdentity(workflowID, userID string) (canonicalWorkflowID, canonicalUserID string, err error) {
-	canonicalWorkflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return "", "", err
-	}
-	canonicalUserID, err = commandidempotency.CanonicalUUID(userID, "user ID")
-	if err != nil {
-		return "", "", err
-	}
-	return canonicalWorkflowID, canonicalUserID, nil
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
@@ -571,11 +567,7 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		}
 		span.End()
 	}()
-	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return false, err
-	}
-	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return false, err
 	}
@@ -686,11 +678,7 @@ func (r *Repository) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Contex
 		}
 		span.End()
 	}()
-	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
-	if err != nil {
-		return err
-	}
-	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	workflowID, userID, err = canonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
 	}

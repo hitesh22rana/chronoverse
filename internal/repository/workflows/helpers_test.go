@@ -6,6 +6,9 @@ import (
 	"slices"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
@@ -338,6 +341,25 @@ func TestValidateWorkflowPayloadKind(t *testing.T) {
 
 			if err := validateWorkflowPayloadKind(tt.kind, tt.payload); (err != nil) != tt.wantErr {
 				t.Fatalf("validateWorkflowPayloadKind() err = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUpdateWorkflowBuildStatusRejectsMalformedUUIDsBeforeDatabase(t *testing.T) {
+	t.Parallel()
+	repo := New(&Config{FetchLimit: 20}, nil)
+	for _, tc := range []struct {
+		name, workflowID, userID string
+	}{
+		{name: "workflow", workflowID: "not-a-workflow", userID: "11111111-1111-4111-8111-111111111111"},
+		{name: "user", workflowID: "550e8400-e29b-41d4-a716-446655440000", userID: "not-a-user"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := repo.UpdateWorkflowBuildStatus(t.Context(), tc.workflowID, tc.userID, "STARTED", 1, "", "")
+			if got := status.Code(err); got != codes.InvalidArgument {
+				t.Fatalf("UpdateWorkflowBuildStatus() code = %v, want %v (err: %v)", got, codes.InvalidArgument, err)
 			}
 		})
 	}

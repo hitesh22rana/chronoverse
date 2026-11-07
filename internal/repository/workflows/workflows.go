@@ -376,6 +376,8 @@ func (r *Repository) UpdateWorkflow(
 }
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
+// The service validates buildStatus against the workflow build-status enum;
+// identities are canonicalized here so malformed UUIDs fail before any SQL.
 func (r *Repository) UpdateWorkflowBuildStatus(
 	ctx context.Context,
 	workflowID,
@@ -396,6 +398,14 @@ func (r *Repository) UpdateWorkflowBuildStatus(
 
 	if generation < 1 {
 		return status.Error(codes.InvalidArgument, "workflow generation must be at least 1")
+	}
+	workflowID, err = commandidempotency.CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return err
+	}
+	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return err
 	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
@@ -607,6 +617,9 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(ctx context.Co
 		if r.pg.IsNoRows(err) {
 			var exists bool
 			if lookupErr := tx.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1 AND user_id = $2)`, postgres.TableWorkflows), workflowID, userID).Scan(&exists); lookupErr != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return false, status.FromContextError(ctxErr).Err()
+				}
 				return false, status.Errorf(codes.Internal, "failed to check terminal workflow: %v", lookupErr)
 			}
 			if !exists {

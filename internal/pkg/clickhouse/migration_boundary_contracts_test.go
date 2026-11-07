@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -52,10 +53,21 @@ func (r *boundaryRows) Scan(values ...any) error {
 	if r.scanErr != nil {
 		return r.scanErr
 	}
-	*values[0].(*uint32) = 7
-	*values[1].(*uint8) = 0
+	if len(values) != 2 {
+		return errors.New("unexpected scan width")
+	}
+	version, ok := values[0].(*uint32)
+	if !ok {
+		return errors.New("unexpected version destination")
+	}
+	dirty, ok := values[1].(*uint8)
+	if !ok {
+		return errors.New("unexpected dirty destination")
+	}
+	*version = 7
+	*dirty = 0
 	if r.dirty {
-		*values[1].(*uint8) = 1
+		*dirty = 1
 	}
 	return nil
 }
@@ -72,7 +84,7 @@ func (b *boundaryBatch) Send() error { b.sends++; return b.sendErr }
 
 func TestHealthRetryAndCancellationBoundaries(t *testing.T) {
 	for _, successAt := range []int{1, 2, 0} {
-		t.Run(string(rune('0'+successAt)), func(t *testing.T) {
+		t.Run(strconv.Itoa(successAt), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				calls := 0
 				cause := errors.New("connection unavailable")
@@ -160,15 +172,18 @@ func TestAppliedMigrationReadFailuresCloseRows(t *testing.T) {
 				return rows, nil
 			}}}
 			got, err := getAppliedMigrations(t.Context(), c)
-			if stage == "success" {
+			switch stage {
+			case "success":
 				require.NoError(t, err)
 				require.Equal(t, map[int]bool{7: true}, got)
-			} else {
-				if stage == "dirty" {
-					require.ErrorContains(t, err, "marked dirty")
-				} else {
-					require.ErrorIs(t, err, cause)
-				}
+			case "iteration":
+				require.ErrorIs(t, err, cause)
+				require.Equal(t, map[int]bool{7: true}, got)
+			case "dirty":
+				require.ErrorContains(t, err, "marked dirty")
+				require.Nil(t, got)
+			default:
+				require.ErrorIs(t, err, cause)
 				require.Nil(t, got)
 			}
 			require.Equal(t, stage != "query", rows.closed)

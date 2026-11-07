@@ -91,8 +91,8 @@ func TestIntegrationDirtyMigrationRequiresRepairBeforeReplay(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
-		_, err := pg.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)")
-		require.NoError(t, err)
+		_, dropErr := pg.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)")
+		require.NoError(t, dropErr)
 	})
 	cfg, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
 	require.NoError(t, err)

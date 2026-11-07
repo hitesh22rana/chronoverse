@@ -107,6 +107,21 @@ func CanonicalUUID(raw, field string) (string, error) {
 	return id.String(), nil
 }
 
+// CanonicalWorkflowIdentity validates and canonicalizes the workflow and user
+// identities that scope a workflow mutation or query. Callers must use the
+// returned values for database operations, request hashes, and replay checks.
+func CanonicalWorkflowIdentity(workflowID, userID string) (canonicalWorkflowID, canonicalUserID string, err error) {
+	canonicalWorkflowID, err = CanonicalUUID(workflowID, "workflow ID")
+	if err != nil {
+		return "", "", err
+	}
+	canonicalUserID, err = CanonicalUUID(userID, "user ID")
+	if err != nil {
+		return "", "", err
+	}
+	return canonicalWorkflowID, canonicalUserID, nil
+}
+
 // Reservation is a fresh command reservation or a completed replay.
 type Reservation struct {
 	Replay     bool

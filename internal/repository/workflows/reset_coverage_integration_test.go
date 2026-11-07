@@ -24,7 +24,10 @@ func TestIntegrationResetFaultsRollBack(t *testing.T) {
 		{name: "record completion", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", code: codes.Internal, message: "failed to reset consecutive job failures count"},
 		{name: "reset counter", table: postgres.TableWorkflows, event: "UPDATE", code: codes.Internal, message: "failed to reset workflow failures"},
 		{name: "commit completion", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", code: codes.Internal, deferred: true, message: "failed to commit completed terminal-effect reset"},
-		{name: "invalid text representation", table: postgres.TableWorkflowTerminalEffects, event: "INSERT", errcode: "22P02", code: codes.InvalidArgument, message: "invalid workflow ID"},
+		{
+			name: "database data fault after UUID validation", table: postgres.TableWorkflowTerminalEffects, event: "INSERT",
+			errcode: "22P02", code: codes.Internal, message: "failed to reset consecutive job failures count",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

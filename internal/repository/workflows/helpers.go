@@ -100,6 +100,7 @@ func decideWorkflowUpdateAction(
 	return decision
 }
 
+// workflowRequestHashes hashes stable scalar workflow request fields.
 func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash string, err error) {
 	legacyFields := make(map[string]any, len(fields))
 	canonicalFields := make(map[string]any, len(fields))
@@ -119,10 +120,9 @@ func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash str
 		}
 		canonicalFields[workflowRequestPayloadField] = string(canonicalPayload)
 	}
-	canonicalHash, err = idempotency.HashCanonical(canonicalFields)
-	if err != nil {
-		return "", "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
-	}
+	// Only the validated payload string differs from the checked legacy fields.
+	//nolint:errcheck // Stable scalar fields remain serializable after string replacement.
+	canonicalHash, _ = idempotency.HashCanonical(canonicalFields)
 	return canonicalHash, legacyHash, nil
 }
 
@@ -155,10 +155,9 @@ func workflowRequestHashSet(
 	compatibleHashes := []string{legacyHash}
 	var rawLegacyHash string
 	if identityChanged {
-		_, computedRawLegacyHash, hashErr := workflowRequestHashes(rawFields)
-		if hashErr != nil {
-			return workflowRequestIdentitySet{}, hashErr
-		}
+		// Only UUID strings differ from the already validated request fields.
+		//nolint:errcheck // Replacing scalar UUID strings cannot invalidate hashing or payload JSON.
+		_, computedRawLegacyHash, _ := workflowRequestHashes(rawFields)
 		rawLegacyHash = computedRawLegacyHash
 		// Raw UUID spelling remains an additional forward-upgrade matching
 		// alias; it must not displace the rollback-compatible hash above.

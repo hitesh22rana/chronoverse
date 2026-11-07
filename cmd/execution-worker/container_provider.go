@@ -8,7 +8,11 @@ import (
 )
 
 // newContainerProvider binds runtime identity, endpoint reuse and image-pull policy.
-func newContainerProvider(cfg *config.ExecutionWorker, limits container.ResourceLimits, locks imagepull.LockStore) (func(string, string) (executorrepo.ContainerSvc, error), func() error) {
+func newContainerProvider(
+	cfg *config.ExecutionWorker,
+	limits container.ResourceLimits,
+	locks imagepull.LockStore,
+) (provider func(string, string) (executorrepo.ContainerSvc, error), closeClients func() error) {
 	cache := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
 		return container.NewDockerWorkflow(
 			container.WithDockerHost(endpoint), container.WithResourceLimits(limits), container.WithWorkloadNetwork(cfg.WorkloadNetwork), container.WithWorkloadSubnet(cfg.WorkloadSubnet),
@@ -19,7 +23,7 @@ func newContainerProvider(cfg *config.ExecutionWorker, limits container.Resource
 		)
 	})
 	policy := imagepull.Config{TTL: cfg.ImagePullLockTTL, WaitTimeout: cfg.ImagePullLockWaitTimeout, RetryInterval: cfg.ImagePullLockRetryInterval}
-	provider := func(runtimeID, endpoint string) (executorrepo.ContainerSvc, error) {
+	provider = func(runtimeID, endpoint string) (executorrepo.ContainerSvc, error) {
 		endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
 		client, err := cache.Get(endpoint)
 		if err != nil {

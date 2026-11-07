@@ -79,7 +79,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 		err = status.Errorf(codes.Internal, "failed to start transaction: %v", err)
 		return 0, err
 	}
-	//nolint:errcheck // The error is handled in the next line
+	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`

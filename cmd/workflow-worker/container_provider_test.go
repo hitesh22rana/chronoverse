@@ -21,7 +21,7 @@ type scopeLocks struct {
 	err  error
 }
 
-func (s *scopeLocks) AcquireDistributedLockWithToken(_ context.Context, key string, ttl time.Duration) (string, bool, error) {
+func (s *scopeLocks) AcquireDistributedLockWithToken(_ context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
 	s.keys = append(s.keys, key)
 	s.ttls = append(s.ttls, ttl)
 	return "", false, s.err

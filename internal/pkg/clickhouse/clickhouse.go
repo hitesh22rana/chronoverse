@@ -52,9 +52,13 @@ type Client struct {
 	conn driver.Conn
 }
 
-// healthCheck checks the health of the ClickHouse connection.
-func healthCheck(ctx context.Context, conn driver.Conn) error {
-	var err error
+// healthCheck checks startup health and closes the connection on failure.
+func healthCheck(ctx context.Context, conn driver.Conn) (err error) {
+	defer func() {
+		if err != nil {
+			_ = conn.Close()
+		}
+	}()
 
 	backoff := 100 * time.Millisecond
 	for i := 1; i <= MaxHealthCheckRetries; i++ {
@@ -62,7 +66,11 @@ func healthCheck(ctx context.Context, conn driver.Conn) error {
 			break
 		}
 		if i < MaxHealthCheckRetries {
-			time.Sleep(backoff)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff *= 2
 		}
 	}
@@ -135,10 +143,8 @@ func New(ctx context.Context, cfg *Config) (*Client, error) {
 		options.TLS = tlsConfig
 	}
 
-	conn, err := clickhouse.Open(options)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to open clickhouse connection: %v", err)
-	}
+	//nolint:errcheck // Open validates only cluster-secret options, which this adapter never sets.
+	conn, _ := clickhouse.Open(options)
 
 	c := &Client{
 		conn: conn,

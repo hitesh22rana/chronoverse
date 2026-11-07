@@ -3,8 +3,9 @@ package postgres
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 
-	"github.com/golang-migrate/migrate/v4"
+	migratepkg "github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 
 	// Register the PostgreSQL driver for golang-migrate.
@@ -15,12 +16,17 @@ import (
 // at the given DSN. It is safe to call repeatedly; already-applied migrations
 // are a no-op.
 func Migrate(dsn string) error {
-	sourceInstance, err := iofs.New(migrationsFS, "migrations")
+	return migrate(dsn, migrationsFS)
+}
+
+// migrate binds discovery and execution to the same migration source.
+func migrate(dsn string, source fs.FS) error {
+	sourceInstance, err := iofs.New(source, "migrations")
 	if err != nil {
 		return fmt.Errorf("create migration source: %w", err)
 	}
 
-	m, err := migrate.NewWithSourceInstance("iofs", sourceInstance, dsn)
+	m, err := migratepkg.NewWithSourceInstance("iofs", sourceInstance, dsn)
 	if err != nil {
 		return fmt.Errorf("create migrate instance: %w", err)
 	}
@@ -28,7 +34,7 @@ func Migrate(dsn string) error {
 		_, _ = m.Close()
 	}()
 
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	if err := m.Up(); err != nil && !errors.Is(err, migratepkg.ErrNoChange) {
 		return fmt.Errorf("run postgres migrations: %w", err)
 	}
 

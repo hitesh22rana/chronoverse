@@ -16,19 +16,32 @@ const redisImage = "redis:8.10.2-alpine3.23"
 
 // startRedis starts a Redis container and returns a ready-to-use store.
 func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {
-	ctr, err := tcredis.Run(ctx, redisImage)
+	return startRedisWith(ctx, s, redisStartup{
+		startContainer: func(ctx context.Context) (*tcredis.RedisContainer, error) { return tcredis.Run(ctx, redisImage) },
+		connect:        redispkg.New,
+	})
+}
+
+type redisStartup struct {
+	startContainer func(context.Context) (*tcredis.RedisContainer, error)
+	connect        func(context.Context, *redispkg.Config) (*redispkg.Store, error)
+}
+
+func startRedisWith(ctx context.Context, s *suite, startup redisStartup) (*redispkg.Store, error) {
+	ctr, err := startup.startContainer(ctx)
+	if ctr != nil {
+		s.containers = append(s.containers, ctr)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("start redis container: %w", err)
 	}
-	s.containers = append(s.containers, ctr)
 
 	host, portNum, err := hostPort(ctx, ctr, "6379/tcp")
 	if err != nil {
 		return nil, fmt.Errorf("redis: %w", err)
 	}
 
-	s.redisAddr = net.JoinHostPort(host, strconv.Itoa(portNum))
-	rdb, err := redispkg.New(ctx, &redispkg.Config{
+	rdb, err := startup.connect(ctx, &redispkg.Config{
 		Host:         host,
 		Port:         portNum,
 		DB:           0,
@@ -47,5 +60,6 @@ func startRedis(ctx context.Context, s *suite) (*redispkg.Store, error) {
 		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 
+	s.redisAddr = net.JoinHostPort(host, strconv.Itoa(portNum))
 	return rdb, nil
 }

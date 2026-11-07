@@ -106,15 +106,17 @@ func startKafkaWith(ctx context.Context, s *suite, startup kafkaStartup) (string
 // freeHostPort reserves an ephemeral TCP port on the host. The tiny race between
 // releasing it and the container binding it is acceptable for tests.
 func freeHostPort() (string, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	return freeHostPortWith(net.Listen)
+}
+
+func freeHostPortWith(listen func(string, string) (net.Listener, error)) (string, error) {
+	ln, err := listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
 	defer ln.Close()
 
-	_, port, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		return "", err
-	}
+	//nolint:errcheck // A TCP listener always reports a valid host:port address.
+	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	return port, nil
 }

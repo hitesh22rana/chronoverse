@@ -20,22 +20,38 @@ const (
 // startClickHouse starts a ClickHouse container and applies every embedded
 // migration so repositories can be exercised against the real schema.
 func startClickHouse(ctx context.Context, s *suite) (*clickhousepkg.Client, string, error) {
-	ctr, err := tcclickhouse.Run(ctx, clickHouseImage,
-		tcclickhouse.WithUsername(clickHouseUser),
-		tcclickhouse.WithPassword(clickHousePassword),
-		tcclickhouse.WithDatabase(clickHouseDatabase),
-	)
+	return startClickHouseWith(ctx, s, clickHouseStartup{
+		startContainer: func(ctx context.Context) (*tcclickhouse.ClickHouseContainer, error) {
+			return tcclickhouse.Run(ctx, clickHouseImage, tcclickhouse.WithUsername(clickHouseUser), tcclickhouse.WithPassword(clickHousePassword), tcclickhouse.WithDatabase(clickHouseDatabase))
+		},
+		connect:     clickhousepkg.New,
+		migrate:     clickhousepkg.Migrate,
+		closeClient: (*clickhousepkg.Client).Close,
+	})
+}
+
+type clickHouseStartup struct {
+	startContainer func(context.Context) (*tcclickhouse.ClickHouseContainer, error)
+	connect        func(context.Context, *clickhousepkg.Config) (*clickhousepkg.Client, error)
+	migrate        func(context.Context, *clickhousepkg.Client) error
+	closeClient    func(*clickhousepkg.Client) error
+}
+
+func startClickHouseWith(ctx context.Context, s *suite, startup clickHouseStartup) (*clickhousepkg.Client, string, error) {
+	ctr, err := startup.startContainer(ctx)
+	if ctr != nil {
+		s.containers = append(s.containers, ctr)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("start clickhouse container: %w", err)
 	}
-	s.containers = append(s.containers, ctr)
 
 	addr, err := ctr.ConnectionHost(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("clickhouse address: %w", err)
 	}
 
-	ch, err := clickhousepkg.New(ctx, &clickhousepkg.Config{
+	ch, err := startup.connect(ctx, &clickhousepkg.Config{
 		Hosts:           []string{addr},
 		Database:        clickHouseDatabase,
 		Username:        clickHouseUser,
@@ -51,8 +67,8 @@ func startClickHouse(ctx context.Context, s *suite) (*clickhousepkg.Client, stri
 	}
 
 	// Reuse the production migration runner against the embedded migrations.
-	if err := clickhousepkg.Migrate(ctx, ch); err != nil {
-		_ = ch.Close()
+	if err := startup.migrate(ctx, ch); err != nil {
+		_ = startup.closeClient(ch)
 		return nil, "", fmt.Errorf("apply clickhouse migrations: %w", err)
 	}
 

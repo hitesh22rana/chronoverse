@@ -54,7 +54,7 @@ export function SearchPanel({ onOpenChange }: { onOpenChange: (open: boolean) =>
           if (document.headings.toLocaleLowerCase().includes(normalizedQuery)) return 3;
           return 4;
         };
-        return rank(left.item) - rank(right.item) || (left.score ?? 1) - (right.score ?? 1);
+        return rank(left.item) - rank(right.item) || left.score! - right.score!;
       })
       .slice(0, 16)
       .map((result) => result.item);

@@ -51,9 +51,8 @@ export function getDocNavigation(slug: string) {
 }
 
 export function getSearchDocuments() {
-  const docs = docPages.map((page) => {
+  const docs = docsConfig.flatMap((group) => group.pages.map((page) => {
     const source = getDocSource(page.source);
-    const section = docsConfig.find((group) => group.pages.some((candidate) => candidate.slug === page.slug))?.title ?? "Documentation";
     const headings = getDocHeadings(page.source).map((heading) => heading.title).join(" ");
     const text = source
       .replace(/```[\s\S]*?```/g, " ")
@@ -63,8 +62,8 @@ export function getSearchDocuments() {
       .replace(/[#*`_{}[\]()]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return { title: page.title, description: page.description, headings, href: `/docs/${page.slug}`, section, text };
-  });
+    return { title: page.title, description: page.description, headings, href: `/docs/${page.slug}`, section: group.title, text };
+  }));
   const operations = getOpenApiOperations().map((operation) => ({
     title: operation.summary,
     description: `${operation.method} ${operation.path}`,
@@ -86,7 +85,7 @@ export function getApiOperationDescription(operation: OpenApiOperation) {
 
 export function getPageMetadata(slug: string) {
   if (isGeneratedApiSlug(slug)) {
-    const operationId = slug.split("/").at(-1) ?? "";
+    const operationId = slug.slice(slug.lastIndexOf("/") + 1);
     const operation = getOpenApiOperations().find((item) => item.operationId === operationId);
     return operation ? { title: operation.summary, description: getApiOperationDescription(operation) } : undefined;
   }

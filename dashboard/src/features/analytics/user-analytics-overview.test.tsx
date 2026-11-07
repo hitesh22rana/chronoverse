@@ -126,6 +126,13 @@ it("draws the workload mix with a total in the middle and a kind per slice", () 
     const centre = Array.from(container.querySelectorAll("tspan")).map((node) => node.textContent)
     expect(centre).toContain("12")
     expect(centre).toContain("terminal jobs")
+    const labels = container.querySelectorAll("tspan")
+    const total = Array.from(labels).find((node) => node.textContent === "12")!
+    const caption = Array.from(labels).find((node) => node.textContent === "terminal jobs")!
+    expect(total.getAttribute("x")).toBe("400")
+    expect(total.getAttribute("y")).toBe("200")
+    expect(caption.getAttribute("x")).toBe("400")
+    expect(caption.getAttribute("y")).toBe("222")
     // The legend repeats every kind with its job count.
     const kinds = Array.from(container.querySelectorAll(".truncate.text-sm")).map(
         (row) => row.textContent,

@@ -47,7 +47,7 @@ import {
     SelectValue
 } from "@/components/ui/select"
 import { WorkflowConfigurationFields } from "./workflow-configuration-fields"
-import { serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
+import { touchedFieldNames, serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
 
 import { useWorkflows } from "@/features/workflows/use-workflows"
 
@@ -77,15 +77,6 @@ const steps = [
     { title: "Configuration", description: "Set up what runs" },
     { title: "Schedule", description: "Timing & retention" },
 ]
-
-function touchedFieldNames(touched: Record<string, unknown>, prefix = ""): string[] {
-    return Object.entries(touched).flatMap(([key, value]) => {
-        const path = prefix ? `${prefix}.${key}` : key
-        if (value === true) return [path]
-        if (value && typeof value === "object") return touchedFieldNames(value as Record<string, unknown>, path)
-        return []
-    })
-}
 
 export function CreateWorkflowDialog(props: CreateWorkflowDialogProps) {
     return props.open ? <CreateWorkflowForm {...props} /> : null
@@ -121,7 +112,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     }, [step])
 
     const watchedKind = useWatch({ control: form.control, name: "kind" })
-    const selectedKind = watchedKind || "HEARTBEAT"
+    const selectedKind = watchedKind
 
     const changeStep = (next: number) => {
         setStep(next)

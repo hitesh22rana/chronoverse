@@ -114,10 +114,7 @@ function UpdateWorkflowForm({
         initializeWorkflowForm(workflow, form);
     }, [workflow, form, form.formState.isDirty]);
 
-    const handleSubmit = (data: UpdateWorkflowFormValues) => {
-        if (!workflow) return;
-
-
+    const handleSubmit = (data: UpdateWorkflowFormValues, workflow: Workflow) => {
         updateWorkflow({
             name: data.name,
             payload: serializeWorkflowPayload(workflow.kind, data),
@@ -151,7 +148,7 @@ function UpdateWorkflowForm({
                     )
                 ) : workflow && (
                     <Form {...form}>
-                        <form noValidate onSubmit={form.handleSubmit(handleSubmit, (errors) => {
+                        <form noValidate onSubmit={form.handleSubmit((data) => handleSubmit(data, workflow), (errors) => {
                             setSection(errors.name || errors.heartbeatPayload || errors.containerPayload ? "configuration" : "schedule")
                             requestAnimationFrame(() => { void form.trigger(undefined, { shouldFocus: true }) })
                         })} className="flex min-h-0 flex-col overflow-clip">

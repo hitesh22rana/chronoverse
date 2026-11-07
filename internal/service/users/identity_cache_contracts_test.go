@@ -66,6 +66,12 @@ func TestIdentityCacheOutcomesPreserveAuthenticationAndCallerContract(t *testing
 					if failure {
 						cause = errors.New("cache unavailable")
 					}
+					var (
+						setCalled, setDeadlineOK, setDeadlineWithinTimeout bool
+						setErr                                             error
+						setContextValue, setValue                          any
+						setExpiration                                      time.Duration
+					)
 					if operation == "update" {
 						cache.EXPECT().Delete(gomock.Any(), identityCacheKey).DoAndReturn(func(got context.Context, _ string) error {
 							require.Equal(t, ctx.Done(), got.Done())
@@ -74,14 +80,16 @@ func TestIdentityCacheOutcomesPreserveAuthenticationAndCallerContract(t *testing
 						})
 					} else {
 						cache.EXPECT().Set(gomock.Any(), identityCacheKey, response, gomock.Any()).DoAndReturn(func(bg context.Context, _ string, value any, expiration time.Duration) error {
-							require.NoError(t, bg.Err())
-							require.Equal(t, "caller", bg.Value(identityContextKey{}))
-							require.Same(t, response, value)
-							require.Positive(t, expiration)
-							deadline, ok := bg.Deadline()
-							require.True(t, ok)
-							require.Positive(t, time.Until(deadline))
-							require.LessOrEqual(t, time.Until(deadline), cacheTimeout)
+							// This callback runs on the service's background cache goroutine,
+							// so record values and let the test goroutine assert after Wait.
+							setCalled = true
+							setErr = bg.Err()
+							setContextValue = bg.Value(identityContextKey{})
+							setValue = value
+							setExpiration = expiration
+							var deadline time.Time
+							deadline, setDeadlineOK = bg.Deadline()
+							setDeadlineWithinTimeout = time.Until(deadline) > 0 && time.Until(deadline) <= cacheTimeout
 							return cause
 						})
 					}
@@ -122,6 +130,15 @@ func TestIdentityCacheOutcomesPreserveAuthenticationAndCallerContract(t *testing
 					}
 					cancel()
 					synctest.Wait()
+					if operation != "update" {
+						require.True(t, setCalled)
+						require.NoError(t, setErr)
+						require.Equal(t, "caller", setContextValue)
+						require.Same(t, response, setValue)
+						require.Positive(t, setExpiration)
+						require.True(t, setDeadlineOK)
+						require.True(t, setDeadlineWithinTimeout)
+					}
 					require.Len(t, entries.All(), 1)
 					want := zap.DebugLevel
 					if failure {

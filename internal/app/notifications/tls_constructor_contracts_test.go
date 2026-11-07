@@ -51,6 +51,18 @@ func TestNotificationsServerLoadsMutualTLS(t *testing.T) {
 	response, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
 	require.NoError(t, err)
 	require.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, response.GetStatus())
+
+	withoutCertTLS := clientTLS.Clone()
+	withoutCertTLS.Certificates = nil
+	noCertConn, err := grpc.NewClient("passthrough:///tls-notifications-contract",
+		grpc.WithTransportCredentials(credentials.NewTLS(withoutCertTLS)),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return listener.DialContext(ctx)
+		}))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, noCertConn.Close()) })
+	_, err = grpc_health_v1.NewHealthClient(noCertConn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	require.Error(t, err)
 }
 
 func TestNotificationsServerRejectsInvalidTLS(t *testing.T) {

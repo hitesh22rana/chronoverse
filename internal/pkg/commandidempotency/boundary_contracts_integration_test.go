@@ -6,22 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	ledger "github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
@@ -114,57 +108,19 @@ func TestIntegrationLedgerReplaysSharedAliasWithoutRenewingOwnership(t *testing.
 	require.Equal(t, before, readBoundaryLedger(t, pg, scope))
 }
 
-type (
-	reserveReadCancelKey struct{}
-	reserveReadCancel    struct {
-		cancel context.CancelFunc
-		fired  atomic.Bool
-	}
-	reserveReadProcessor struct{}
-)
-
-func (*reserveReadProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
-	target, ok := ctx.Value(reserveReadCancelKey{}).(*reserveReadCancel)
-	if !ok || span.Name() != "SELECT" {
-		return
-	}
-	for _, attribute := range span.Attributes() {
-		if attribute.Key == "db.query.text" && strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), "SELECT request_hash, request_hash_aliases, status, resource_id, response") {
-			target.fired.Store(true)
-			target.cancel()
-			return
-		}
-	}
+// cancelOnReplayReadTx cancels the context when Reserve reads a completed row.
+type cancelOnReplayReadTx struct {
+	pgx.Tx
+	cancel context.CancelFunc
 }
-func (*reserveReadProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
-func (*reserveReadProcessor) Shutdown(context.Context) error   { return nil }
-func (*reserveReadProcessor) ForceFlush(context.Context) error { return nil }
 
-// The dedicated pool closes before the temporary provider is restored; tests are sequential.
-func reserveReadPool(t *testing.T) (*postgres.Postgres, *sdktrace.TracerProvider) {
-	t.Helper()
-	config, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
-	require.NoError(t, err)
-	previous := otel.GetTracerProvider()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(&reserveReadProcessor{}))
-	otel.SetTracerProvider(provider)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(previous)
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
-		defer cancel()
-		require.NoError(t, provider.Shutdown(ctx))
-	})
-	pool, err := postgres.New(t.Context(), &postgres.Config{
-		Host: config.ConnConfig.Host, Port: int(config.ConnConfig.Port), User: config.ConnConfig.User,
-		Password: config.ConnConfig.Password, Database: config.ConnConfig.Database, MaxConns: 1, TLSConfig: &postgres.TLSConfig{},
-	})
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	return pool, provider
+func (tx *cancelOnReplayReadTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	tx.cancel()
+	return tx.Tx.QueryRow(ctx, sql, args...)
 }
 
 func TestIntegrationLedgerReplayReadFailurePreservesCompletedCommand(t *testing.T) {
-	pg, provider := reserveReadPool(t)
+	pg := testkit.Postgres(t)
 	scope := "read-boundary-" + uuid.NewString()
 	key := "command"
 	hash := testHash(91)
@@ -180,12 +136,8 @@ func TestIntegrationLedgerReplayReadFailurePreservesCompletedCommand(t *testing.
 	cleanupBoundaryTx(t, replayTx)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	target := &reserveReadCancel{cancel: cancel}
-	ctx = context.WithValue(ctx, reserveReadCancelKey{}, target)
-	ctx, span := provider.Tracer("reserve-read-contract").Start(ctx, "ReserveReplay")
-	defer span.End()
+	replayTx = &cancelOnReplayReadTx{Tx: replayTx, cancel: cancel}
 	result, err := ledger.Reserve(ctx, replayTx, scope, ledger.OperationUserRegister, key, hash)
-	require.True(t, target.fired.Load())
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 	require.Nil(t, result)
 	require.Equal(t, codes.Internal, status.Code(err))

@@ -107,6 +107,7 @@ it("reports parser failures and references retained in malformed operation metad
     await expect(validate()).rejects.toThrow("exit:1");
     const message = vi.mocked(console.error).mock.calls.flat().join("\n");
     expect(message).toContain("Invalid OpenAPI document:");
+    expect(message).toContain("#/components/schemas/Missing");
     expect(message).toContain("Unresolved OpenAPI reference in generated operation listItems");
     expect(console.log).not.toHaveBeenCalled();
   } finally {

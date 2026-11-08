@@ -71,9 +71,8 @@ for (const operation of operations) {
   }
   for (const name of securitySchemeNames) {
     const scheme = operation.securitySchemes[name];
-    if (!scheme) errors.push(`Missing generated security scheme ${name} for ${operation.operationId}`);
-    if (!scheme?.description) errors.push(`Missing security scheme description for ${name}`);
-    if (scheme?.type === "apiKey" && (!scheme.in || !scheme.name)) {
+    if (!scheme.description) errors.push(`Missing security scheme description for ${name}`);
+    if (scheme.type === "apiKey" && (!scheme.in || !scheme.name)) {
       errors.push(`Incomplete apiKey security scheme ${name}`);
     }
   }

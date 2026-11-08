@@ -110,7 +110,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          'clickhouse-client --secure --host=localhost --port=9440 --user=chronoverse-client --password="$${CLICKHOUSE_PASSWORD}" --query ''SELECT 1''',
+          'clickhouse-client --secure --host=127.0.0.1 --port=9440 --user=chronoverse-client --password="$${CLICKHOUSE_PASSWORD}" --query ''SELECT 1''',
         ]
       interval: 10s
       timeout: 5s
@@ -716,8 +716,8 @@ services:
           esac
         done
 
-        # Shared mTLS client identity is consumed by UID 100 application containers.
-        chown 100:101 /certs/clients/client.key
+        # Root ownership permits group-read access for libpq/pq and GID 101 apps.
+        chown 0:101 /certs/clients/client.key
         chmod 440 /certs/clients/client.key
 
         chmod 444 /certs/clients/client.crt

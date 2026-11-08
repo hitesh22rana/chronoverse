@@ -104,17 +104,18 @@ var shared = &suite{
 // Run is meant to be called from a repository package's TestMain. It runs the
 // package tests and terminates every started container afterwards.
 func Run(m *testing.M, opts ...Option) {
+	os.Exit(runSuite(m.Run, shared, opts...))
+}
+
+func runSuite(run func() int, s *suite, opts ...Option) int {
 	for _, opt := range opts {
-		opt(shared)
+		opt(s)
 	}
-
-	code := m.Run()
-
+	code := run()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	shared.terminate(ctx)
-	cancel()
-
-	os.Exit(code)
+	defer cancel()
+	s.terminate(ctx)
+	return code
 }
 
 // Postgres returns the shared PostgreSQL pool, starting the container and
@@ -221,6 +222,27 @@ func KafkaRecordConsumer(t *testing.T, topics ...string) *kgo.Client {
 // fail instead of skip.
 func (s *suite) start(t *testing.T, svc service) {
 	t.Helper()
+	s.startWith(t, svc, func(ctx context.Context) error {
+		var err error
+		switch svc {
+		case servicePostgres:
+			s.pg, s.pgDSN, err = startPostgres(ctx, s)
+		case serviceClickHouse:
+			s.ch, s.chAddr, err = startClickHouse(ctx, s)
+		case serviceRedis:
+			s.rdb, err = startRedis(ctx, s)
+		case serviceMeilisearch:
+			s.ms, err = startMeilisearch(ctx, s)
+		case serviceKafka:
+			s.kafkaSeed, s.kfk, err = startKafka(ctx, s)
+		}
+
+		return err
+	})
+}
+
+func (s *suite) startWith(t *testing.T, svc service, start func(context.Context) error) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
@@ -241,20 +263,7 @@ func (s *suite) start(t *testing.T, svc service) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	var err error
-	switch svc {
-	case servicePostgres:
-		s.pg, s.pgDSN, err = startPostgres(ctx, s)
-	case serviceClickHouse:
-		s.ch, s.chAddr, err = startClickHouse(ctx, s)
-	case serviceRedis:
-		s.rdb, err = startRedis(ctx, s)
-	case serviceMeilisearch:
-		s.ms, err = startMeilisearch(ctx, s)
-	case serviceKafka:
-		s.kafkaSeed, s.kfk, err = startKafka(ctx, s)
-	}
-
+	err := start(ctx)
 	if err != nil {
 		s.startErrs[svc] = err
 		skipOrFailf(t, "failed to start %s testcontainer: %v", svc, err)
@@ -350,16 +359,13 @@ func WaitForRecord(t *testing.T, client *kgo.Client, timeout time.Duration, pred
 
 		// PollFetches returns as soon as the context expires.
 		if ctx.Err() != nil {
-			break
+			t.Fatalf("no matching kafka record within %s", timeout)
 		}
 
 		if err := fetches.Err(); err != nil {
 			t.Fatalf("poll fetches: %v", err)
 		}
 	}
-
-	t.Fatalf("no matching kafka record within %s", timeout)
-	return nil
 }
 
 func recordsFromFetches(fetches kgo.Fetches) []*kgo.Record {
@@ -389,7 +395,9 @@ func hostPort(ctx context.Context, ctr testcontainers.Container, containerPort s
 	return host, portNum, nil
 }
 
-// terminate stops every started container and closes clients.
+// terminate stops every started container and closes clients. It is one-way:
+// the started flags and cached endpoints are retained, so the suite must not be
+// reused after teardown.
 func (s *suite) terminate(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -402,14 +410,22 @@ func (s *suite) terminate(ctx context.Context) {
 
 	if s.pg != nil {
 		s.pg.Close()
+		s.pg = nil
 	}
 	if s.ch != nil {
 		_ = s.ch.Close()
+		s.ch = nil
 	}
 	if s.rdb != nil {
 		_ = s.rdb.Close()
+		s.rdb = nil
+	}
+	if s.ms != nil {
+		s.ms.Close()
+		s.ms = nil
 	}
 	if s.kfk != nil {
 		s.kfk.Close()
+		s.kfk = nil
 	}
 }

@@ -206,20 +206,24 @@ function renderFull() {
   return `${output.join("\n")}\n`;
 }
 
-const generatedFiles = new Map([
+const compactFiles = new Map([
   [path.join(repositoryRoot, "llms.txt"), renderCompact((page) => `./static/content/docs/${page.source}.mdx`)],
   [path.join(staticRoot, "public/llms.txt"), renderCompact((page) => `./docs/${page.slug}/`)],
-  [path.join(staticRoot, "public/llms-full.txt"), renderFull()],
 ]);
 
-for (const file of [path.join(repositoryRoot, "llms.txt"), path.join(staticRoot, "public/llms.txt")]) {
-  const size = Buffer.byteLength(generatedFiles.get(file) ?? "");
+const generatedFull = renderFull();
+const generatedFiles = new Map([
+  ...compactFiles,
+  [path.join(staticRoot, "public/llms-full.txt"), generatedFull],
+]);
+
+for (const [file, content] of compactFiles) {
+  const size = Buffer.byteLength(content);
   if (size < 1000 || size > 5000) {
     throw new Error(`${path.relative(repositoryRoot, file)} must be between 1 KB and 5 KB; generated ${size} bytes`);
   }
 }
 
-const generatedFull = generatedFiles.get(path.join(staticRoot, "public/llms-full.txt")) ?? "";
 if (/\]\(\/docs(?:\/|\))|href=(["'])\/docs(?:\/|\1)/.test(generatedFull)) {
   throw new Error("Generated llms-full.txt contains a root-relative documentation link");
 }

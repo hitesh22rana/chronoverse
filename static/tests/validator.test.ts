@@ -1,8 +1,10 @@
 // @vitest-environment node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { stringify } from "yaml";
+import SwaggerParser from "@apidevtools/swagger-parser";
 
 beforeEach(() => {
   vi.resetModules();
@@ -79,4 +81,35 @@ it.each([
   vi.doMock("@apidevtools/swagger-parser", () => ({ default: { validate: vi.fn().mockRejectedValue(new Error("invalid schema")) } }));
   await expect(validate()).rejects.toThrow(message);
   expect(console.log).not.toHaveBeenCalled();
+});
+
+it("reports parser failures and references retained in malformed operation metadata", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "chronoverse-openapi-"));
+  try {
+    const specification = path.join(directory, "openapi.yaml");
+    const source = stringify({
+      openapi: "3.1.0", info: { title: "Malformed tags", version: "1.0.0" },
+      paths: { "/items": { get: {
+        operationId: "listItems", tags: [{ $ref: "#/components/schemas/Missing" }],
+        security: [{ cookieSession: [] }], responses: { "200": { description: "Listed" } },
+      } } },
+      components: { securitySchemes: {
+        cookieSession: { type: "apiKey", in: "cookie", name: "session", description: "Session cookie" },
+      } },
+    });
+    fs.writeFileSync(specification, source);
+    vi.doMock("node:fs", () => ({ default: { ...fs, readFileSync: fixtureReads({
+      [path.join(process.cwd(), "content/openapi.yaml")]: source,
+    }) } }));
+    vi.doMock("@apidevtools/swagger-parser", () => ({
+      default: { validate: () => SwaggerParser.validate(specification) },
+    }));
+    await expect(validate()).rejects.toThrow("exit:1");
+    const message = vi.mocked(console.error).mock.calls.flat().join("\n");
+    expect(message).toContain("Invalid OpenAPI document:");
+    expect(message).toContain("Unresolved OpenAPI reference in generated operation listItems");
+    expect(console.log).not.toHaveBeenCalled();
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

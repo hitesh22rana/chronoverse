@@ -395,7 +395,9 @@ func hostPort(ctx context.Context, ctr testcontainers.Container, containerPort s
 	return host, portNum, nil
 }
 
-// terminate stops every started container and closes clients.
+// terminate stops every started container and closes clients. It is one-way:
+// the started flags and cached endpoints are retained, so the suite must not be
+// reused after teardown.
 func (s *suite) terminate(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

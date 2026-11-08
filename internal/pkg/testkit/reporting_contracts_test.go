@@ -105,31 +105,31 @@ func TestEventuallyRetriesUntilTheConditionChanges(t *testing.T) {
 func TestReportingFailureAndSkipContracts(t *testing.T) {
 	for _, tc := range []struct {
 		mode, message string
-		fails         bool
+		status        string
 		short         bool
 	}{
-		{"lenient", "integration test skipped: fixture failed", false, false},
-		{"strict", "integration test failed: fixture failed", true, false},
-		{"suite disabled", "not enabled for this package", true, false},
-		{"suite cached", "testcontainer unavailable: startup failed", false, false},
-		{"suite failure", "failed to start postgres testcontainer: startup failed", false, false},
-		{"suite ready", "PASS", false, false},
-		{"suite short", "skipping integration test in -short mode", false, true},
-		{"docker short", "skipping integration test in -short mode", false, true},
-		{"docker invalid", "docker daemon unavailable", false, false},
-		{"docker ping", "docker daemon unreachable", false, false},
-		{"docker ready", "PASS", false, false},
-		{"eventually", "condition not met", true, false},
-		{"record timeout", "no matching kafka record", true, false},
-		{"record error", "poll fetches: client closed", true, false},
-		{"consumer invalid", "failed to create kafka consumer", true, false},
-		{"consumer ready", "PASS", false, false},
+		{"lenient", "integration test skipped: fixture failed", "skip", false},
+		{"strict", "integration test failed: fixture failed", "fail", false},
+		{"suite disabled", "not enabled for this package", "fail", false},
+		{"suite cached", "testcontainer unavailable: startup failed", "skip", false},
+		{"suite failure", "failed to start postgres testcontainer: startup failed", "skip", false},
+		{"suite ready", "PASS", "pass", false},
+		{"suite short", "skipping integration test in -short mode", "skip", true},
+		{"docker short", "skipping integration test in -short mode", "skip", true},
+		{"docker invalid", "docker daemon unavailable", "skip", false},
+		{"docker ping", "docker daemon unreachable", "skip", false},
+		{"docker ready", "PASS", "pass", false},
+		{"eventually", "condition not met", "fail", false},
+		{"record timeout", "no matching kafka record", "fail", false},
+		{"record error", "poll fetches: client closed", "fail", false},
+		{"consumer invalid", "failed to create kafka consumer", "fail", false},
+		{"consumer ready", "PASS", "pass", false},
 	} {
-		t.Run(tc.mode, func(t *testing.T) { reportingChild(t, tc.mode, tc.message, tc.fails, tc.short) })
+		t.Run(tc.mode, func(t *testing.T) { reportingChild(t, tc.mode, tc.message, tc.status, tc.short) })
 	}
 }
 
-func reportingChild(t *testing.T, mode, message string, fails, short bool) {
+func reportingChild(t *testing.T, mode, message, status string, short bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
@@ -146,10 +146,18 @@ func reportingChild(t *testing.T, mode, message string, fails, short bool) {
 	command.Env = append(os.Environ(), "CHRONOVERSE_TESTKIT_CONTRACT="+mode, "TESTCONTAINERS_SESSION_ID="+uuid.NewString())
 	output, err := command.CombinedOutput()
 	require.NoError(t, ctx.Err(), "%s", output)
-	if fails {
-		require.Error(t, err, "%s", output)
-	} else {
+	switch status {
+	case "pass":
 		require.NoError(t, err, "%s", output)
+		require.Contains(t, string(output), "--- PASS: TestReportingContractChild", "%s", output)
+	case "skip":
+		require.NoError(t, err, "%s", output)
+		require.Contains(t, string(output), "--- SKIP: TestReportingContractChild", "%s", output)
+	case "fail":
+		require.Error(t, err, "%s", output)
+		require.Contains(t, string(output), "--- FAIL: TestReportingContractChild", "%s", output)
+	default:
+		t.Fatalf("unknown child status %q", status)
 	}
 	require.Contains(t, string(output), message)
 }
@@ -274,6 +282,6 @@ func exerciseSeedFailure(t *testing.T, mode string) {
 
 func TestIntegrationSeedFailuresAreReported(t *testing.T) {
 	RequireDocker(t)
-	reportingChild(t, "seed user", "seed user:", true, false)
-	reportingChild(t, "seed workflow", "seed workflow:", true, false)
+	reportingChild(t, "seed user", "seed user:", "fail", false)
+	reportingChild(t, "seed workflow", "seed workflow:", "fail", false)
 }

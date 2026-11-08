@@ -73,6 +73,8 @@ func startPostgresWith(ctx context.Context, s *suite, startup postgresStartup) (
 		if err == nil {
 			break
 		}
+		// Surface the in-flight connection failure for diagnostics; cancellation
+		// that interrupts the retry wait is reported from the select below.
 		if attempt >= 30 || ctx.Err() != nil {
 			return nil, "", fmt.Errorf("connect postgres: %w", err)
 		}

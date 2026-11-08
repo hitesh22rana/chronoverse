@@ -70,3 +70,12 @@ export function serializeWorkflowPayload(kind: string, data: WorkflowConfigurati
     }
     return payload
 }
+
+export function touchedFieldNames(touched: Record<string, unknown>, prefix = ""): string[] {
+    return Object.entries(touched).flatMap(([key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key
+        if (value === true) return [path]
+        if (value && typeof value === "object") return touchedFieldNames(value as Record<string, unknown>, path)
+        return []
+    })
+}

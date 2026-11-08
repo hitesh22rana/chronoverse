@@ -10,7 +10,7 @@ export function CodeBlock(props: HTMLAttributes<HTMLPreElement>) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    const text = ref.current?.innerText ?? "";
+    const text = ref.current!.innerText;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);

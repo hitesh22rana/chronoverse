@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 function getActiveHeading(elements: HTMLElement[], headings: DocHeading[], visible: Set<string>) {
   const documentBottom = document.documentElement.scrollHeight - window.innerHeight;
   if (window.scrollY >= documentBottom - 2) {
-    return elements.at(-1)?.id ?? elements[0].id;
+    return elements[elements.length - 1].id;
   }
 
   const visibleHeading = headings.find((heading) => visible.has(heading.id));

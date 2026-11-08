@@ -150,3 +150,18 @@ it("rejects root-relative links introduced through page metadata", async () => {
   await expect(generate()).rejects.toThrow("contains a root-relative documentation link");
   expect(write).not.toHaveBeenCalled();
 });
+
+it("omits compact sections whose pages move to another configured group", async () => {
+  process.argv = originalArguments;
+  const groups = structuredClone(docsConfig);
+  const contributing = groups.find((group) => group.title === "Contributing")!;
+  groups[0].pages.push(...contributing.pages);
+  contributing.pages = [];
+  vi.doMock("../docs.config", () => ({ docsConfig: groups }));
+  await generate();
+  const compact = write.mock.calls.find(([name]) => String(name).endsWith("public/llms.txt"))![1] as string;
+  expect(compact).not.toContain("## Optional");
+  expect(compact).toContain("./docs/contributing/development/");
+  const full = write.mock.calls.find(([name]) => String(name).endsWith("llms-full.txt"))![1] as string;
+  expect(full.match(/<doc title=/g)).toHaveLength(groups.flatMap((group) => group.pages).length + 1);
+});

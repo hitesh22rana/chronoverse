@@ -152,36 +152,32 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                                             {workloadData.map((item) => (
                                                 <Cell key={item.kind} fill={item.fill} />
                                             ))}
+                                            {/* position="center" uses the chart view box, which matches the Pie's default center. */}
                                             <Label
-                                                content={({ viewBox }) => {
-                                                    if (!viewBox || !("cx" in viewBox) || !("cy" in viewBox)) {
-                                                        return null
-                                                    }
-
-                                                    return (
-                                                        <text
-                                                            x={viewBox.cx}
-                                                            y={viewBox.cy}
-                                                            textAnchor="middle"
-                                                            dominantBaseline="middle"
+                                                position="center"
+                                                content={({ x, y }) => (
+                                                    <text
+                                                        x={x}
+                                                        y={y}
+                                                        textAnchor="middle"
+                                                        dominantBaseline="middle"
+                                                    >
+                                                        <tspan
+                                                            x={x}
+                                                            y={y}
+                                                            className="fill-foreground text-2xl font-semibold"
                                                         >
-                                                            <tspan
-                                                                x={viewBox.cx}
-                                                                y={viewBox.cy}
-                                                                className="fill-foreground text-2xl font-semibold"
-                                                            >
-                                                                {formatInteger(analytics.total_jobs)}
-                                                            </tspan>
-                                                            <tspan
-                                                                x={viewBox.cx}
-                                                                y={(viewBox.cy ?? 0) + 22}
-                                                                className="fill-muted-foreground"
-                                                            >
-                                                                terminal jobs
-                                                            </tspan>
-                                                        </text>
-                                                    )
-                                                }}
+                                                            {formatInteger(analytics.total_jobs)}
+                                                        </tspan>
+                                                        <tspan
+                                                            x={x}
+                                                            y={Number(y) + 22}
+                                                            className="fill-muted-foreground"
+                                                        >
+                                                            terminal jobs
+                                                        </tspan>
+                                                    </text>
+                                                )}
                                             />
                                         </Pie>
                                     </PieChart>

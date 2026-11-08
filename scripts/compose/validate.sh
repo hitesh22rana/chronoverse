@@ -480,7 +480,7 @@ validate_key_permissions() {
       'chown 70:70' \
       'chown 999:1000' \
       'chown 1000:1000' \
-      'chown 100:101 /certs/clients/client.key' \
+      'chown 0:101 /certs/clients/client.key' \
       'rm -f /certs/kafka/kafka.p12' \
       'certs/ca/ca.crt:/certs/ca/ca.crt:ro' \
     ; do

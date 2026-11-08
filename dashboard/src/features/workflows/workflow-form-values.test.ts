@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
+import { touchedFieldNames, serializeWorkflowPayload, type WorkflowConfigurationValues } from "./workflow-form-values"
 
 describe("serializeWorkflowPayload", () => {
     it("turns the heartbeat headers into an object and keeps a filled timeout", () => {
@@ -109,4 +109,14 @@ it("parses container env entries without dropping bare names or values", () => {
         },
     }))
     expect(payload.env).toEqual({ FOO: "bar=baz", BAZ: "", EMPTY: "" })
+})
+
+it("revalidates only touched leaves, including nested array fields", () => {
+    expect(touchedFieldNames({
+        name: true,
+        untouched: false,
+        absent: undefined,
+        heartbeatPayload: { endpoint: true, headers: [{ key: false, value: true }] },
+        containerPayload: {},
+    })).toEqual(["name", "heartbeatPayload.endpoint", "heartbeatPayload.headers.0.value"])
 })

@@ -462,7 +462,6 @@ export function LogsViewer({
 
 function LogsViewerView({ model }: { model: any }) {
     const {
-        streamFilter,
         jobStatus,
         logs,
         isFetchingNextPage,
@@ -531,12 +530,10 @@ function LogsViewerView({ model }: { model: any }) {
                                         value={stream}
                                         onValueChange={(value) => {
                                             setPopoverOpen(false)
-                                            if (value !== (streamFilter || "all")) {
-                                                clearLineSelection()
-                                                startSearchTransition(() => {
-                                                    applyStreamFilter(value === "all" ? "" : value)
-                                                })
-                                            }
+                                            clearLineSelection()
+                                            startSearchTransition(() => {
+                                                applyStreamFilter(value === "all" ? "" : value)
+                                            })
                                         }}
                                         className="flex flex-col gap-2"
                                     >

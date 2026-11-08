@@ -334,13 +334,9 @@ function renderTooltipIndicator({
 
 function getPayloadConfigFromPayload(
   config: ChartConfig,
-  payload: unknown,
+  payload: TooltipPayload[number],
   key: string
 ) {
-  if (typeof payload !== "object" || payload === null) {
-    return undefined
-  }
-
   const payloadPayload =
     "payload" in payload &&
     typeof payload.payload === "object" &&

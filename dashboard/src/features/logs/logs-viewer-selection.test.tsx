@@ -880,8 +880,7 @@ it("switches the dataset when the log level filter changes and drops the selecti
 })
 
 it("preserves selection and requests when reselecting the active log filter", async () => {
-    // Radix suppresses onValueChange for the already-selected radio, so this
-    // pins the user-visible no-op; the viewer's own guard stays unexercised.
+    // Radix suppresses onValueChange for the already-selected radio.
     const user = userEvent.setup()
     renderViewer()
     await loadedLines(20)
@@ -1235,3 +1234,27 @@ function restoreDomStubs() {
         }
     })
 }
+
+it("preserves a pending search while an older navigation settles", async () => {
+    renderViewer()
+    await loadedLines(20)
+    mocks.push.mockImplementation(() => {})
+    const input = screen.getByPlaceholderText("Search logs... (Ctrl+F)") as HTMLInputElement
+    fireEvent.change(input, { target: { value: "new query" } })
+    await waitFor(() => expect(mocks.push).toHaveBeenLastCalledWith("/workflows/w1/jobs/j1?q=new+query"))
+    await act(async () => {
+        mocks.search = "q=older"
+        mocks.notify?.()
+    })
+    expect(input.value).toBe("new query")
+    await act(async () => {
+        mocks.search = "q=new+query"
+        mocks.notify?.()
+    })
+    expect(input.value).toBe("new query")
+    await act(async () => {
+        mocks.search = "q=external"
+        mocks.notify?.()
+    })
+    expect(input.value).toBe("external")
+})

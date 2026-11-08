@@ -13,8 +13,7 @@ export function DocsSidebarScrollArea({ activeSlug, children }: { activeSlug: st
   const sidebarRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
-    const sidebar = sidebarRef.current;
-    if (!sidebar) return;
+    const sidebar = sidebarRef.current!;
 
     const savedScrollTop = Number(sessionStorage.getItem(SCROLL_POSITION_KEY));
     if (Number.isFinite(savedScrollTop)) sidebar.scrollTop = savedScrollTop;

@@ -152,6 +152,7 @@ export function UserAnalyticsOverview({ analytics }: UserAnalyticsOverviewProps)
                                             {workloadData.map((item) => (
                                                 <Cell key={item.kind} fill={item.fill} />
                                             ))}
+                                            {/* position="center" uses the chart view box, which matches the Pie's default center. */}
                                             <Label
                                                 position="center"
                                                 content={({ x, y }) => (

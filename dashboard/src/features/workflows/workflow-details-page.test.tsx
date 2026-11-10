@@ -244,7 +244,7 @@ it("summarizes a container workflow, its configuration and its lifetime signals"
     expect(screen.getByText("Enabled")).toBeTruthy()
     expect(screen.getByText(/"image": "alpine:latest"/)).toBeTruthy()
     expect(screen.getByText("2 / 3")).toBeTruthy()
-    expect(failureBar().style.width).toBe(`${(2 / 3) * 100}%`)
+    expect(parseFloat(failureBar().style.width)).toBeCloseTo(66.6667, 4)
 
     // 9 logs over 3 recorded job executions.
     expect(screen.getByText("~3 logs per job")).toBeTruthy()

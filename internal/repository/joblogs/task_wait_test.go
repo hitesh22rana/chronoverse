@@ -30,8 +30,8 @@ func TestTaskWaitObservesCompletionPromptlyAndPreservesBounds(t *testing.T) {
 		wantCode                  codes.Code
 		wantElapsed               time.Duration
 	}{
-		{name: "index completed", operation: "add-documents", terminal: "succeeded"},
-		{name: "cleanup failed", operation: "delete-documents", terminal: "failed", wantCode: codes.Internal},
+		{name: "index completed", operation: "add-documents", terminal: "succeeded", wantElapsed: 250 * time.Millisecond},
+		{name: "cleanup failed", operation: "delete-documents", terminal: "failed", wantCode: codes.Internal, wantElapsed: 250 * time.Millisecond},
 		{name: "caller cancellation", operation: "add-documents", cancelAfter: 100 * time.Millisecond, wantCode: codes.Canceled, wantElapsed: 100 * time.Millisecond},
 		{name: "caller deadline", operation: "delete-documents", deadline: 100 * time.Millisecond, wantCode: codes.DeadlineExceeded, wantElapsed: 100 * time.Millisecond},
 		{name: "operation timeout", operation: "add-documents", wantCode: codes.DeadlineExceeded, wantElapsed: 2 * time.Minute},
@@ -67,11 +67,7 @@ func TestTaskWaitObservesCompletionPromptlyAndPreservesBounds(t *testing.T) {
 				}
 				err := (&Repository{ms: client}).waitForMeiliSearchTask(ctx, 7, test.operation)
 				require.Equal(t, test.wantCode, status.Code(err))
-				if test.wantElapsed > 0 {
-					require.Equal(t, test.wantElapsed, time.Since(start))
-				} else {
-					require.LessOrEqual(t, time.Since(start), 500*time.Millisecond, "completed task should not wait for a multi-second poll")
-				}
+				require.Equal(t, test.wantElapsed, time.Since(start))
 				if test.terminal == "failed" {
 					require.Contains(t, err.Error(), "delete-documents task 7 finished with status failed")
 				}

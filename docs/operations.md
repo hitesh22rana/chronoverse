@@ -585,7 +585,7 @@ still control Kafka accumulation. If Meilisearch or its proxy rejects a request
 with HTTP 413, the processor splits it further and waits for each accepted task
 before proceeding. Stable document IDs make replay after partial indexing safe.
 
-Indexing and search cleanup check task status immediately, then every 250 ms
+Retained-log indexing and cleanup check task status immediately, then every 250 ms
 while pending, with a two-minute timeout per task. Cancellation and failed tasks
 still stop processing. The shorter interval reduces completion delay but increases
 task-status requests under concurrent indexing.

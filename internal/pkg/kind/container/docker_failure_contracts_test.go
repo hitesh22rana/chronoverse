@@ -280,6 +280,16 @@ func TestTerminateDaemonDisappearsAfterHealthCheck(t *testing.T) {
 	}
 }
 
+type pendingInspectTransport struct{ http.RoundTripper }
+
+func (transport pendingInspectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(req.URL.Path, "/json") {
+		// Keep the daemon request pending so HTTP cancellation cannot win Build's select.
+		req = req.Clone(context.WithoutCancel(req.Context()))
+	}
+	return transport.RoundTripper.RoundTrip(req)
+}
+
 func TestBuildCancellationWhileSharedPullIsPending(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprint(deadline), func(t *testing.T) {
@@ -295,7 +305,9 @@ func TestBuildCancellationWhileSharedPullIsPending(t *testing.T) {
 			}))
 			defer server.Close()
 			defer close(release)
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+			httpClient := server.Client()
+			httpClient.Transport = pendingInspectTransport{httpClient.Transport}
+			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL), dockerclient.WithHTTPClient(httpClient))
 			if err != nil {
 				t.Fatal(err)
 			}

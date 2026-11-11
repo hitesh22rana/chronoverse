@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
-    "postcss": "8.5.32"
+    "postcss": "8.5.32",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
   },
   "scripts": {
     "dev": "next dev --turbopack",

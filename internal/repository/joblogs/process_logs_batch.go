@@ -2,9 +2,11 @@ package joblogs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"sort"
 	"strings"
@@ -31,8 +33,9 @@ type workflowLogPair struct {
 }
 
 const (
-	jobLogsExternalOperationTimeout = 2 * time.Minute
-	jobLogsMeiliSearchPollPeriod    = 2 * time.Second
+	jobLogsExternalOperationTimeout   = 2 * time.Minute
+	jobLogsMeiliSearchPollPeriod      = 2 * time.Second
+	jobLogsMeiliSearchMaxRequestBytes = 4 << 20
 )
 
 // processLogsBatch processes accumulated logs in a batch.
@@ -486,17 +489,57 @@ func (r *Repository) insertLogsDocumentsToMeiliSearch(ctx context.Context, docum
 		return status.Error(codes.Internal, "failed to add documents: job logs index is not configured")
 	}
 
-	taskInfo, err := r.ms.Index(indexJobLogs.Name).AddDocumentsWithContext(ctx, documents, &meilisearch.DocumentOptions{
-		PrimaryKey: &indexJobLogs.PrimaryKey,
-	})
-	if err != nil {
-		return status.Errorf(codes.Internal, "failed to add documents: %v", err)
+	batch := make([]json.RawMessage, 0, len(documents))
+	batchBytes := 2 // JSON array brackets; commas are counted below.
+	for _, document := range documents {
+		encoded, err := json.Marshal(document)
+		if err != nil {
+			return status.Error(codes.Internal, "failed to encode job log search document")
+		}
+		if len(encoded)+2 > jobLogsMeiliSearchMaxRequestBytes {
+			return status.Errorf(codes.ResourceExhausted, "single job log search document exceeds %d-byte request budget; records remain uncommitted", jobLogsMeiliSearchMaxRequestBytes)
+		}
+		additionalBytes := len(encoded)
+		if len(batch) > 0 {
+			additionalBytes++
+		}
+		if batchBytes+additionalBytes > jobLogsMeiliSearchMaxRequestBytes {
+			if err := r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+			batchBytes = 2
+			additionalBytes = len(encoded)
+		}
+		batch = append(batch, encoded)
+		batchBytes += additionalBytes
 	}
-	if taskInfo == nil {
-		return status.Error(codes.Internal, "failed to add documents: empty task response")
-	}
+	return r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, batch)
+}
 
-	return r.waitForMeiliSearchTask(ctx, taskInfo.TaskUID, "add-documents")
+func (r *Repository) addLogsDocumentsToMeiliSearch(ctx context.Context, index *meilisearchpkg.Index, documents []json.RawMessage) error {
+	taskInfo, err := r.ms.Index(index.Name).AddDocumentsWithContext(ctx, documents, &meilisearch.DocumentOptions{
+		PrimaryKey: &index.PrimaryKey,
+	})
+	if err == nil {
+		if taskInfo == nil {
+			return status.Error(codes.Internal, "failed to add documents: empty task response")
+		}
+		return r.waitForMeiliSearchTask(ctx, taskInfo.TaskUID, "add-documents")
+	}
+	var apiError *meilisearch.Error
+	if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusRequestEntityTooLarge {
+		return jobLogsStatusError(ctx, "failed to add documents", err)
+	}
+	if len(documents) == 1 {
+		// Retrying preserves the log until the operator fixes the server/proxy limit.
+		return status.Error(codes.ResourceExhausted, "search server rejected a single job log document with HTTP 413; increase the server/proxy payload limit; records remain uncommitted")
+	}
+	middle := len(documents) / 2
+	if splitErr := r.addLogsDocumentsToMeiliSearch(ctx, index, documents[:middle]); splitErr != nil {
+		return splitErr
+	}
+	return r.addLogsDocumentsToMeiliSearch(ctx, index, documents[middle:])
 }
 
 func (r *Repository) waitForMeiliSearchTask(parentCtx context.Context, taskUID int64, operation string) error {

@@ -579,6 +579,24 @@ removed with their owning workflow rather than by time-based ledger cleanup.
 Large log volumes should be matched with enough Kafka `job_logs` partitions and
 ClickHouse insertion capacity.
 
+Search indexing splits each consumer batch into JSON requests of at most 4 MiB,
+counting escaping, metadata, array brackets and commas. Count/time batch settings
+still control Kafka accumulation. If Meilisearch or its proxy rejects a request
+with HTTP 413, the processor splits it further and waits for each accepted task
+before proceeding. Stable document IDs make replay after partial indexing safe.
+
+A document larger than the 4 MiB request budget, or rejected with 413 even when
+sent alone, returns retryable `ResourceExhausted`. No log is truncated or skipped
+and the Kafka batch remains uncommitted. A single-document rejection can still
+hold up its partition until an operator raises the server/proxy payload limit;
+normal published log lines are capped at 256 KiB before JSON encoding. For a
+legacy document above the application budget, reducing incoming traffic or
+restarting the processor will not change its size: deletion through the normal
+workflow API is an explicit data-removing recovery option, not automatic cleanup.
+Keep limits large enough for one fully encoded document. Transient search failures
+remain retryable; do not force-commit offsets to clear a rejection.
+
+
 Operational traces omit raw workflow and notification payload attributes.
 Consumer diagnostics omit raw broker values and whole analytics events; JSON
 parse failures report an error type, while workflow/analytics dispatch failures

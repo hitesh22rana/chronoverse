@@ -15,12 +15,12 @@ Negotiation failures can surface as a daemon-side version mismatch rather than a
 clear minimum-version error.
 
 Operators must keep the Docker daemon patched separately; an SDK migration does
-not patch the host engine. `golang-migrate`'s `go.mod` still carries the deprecated
+not patch the host engine. The `go.mod` in `golang-migrate` carries the deprecated
 `github.com/docker/docker` module as an indirect requirement, pulled in by its
-PostgreSQL-driver tests via upstream `dhui/dktest`. Chronoverse source
-and compiled package dependencies no longer import that SDK. Upstream test-helper
-migration and module cleanup are separate follow-ups; no fork, module replacement
-or advisory suppression is used here.
+PostgreSQL-driver tests via upstream `dhui/dktest`. Chronoverse source and compiled
+package dependencies no longer import that SDK. Upstream test-helper migration
+and module cleanup are separate follow-ups; no fork, module replacement or
+advisory suppression is used here.
 
 ## Running the Stack
 

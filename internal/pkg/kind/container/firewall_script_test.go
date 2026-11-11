@@ -1,12 +1,16 @@
 package container_test
 
 import (
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // stubFirewallBins fakes apk/iptables/iptables-legacy/ip6tables on PATH, each
@@ -101,6 +105,12 @@ func runFirewallFile(t *testing.T, name, readyFile string) error {
 		t.Fatal("cannot locate test file")
 	}
 	script := filepath.Join(filepath.Dir(caller), "..", "..", "..", "..", "compose", "firewall", name)
+	return runFirewallPath(t, script, readyFile)
+}
+
+func runFirewallPath(t *testing.T, script, readyFile string) error {
+	t.Helper()
+
 	cmd := exec.Command("sh", script)
 	cmd.Env = append(os.Environ(),
 		"WORKLOAD_SUBNET=198.18.247.0/24",
@@ -297,5 +307,82 @@ func TestFirewallReapplyKeepsOrderAndNoDuplicates(t *testing.T) {
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("INPUT chain order = %q, want %q", lines, want)
+	}
+}
+
+func kubernetesFirewallScript(t *testing.T, root string) string {
+	t.Helper()
+
+	manifest, err := os.Open(filepath.Join(root, "infra", "k8s", "base", "docker-proxy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manifest.Close()
+	decoder := yaml.NewDecoder(manifest)
+	var apply string
+	for {
+		var document struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name string `yaml:"name"`
+			} `yaml:"metadata"`
+			Data map[string]string `yaml:"data"`
+		}
+		if err := decoder.Decode(&document); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		if document.Kind == "ConfigMap" && document.Metadata.Name == "workload-firewall-script" {
+			apply = document.Data["apply.sh"]
+		}
+	}
+	if apply == "" {
+		t.Fatal("Kubernetes firewall apply script missing")
+	}
+	kubeScript := filepath.Join(t.TempDir(), "apply.sh")
+	if err := os.WriteFile(kubeScript, []byte(apply), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return kubeScript
+}
+
+// Both shipped scripts must deny protected IPv4 ranges before public DNS/egress.
+func TestFirewallProtectedIPv4Destinations(t *testing.T) {
+	_, caller, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot locate test file")
+	}
+	root := filepath.Join(filepath.Dir(caller), "..", "..", "..", "..")
+	kubeScript := kubernetesFirewallScript(t, root)
+	for _, script := range []string{filepath.Join(root, "compose", "firewall", "workload-firewall.sh"), kubeScript} {
+		t.Run(filepath.Base(script), func(t *testing.T) {
+			stateDir, _, readyFile := stubFirewallBins(t, false, false)
+			if err := runFirewallPath(t, script, readyFile); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(stateDir, "iptables-CHRONOVERSE-WORKLOAD"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rules := string(raw)
+			for _, cidr := range []string{
+				"198.18.247.0/24", "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+				"100.64.0.0/10", "169.254.0.0/16", "224.0.0.0/4", "0.0.0.0/8", "192.0.0.0/24",
+				"192.0.2.0/24", "192.88.99.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4",
+			} {
+				deny := strings.Index(rules, "CHRONOVERSE-WORKLOAD -i chronoverse-br -s 198.18.247.0/24 -d "+cidr+" -j DROP\n")
+				for _, allow := range []string{
+					"-i chronoverse-br -s 198.18.247.0/24 -p udp --dport 53 -j ACCEPT\n",
+					"-i chronoverse-br -s 198.18.247.0/24 -p tcp --dport 53 -j ACCEPT\n",
+					"-s 198.18.247.0/24 -i chronoverse-br -j ACCEPT\n",
+				} {
+					permit := strings.Index(rules, allow)
+					if deny < 0 || permit < 0 || deny > permit {
+						t.Errorf("protected range %s must be dropped before allow %q", cidr, allow)
+					}
+				}
+			}
+		})
 	}
 }

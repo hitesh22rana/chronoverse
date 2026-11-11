@@ -71,7 +71,10 @@ ensure_chain "$CHAIN_IN"
 # unscoped accept would shield unrelated established flows from them.
 rule "$IPT" -i "$BRIDGE_IF" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # Own subnet as dst covers the gateway (.1) and peers.
-for cidr in "$SUBNET" 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 224.0.0.0/4; do
+# Special-use destinations can expose platform services outside RFC 1918.
+for cidr in "$SUBNET" 0.0.0.0/8 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 \
+    100.64.0.0/10 169.254.0.0/16 192.0.0.0/24 192.0.2.0/24 192.88.99.0/24 \
+    198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/4 240.0.0.0/4; do
     rule "$IPT" -i "$BRIDGE_IF" -s "$SUBNET" -d "$cidr" -j DROP
 done
 # Extra cluster ranges come from the environment.

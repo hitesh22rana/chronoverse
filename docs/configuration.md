@@ -285,7 +285,8 @@ infrastructure and each other while preserving internet egress:
   `DOCKER-USER` for forwarded traffic and `INPUT` for connections terminating
   on the host itself (DOCKER-USER alone never sees those).
   Denied: the workload subnet itself (bridge gateway), loopback, RFC 1918,
-  CGNAT, link-local/metadata (`169.254.169.254`), multicast, plus extra
+  CGNAT, link-local/metadata (`169.254.169.254`), special-use IPv4
+  (including `192.0.0.0/24`), multicast, plus extra
   `WORKLOAD_FIREWALL_CLUSTER_CIDRS`, and new inbound connections to workloads.
   Workload IPv6 is scoped to link-local sources only; everything else returns
   to Docker's own rules untouched. DNS is allowed only after those drops, so

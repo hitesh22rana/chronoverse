@@ -176,7 +176,6 @@ func (n *Notifications) CreateNotification(
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("kind", req.GetKind()),
-			attribute.String("payload", req.GetPayload()),
 		),
 	)
 	defer func() {

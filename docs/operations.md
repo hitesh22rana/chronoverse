@@ -579,6 +579,16 @@ removed with their owning workflow rather than by time-based ledger cleanup.
 Large log volumes should be matched with enough Kafka `job_logs` partitions and
 ClickHouse insertion capacity.
 
+Operational traces omit raw workflow and notification payload attributes.
+Consumer diagnostics omit raw broker values and whole analytics events; JSON
+parse failures report an error type, while workflow/analytics dispatch failures
+report a gRPC error code. Topic, partition, offset and selected resource
+identifiers remain available for investigation. Request and consumer contexts
+are passed to the OpenTelemetry bridge for trace correlation without encoding
+their values into console logs. These changes do not alter stored workflow
+payloads or user-visible job logs. Operators still control collector access,
+retention and exports; existing telemetry is not retroactively removed.
+
 ### Analytics Cleanup
 
 - `ANALYTICS_PROCESSOR_CLEANUP_ENABLED`

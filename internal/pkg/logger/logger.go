@@ -39,3 +39,8 @@ func Init(ctx context.Context, serviceName string, lp *sdklog.LoggerProvider) (c
 
 	return context.WithValue(ctx, loggerKey{}, logger), logger
 }
+
+// TraceContext supplies correlation to the OTEL bridge without encoding context values.
+func TraceContext(ctx context.Context) zap.Field {
+	return zap.Field{Type: zapcore.SkipType, Interface: ctx}
+}

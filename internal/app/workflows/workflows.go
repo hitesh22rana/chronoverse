@@ -185,7 +185,6 @@ func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateW
 		trace.WithAttributes(
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("name", req.GetName()),
-			attribute.String("payload", req.GetPayload()),
 			attribute.String("kind", req.GetKind()),
 			attribute.Int("interval", int(req.GetInterval())),
 			attribute.Int("max_consecutive_job_failures_allowed", int(req.GetMaxConsecutiveJobFailuresAllowed())),
@@ -221,7 +220,6 @@ func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateW
 			attribute.String("id", req.GetId()),
 			attribute.String("user_id", req.GetUserId()),
 			attribute.String("name", req.GetName()),
-			attribute.String("payload", req.GetPayload()),
 			attribute.Int("interval", int(req.GetInterval())),
 			attribute.Int("max_consecutive_job_failures_allowed", int(req.GetMaxConsecutiveJobFailuresAllowed())),
 		),

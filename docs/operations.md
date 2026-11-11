@@ -585,6 +585,11 @@ still control Kafka accumulation. If Meilisearch or its proxy rejects a request
 with HTTP 413, the processor splits it further and waits for each accepted task
 before proceeding. Stable document IDs make replay after partial indexing safe.
 
+Retained-log indexing and cleanup check task status immediately, then every 250 ms
+while pending, with a two-minute timeout per task. Cancellation and failed tasks
+still stop processing. The shorter interval reduces completion delay but increases
+task-status requests under concurrent indexing.
+
 A document larger than the 4 MiB request budget, or rejected with 413 even when
 sent alone, returns retryable `ResourceExhausted`. No log is truncated or skipped
 and the Kafka batch remains uncommitted. A single-document rejection can still

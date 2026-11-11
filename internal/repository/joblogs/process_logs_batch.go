@@ -489,9 +489,9 @@ func (r *Repository) insertLogsDocumentsToMeiliSearch(ctx context.Context, docum
 		return status.Error(codes.Internal, "failed to add documents: job logs index is not configured")
 	}
 
-	batchStart := 0
-	body := []byte{'['}
-	for i, document := range documents {
+	batch := make([]*map[string]any, 0, len(documents))
+	batchBytes := 2 // JSON array brackets; commas are counted below.
+	for _, document := range documents {
 		encoded, err := json.Marshal(document)
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to encode job log search document: %v", err)
@@ -503,28 +503,26 @@ func (r *Repository) insertLogsDocumentsToMeiliSearch(ctx context.Context, docum
 				(*document)["id"], (*document)["workflow_id"], (*document)["job_id"], len(encoded)+2, jobLogsMeiliSearchMaxRequestBytes,
 			)
 		}
-		additionalBytes := len(encoded) + 1 // Closing array bracket.
-		if i > batchStart {
-			additionalBytes++ // Comma between documents.
+		additionalBytes := len(encoded)
+		if len(batch) > 0 {
+			additionalBytes++
 		}
-		if len(body)+additionalBytes > jobLogsMeiliSearchMaxRequestBytes {
-			if err := r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, documents[batchStart:i], append(body, ']')); err != nil {
+		if batchBytes+additionalBytes > jobLogsMeiliSearchMaxRequestBytes {
+			if err := r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, batch); err != nil {
 				return err
 			}
-			body = body[:1]
-			batchStart = i
+			batch = batch[:0]
+			batchBytes = 2
+			additionalBytes = len(encoded)
 		}
-		if i > batchStart {
-			body = append(body, ',')
-		}
-		body = append(body, encoded...)
+		batch = append(batch, document)
+		batchBytes += additionalBytes
 	}
-	return r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, documents[batchStart:], append(body, ']'))
+	return r.addLogsDocumentsToMeiliSearch(ctx, indexJobLogs, batch)
 }
 
-func (r *Repository) addLogsDocumentsToMeiliSearch(ctx context.Context, index *meilisearchpkg.Index, documents []*map[string]any, body []byte) error {
-	// []byte bypasses SDK encoding; retain maps for rejection IDs and smaller 413 retries.
-	taskInfo, err := r.ms.Index(index.Name).AddDocumentsWithContext(ctx, body, &meilisearch.DocumentOptions{
+func (r *Repository) addLogsDocumentsToMeiliSearch(ctx context.Context, index *meilisearchpkg.Index, documents []*map[string]any) error {
+	taskInfo, err := r.ms.Index(index.Name).AddDocumentsWithContext(ctx, documents, &meilisearch.DocumentOptions{
 		PrimaryKey: &index.PrimaryKey,
 	})
 	if err == nil {
@@ -551,10 +549,10 @@ func (r *Repository) addLogsDocumentsToMeiliSearch(ctx context.Context, index *m
 		)
 	}
 	middle := len(documents) / 2
-	if splitErr := r.insertLogsDocumentsToMeiliSearch(ctx, documents[:middle]); splitErr != nil {
+	if splitErr := r.addLogsDocumentsToMeiliSearch(ctx, index, documents[:middle]); splitErr != nil {
 		return splitErr
 	}
-	return r.insertLogsDocumentsToMeiliSearch(ctx, documents[middle:])
+	return r.addLogsDocumentsToMeiliSearch(ctx, index, documents[middle:])
 }
 
 func (r *Repository) waitForMeiliSearchTask(parentCtx context.Context, taskUID int64, operation string) error {

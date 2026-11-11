@@ -42,7 +42,8 @@ func TestSearchInsertionBoundsEncodedBytes(t *testing.T) {
 			var accepted []json.RawMessage
 			requests := 0
 			repo := &Repository{ms: &batchMeiliFake{index: &batchMeiliIndexFake{add: func(_ context.Context, documents any) (*meilisearch.TaskInfo, error) {
-				raw := searchRequestBody(t, documents)
+				raw, err := json.Marshal(documents)
+				require.NoError(t, err)
 				require.LessOrEqual(t, len(raw), budget)
 				var batch []json.RawMessage
 				require.NoError(t, json.Unmarshal(raw, &batch))
@@ -163,7 +164,8 @@ func TestSearchInsertionPreservesBatchOnPartialFailure(t *testing.T) {
 	fail := true
 	var accepted []string
 	repo := &Repository{ms: &batchMeiliFake{index: &batchMeiliIndexFake{add: func(_ context.Context, documents any) (*meilisearch.TaskInfo, error) {
-		raw := searchRequestBody(t, documents)
+		raw, err := json.Marshal(documents)
+		require.NoError(t, err)
 		var batch []map[string]string
 		require.NoError(t, json.Unmarshal(raw, &batch))
 		if len(batch) > 1 {
@@ -210,48 +212,6 @@ func TestSearchInsertionKeepsSubmissionFailuresRetryable(t *testing.T) {
 			}
 			require.False(t, kafkapkg.ShouldCommitOnError(err))
 			require.Equal(t, tc.wantRequests, requests)
-		})
-	}
-}
-
-func searchRequestBody(tb testing.TB, documents any) []byte {
-	tb.Helper()
-	if body, ok := documents.([]byte); ok {
-		return body
-	}
-	body, err := json.Marshal(documents)
-	require.NoError(tb, err)
-	return body
-}
-
-// Excludes network/task waits; the fake models the SDK's JSON-or-raw-bytes encoding.
-func BenchmarkSearchInsertionEncoding(b *testing.B) {
-	for _, test := range []struct{ name, message string }{
-		{name: "plain", message: strings.Repeat("x", 4<<10)},
-		{name: "escaped", message: strings.Repeat("<", 4<<10)},
-	} {
-		b.Run(test.name, func(b *testing.B) {
-			documents := make([]*map[string]any, 0, 100)
-			for i := range 100 {
-				documents = append(documents, &map[string]any{
-					"id": fmt.Sprint(i), "job_id": "job", "workflow_id": "workflow", "user_id": "user", "message": test.message,
-				})
-			}
-			repo := &Repository{ms: &batchMeiliFake{index: &batchMeiliIndexFake{add: func(_ context.Context, documents any) (*meilisearch.TaskInfo, error) {
-				if len(searchRequestBody(b, documents)) == 0 {
-					b.Fatal("empty search request")
-				}
-				return &meilisearch.TaskInfo{TaskUID: 1}, nil
-			}}, wait: func(context.Context, int64) (*meilisearch.Task, error) {
-				return &meilisearch.Task{Status: meilisearch.TaskStatusSucceeded}, nil
-			}}}
-			b.ReportAllocs()
-			b.SetBytes(int64(len(test.message) * len(documents)))
-			for b.Loop() {
-				if err := repo.insertLogsDocumentsToMeiliSearch(b.Context(), documents); err != nil {
-					b.Fatal(err)
-				}
-			}
 		})
 	}
 }

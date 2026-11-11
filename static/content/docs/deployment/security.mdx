@@ -40,6 +40,17 @@ source; the bounded leeway is not a substitute for host time synchronization.
 
 Sessions are stored in encrypted cookies. Mutating browser requests require CSRF validation, and token HMACs are compared in constant time. CORS origins and same-site behavior are configurable.
 
+For a public production endpoint, terminate HTTPS at your reverse proxy or load
+balancer and set `SERVER_HOST_URL` to the public HTTPS origin, even when the
+proxy forwards HTTP internally. Set `SERVER_ALLOWED_ORIGINS` to the dashboard's
+browser origin. The application derives `Secure` session/CSRF cookies and HSTS
+from that URL's scheme, not forwarded headers; HTTPS termination alone does not
+enable them. HTTP remains supported, but session cookies sent over plain HTTP
+can be captured and replayed by an on-path observer. Transport security is the
+operator's responsibility.
+
+<SourceLink path="docs/operations.md#public-https-and-session-cookies">HTTPS configuration and Compose override example</SourceLink>
+
 The HTTP API adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and an API-only Content Security Policy that disables resource loading and framing.
 
 ## Docker access

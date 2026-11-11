@@ -346,6 +346,28 @@ Kubernetes uses readiness and liveness probes for app services and local
 infrastructure where practical. Use `kubectl describe pod` to inspect probe
 failures and missing Secret or ConfigMap references.
 
+## Dependency Security Maintenance
+
+`.github/dependabot.yml` groups Go and frontend security update PRs and disables
+routine version-update PRs. Both `/dashboard` and `/static` npm lockfiles are
+covered. Security updates are event-driven; the weekly schedule does not delay
+security fixes. Review and merge update PRs through the normal CI checks.
+
+The file does not enable repository security settings. An administrator must enable
+Dependabot alerts and Dependabot security updates in GitHub's repository security
+settings. With an appropriately authorized GitHub CLI session, the equivalent is:
+
+```sh
+gh api --method PUT repos/hitesh22rana/chronoverse/vulnerability-alerts
+gh api --method PUT repos/hitesh22rana/chronoverse/automated-security-fixes
+```
+
+Verify the settings after merging this configuration; enabling automatic fixes
+before it reaches the default branch may create separate, ungrouped PRs. No
+automatic merging is configured. Review Go toolchain and Docker base-image
+security releases separately; manifest dependency updates do not rebuild existing
+binaries or patch an operator's Docker daemon.
+
 ## Build, Test, and Lint
 
 Repository commands:

@@ -602,7 +602,7 @@ func (r *PartitionRunner) processAndCommit(
 
 		processErr := r.process(ctxWithTrace, record)
 		if processErr != nil && !ShouldCommitOnError(processErr) {
-			span.RecordError(processErr)
+			span.RecordError(status.Error(status.Code(processErr), "processing failed"))
 			span.SetAttributes(
 				attribute.Bool("retryable_error", true),
 				attribute.String("error_code", status.Code(processErr).String()),
@@ -617,7 +617,7 @@ func (r *PartitionRunner) processAndCommit(
 				zap.String("topic", record.Topic),
 				zap.Int32("partition", record.Partition),
 				zap.Int64("offset", record.Offset),
-				zap.Error(processErr),
+				zap.String("error_code", status.Code(processErr).String()),
 			)
 			if waitErr := wait(ctxWithTrace, backoff); waitErr != nil {
 				return waitErr
@@ -626,7 +626,7 @@ func (r *PartitionRunner) processAndCommit(
 			continue
 		}
 		if processErr != nil {
-			span.RecordError(processErr)
+			span.RecordError(status.Error(status.Code(processErr), "processing failed"))
 			span.SetAttributes(
 				attribute.Bool("retryable_error", false),
 				attribute.String("error_code", status.Code(processErr).String()),
@@ -696,7 +696,7 @@ func (r *PartitionRunner) processAndCommitBatch(
 
 		processErr := r.processBatch(ctxWithTrace, records)
 		if processErr != nil && !ShouldCommitOnError(processErr) {
-			span.RecordError(processErr)
+			span.RecordError(status.Error(status.Code(processErr), "processing failed"))
 			span.SetAttributes(
 				attribute.Bool("retryable_error", true),
 				attribute.String("error_code", status.Code(processErr).String()),
@@ -713,7 +713,7 @@ func (r *PartitionRunner) processAndCommitBatch(
 				zap.Int64("first_offset", first.Offset),
 				zap.Int64("last_offset", last.Offset),
 				zap.Int("records", len(records)),
-				zap.Error(processErr),
+				zap.String("error_code", status.Code(processErr).String()),
 			)
 			if waitErr := wait(ctxWithTrace, backoff); waitErr != nil {
 				return waitErr
@@ -722,7 +722,7 @@ func (r *PartitionRunner) processAndCommitBatch(
 			continue
 		}
 		if processErr != nil {
-			span.RecordError(processErr)
+			span.RecordError(status.Error(status.Code(processErr), "processing failed"))
 			span.SetAttributes(
 				attribute.Bool("retryable_error", false),
 				attribute.String("error_code", status.Code(processErr).String()),

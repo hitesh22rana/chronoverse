@@ -67,7 +67,7 @@ func run() int {
 
 	loggerpkg.FromContext(ctx).Info(
 		"starting job",
-		zap.Any("ctx", ctx),
+		loggerpkg.TraceContext(ctx),
 		zap.String("name", svcpkg.Info().GetName()),
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("environment", cfg.Environment.Env),

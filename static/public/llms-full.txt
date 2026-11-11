@@ -763,7 +763,9 @@ Services and workers export OpenTelemetry traces, metrics, and logs to the bundl
 
 Workflow and notification spans omit raw payload attributes. Consumer diagnostics
 omit raw broker values and whole analytics events, retaining broker/resource
-identifiers and error categories. The logging bridge receives context for trace
+identifiers and error categories. Shared Kafka runner logs and span exceptions
+also omit processor error text without changing retry or commit decisions.
+Startup logs use the same non-serializing context field. The logging bridge receives context for trace
 correlation without serializing its values into console logs. Stored payloads
 and user-visible job logs are unaffected. Collector access, retention and exports
 remain operator-managed; previously collected telemetry is not removed.

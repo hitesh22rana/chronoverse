@@ -148,7 +148,7 @@ func run() int {
 
 	loggerpkg.FromContext(ctx).Info(
 		"starting server",
-		zap.Any("ctx", ctx),
+		loggerpkg.TraceContext(ctx),
 		zap.String("name", svcpkg.Info().GetName()),
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.Int("port", cfg.Server.Port),

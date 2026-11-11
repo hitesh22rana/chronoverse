@@ -102,7 +102,7 @@ func run() int {
 
 	loggerpkg.FromContext(ctx).Info(
 		"starting service",
-		zap.Any("ctx", ctx),
+		loggerpkg.TraceContext(ctx),
 		zap.String("name", svcpkg.Info().GetName()),
 		zap.String("version", svcpkg.Info().GetVersion()),
 		zap.String("address", listener.Addr().String()),

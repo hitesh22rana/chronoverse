@@ -734,6 +734,25 @@ Results use descending sequence order. Cursor pagination moves toward older outp
 ## Security
 
 Meilisearch uses HTTPS and client certificate configuration in Compose. Search highlights are treated as data and rendered without unsafe HTML injection.
+
+
+## Byte-bounded search submissions
+
+The processor limits each search request to 4 MiB of encoded JSON, including
+metadata and escaping, independently of Kafka's count/time batch settings.
+HTTP 413 responses trigger further splitting; every successful indexing task
+must complete before the batch proceeds. Stable document IDs support safe replay
+when a later submission fails.
+
+An individually oversized document returns retryable `ResourceExhausted`;
+its Kafka batch remains uncommitted. Logs are neither truncated nor skipped.
+A server/proxy limit too small for one document requires an operator limit
+increase and can still block that partition until corrected. Normal log lines
+are limited to 256 KiB before encoding. A legacy document exceeding the 4 MiB
+application budget requires explicit operator recovery; normal workflow deletion
+removes the workflow and all its retained logs, not just the offending record, and can
+clear its pending records. Rejection errors include document, workflow and job
+IDs for diagnosis. Do not force-commit offsets.
 </doc>
 
 <doc title="Trace propagation" path="./docs/engineering/trace-propagation/">

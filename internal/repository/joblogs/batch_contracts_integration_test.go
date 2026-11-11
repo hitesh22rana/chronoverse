@@ -562,3 +562,39 @@ func TestIntegrationProcessLogsAnalyticsCommitFailure(t *testing.T) {
 	}
 	assertBatchAnalytics(t, repo, item, 0)
 }
+
+func TestIntegrationSearchChunksPreserveLogsAndReplayAnalytics(t *testing.T) {
+	repo := batchContractRepository(t)
+	batch := make([]*queueData, 0, 3)
+	for range 3 {
+		item := batchContractEvent(t, repo, true)
+		item.logEntry.Message = strings.Repeat("<", 256<<10) // JSON escaping makes three records exceed 4 MiB.
+		batch = append(batch, item)
+	}
+	for range 2 {
+		got, err := repo.processLogsBatch(t.Context(), batch)
+		if err != nil || len(got) != len(batch) {
+			t.Fatalf("split batch returned %d records: %v", len(got), err)
+		}
+	}
+	if err := repo.ch.Exec(t.Context(), "OPTIMIZE TABLE job_logs FINAL"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range batch {
+		assertBatchStorage(t, repo, item, 1)
+		assertBatchAnalytics(t, repo, item, 1)
+		result, err := repo.ms.Index("job_logs").SearchWithContext(t.Context(), "", &meilisearch.SearchRequest{
+			Filter: fmt.Sprintf("job_id = %q", item.logEntry.JobID), Limit: 1,
+		})
+		if err != nil || len(result.Hits) != 1 {
+			t.Fatalf("search chunked log: %v", err)
+		}
+		var message string
+		if decodeErr := json.Unmarshal(result.Hits[0]["message"], &message); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if message != item.logEntry.Message {
+			t.Fatal("retained log content changed during chunking")
+		}
+	}
+}

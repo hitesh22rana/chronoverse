@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
@@ -26,7 +26,7 @@ func TestDockerWorkflowRemoveIgnoresRemovalInProgress(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	cli, err := client.NewClientWithOpts(client.WithHost(server.URL))
+	cli, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.51"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, cli.Close())

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"regexp"
 	"strings"
@@ -18,11 +19,10 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -282,10 +282,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	}
 	w.dockerHost = NormalizeDockerProxyEndpoint(w.dockerHost, w.dockerProxyTLS.CAFile != "")
 
-	clientOptions := []client.Opt{
-		client.FromEnv,
-		client.WithAPIVersionNegotiation(),
-	}
+	clientOptions := []client.Opt{client.FromEnv}
 	if w.dockerHost != "" {
 		clientOptions = append(clientOptions, client.WithHost(w.dockerHost))
 	}
@@ -318,7 +315,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 		}
 		clientOptions = append(clientOptions, client.WithHTTPClient(httpClient))
 	}
-	cli, err := client.NewClientWithOpts(
+	cli, err := client.New(
 		clientOptions...,
 	)
 	if err != nil {
@@ -346,7 +343,7 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 // workloadNetworkMissing reports whether the configured network is absent;
 // other inspect errors return false so the caller keeps its original failure.
 func (w *DockerWorkflow) workloadNetworkMissing(ctx context.Context) bool {
-	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, client.NetworkInspectOptions{})
 	return cerrdefs.IsNotFound(err)
 }
 
@@ -357,13 +354,17 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 		return err
 	}
 
-	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{}); err == nil {
-		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	if inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, client.NetworkInspectOptions{}); err == nil {
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected.Network)
 	} else if !cerrdefs.IsNotFound(err) {
 		return status.Errorf(codes.Internal, "failed to inspect workload network %q: %v", w.workloadNetwork, err)
 	}
 
-	if _, err := w.Client.NetworkCreate(ctx, w.workloadNetwork, network.CreateOptions{
+	subnet, parseErr := netip.ParsePrefix(w.workloadSubnet)
+	if parseErr != nil {
+		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, parseErr)
+	}
+	if _, err := w.Client.NetworkCreate(ctx, w.workloadNetwork, client.NetworkCreateOptions{
 		Driver: workloadNetworkDriver,
 		Options: map[string]string{
 			// Tenant containers on this network must not reach each other.
@@ -372,24 +373,24 @@ func (w *DockerWorkflow) ensureWorkloadNetwork(ctx context.Context) error {
 			workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
 		},
 		IPAM: &network.IPAM{
-			Config: []network.IPAMConfig{{Subnet: w.workloadSubnet}},
+			Config: []network.IPAMConfig{{Subnet: subnet}},
 		},
 	}); err != nil {
 		// Lost a create race (or the daemon reported the conflict with an
 		// inconsistent status): accept the winner only if it is isolated.
-		inspected, inspectErr := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+		inspected, inspectErr := w.Client.NetworkInspect(ctx, w.workloadNetwork, client.NetworkInspectOptions{})
 		if inspectErr != nil {
 			return status.Errorf(codes.Internal, "failed to create workload network %q: %v", w.workloadNetwork, err)
 		}
-		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
+		return w.validateWorkloadNetwork(w.workloadNetwork, &inspected.Network)
 	}
 
 	// Verify the daemon honored the requested options (fail-closed).
-	inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, network.InspectOptions{})
+	inspected, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, client.NetworkInspectOptions{})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to verify workload network %q after creation: %v", w.workloadNetwork, err)
 	}
-	return w.validateWorkloadNetwork(w.workloadNetwork, &inspected)
+	return w.validateWorkloadNetwork(w.workloadNetwork, &inspected.Network)
 }
 
 // workloadNetworkNamePattern is the character class the k8s socket-proxy ACL
@@ -435,7 +436,7 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 		return status.Errorf(codes.FailedPrecondition, "workload network %q has unexpected bridge interface (firewall -i match would miss)", configuredName)
 	}
 	// Refuse subnets the firewall doesn't cover instead of silently bypassing it.
-	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
+	if _, err := netip.ParsePrefix(w.workloadSubnet); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
 	}
 	// Exactly one IPAM range — the enforced subnet — and no IPv6: extra ranges
@@ -443,14 +444,14 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 	if inspected.EnableIPv6 {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q must not enable IPv6", configuredName)
 	}
-	if len(inspected.IPAM.Config) != 1 || inspected.IPAM.Config[0].Subnet != w.workloadSubnet {
+	if len(inspected.IPAM.Config) != 1 || inspected.IPAM.Config[0].Subnet.String() != w.workloadSubnet {
 		return status.Errorf(codes.FailedPrecondition, "workload network %q is not exactly on enforced subnet %q", configuredName, w.workloadSubnet)
 	}
 	return nil
 }
 
 func (w *DockerWorkflow) healthCheck(ctx context.Context) error {
-	if _, err := w.Client.Ping(ctx); err != nil {
+	if _, err := w.Client.Ping(ctx, client.PingOptions{}); err != nil {
 		return status.Errorf(codes.Internal, "failed to ping docker client: %v", err)
 	}
 
@@ -483,17 +484,18 @@ func (w *DockerWorkflow) Execute(
 
 	containerTimeout := int(timeout.Seconds())
 
-	createContainer := func() (container.CreateResponse, error) {
+	createContainer := func() (client.ContainerCreateResult, error) {
 		return w.Client.ContainerCreate(
 			ctx,
-			&container.Config{
-				Image:       image,
-				Cmd:         cmd,
-				StopTimeout: &containerTimeout,
-				Env:         env,
+			client.ContainerCreateOptions{
+				Config: &container.Config{
+					Image:       image,
+					Cmd:         cmd,
+					StopTimeout: &containerTimeout,
+					Env:         env,
+				},
+				HostConfig: w.hostConfig(),
 			},
-			w.hostConfig(),
-			nil, nil, "",
 		)
 	}
 
@@ -520,7 +522,7 @@ func (w *DockerWorkflow) Execute(
 
 	containerID := resp.ID
 
-	if err := w.Client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+	if _, err := w.Client.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		return containerID, nil, nil, status.Errorf(codes.Aborted, "failed to start container: %v", err)
 	}
 
@@ -537,7 +539,8 @@ func (w *DockerWorkflow) Execute(
 		defer close(errs)
 		defer cancel()
 
-		statusCh, waitErrCh := w.Client.ContainerWait(timeoutCtx, containerID, container.WaitConditionNotRunning)
+		waitResult := w.Client.ContainerWait(timeoutCtx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+		statusCh, waitErrCh := waitResult.Result, waitResult.Error
 
 		logsDone := make(chan struct{})
 		go func() {
@@ -604,7 +607,7 @@ func (w *DockerWorkflow) publishExecutionFailure(ctx context.Context, containerI
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), dockerHealthCheckTimeout)
 	defer stopCancel()
 	//nolint:errcheck,contextcheck // Terminal failure is already published; cleanup must outlive the canceled execution.
-	_ = w.Client.ContainerStop(stopCtx, containerID, container.StopOptions{Timeout: &stopTimeout})
+	_, _ = w.Client.ContainerStop(stopCtx, containerID, client.ContainerStopOptions{Timeout: &stopTimeout})
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {
@@ -680,7 +683,7 @@ type containerLogLine struct {
 // selects on ctx and the daemon read is aborted on ctx, so it always returns:
 // callers that own the channels may join it before closing them.
 func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error, follow bool) {
-	reader, err := w.Client.ContainerLogs(ctx, containerID, container.LogsOptions{
+	reader, err := w.Client.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     follow,
@@ -908,7 +911,7 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 			return nil, dockerImageInspectError(err)
 		}
 
-		out, err := w.Client.ImagePull(ctx, imageName, image.PullOptions{})
+		out, err := w.Client.ImagePull(ctx, imageName, client.ImagePullOptions{})
 		if err != nil {
 			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.NotFound, "failed to pull image: %v", err))
 		}
@@ -1015,7 +1018,7 @@ func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*Stat
 		return nil, err
 	}
 
-	data, err := w.Client.ContainerInspect(ctx, containerID)
+	data, err := w.Client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return nil, status.Errorf(codes.NotFound, "container not found: %v", err)
@@ -1025,20 +1028,20 @@ func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*Stat
 		}
 		return nil, status.Errorf(codes.Aborted, "failed to inspect container %s: %v", containerID, err)
 	}
-	if data.ContainerJSONBase == nil || data.State == nil {
+	if data.Container.State == nil {
 		return nil, status.Errorf(codes.Aborted, "container %s has no state", containerID)
 	}
 
 	return &State{
-		Running:  data.State.Running,
-		ExitCode: data.State.ExitCode,
-		Status:   data.State.Status,
+		Running:  data.Container.State.Running,
+		ExitCode: data.Container.State.ExitCode,
+		Status:   string(data.Container.State.Status),
 	}, nil
 }
 
 // Remove deletes a stopped container and ignores containers that are already gone.
 func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
-	if err := w.Client.ContainerRemove(ctx, containerID, container.RemoveOptions{
+	if _, err := w.Client.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	}); err != nil {
@@ -1070,7 +1073,7 @@ func (w *DockerWorkflow) Terminate(ctx context.Context, containerID string) erro
 	}
 
 	stopTimeout := int(containerStopTimeout.Seconds())
-	if err := w.Client.ContainerStop(ctx, containerID, container.StopOptions{
+	if _, err := w.Client.ContainerStop(ctx, containerID, client.ContainerStopOptions{
 		Timeout: &stopTimeout,
 	}); err != nil {
 		if cerrdefs.IsNotFound(err) {

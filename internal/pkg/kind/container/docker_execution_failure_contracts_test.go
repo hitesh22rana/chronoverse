@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	dockerclient "github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -51,7 +51,7 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 			}))
 			defer server.Close()
 			defer unblock()
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+			cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -117,7 +117,7 @@ func TestOrdinaryExecutionWaitFailureDoesNotStopContainer(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+	cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 	if err != nil {
 		t.Fatal(err)
 	}

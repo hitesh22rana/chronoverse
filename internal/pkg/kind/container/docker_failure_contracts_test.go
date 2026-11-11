@@ -14,8 +14,8 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/network"
-	dockerclient "github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/network"
+	dockerclient "github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -48,7 +48,7 @@ func TestDockerRemovalAndStopDaemonFailures(t *testing.T) {
 					}
 				}))
 				defer server.Close()
-				cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+				cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -116,7 +116,7 @@ func TestResolveImageDigestFailureStages(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+			cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,7 +156,7 @@ func TestImageBuildPullFailures(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+			cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,7 +188,7 @@ func TestImageExistsDistinguishesAbsenceAndFailure(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+			cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +208,7 @@ func TestDockerUnavailableDaemonContracts(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 			host := server.URL
 			server.Close()
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(host))
+			cli, err := dockerclient.New(dockerclient.WithHost(host), dockerclient.WithAPIVersion("1.51"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -269,7 +269,7 @@ func TestTerminateDaemonDisappearsAfterHealthCheck(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
 	defer transport.CloseIdleConnections()
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL), dockerclient.WithHTTPClient(&http.Client{Transport: transport}))
+	cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"), dockerclient.WithHTTPClient(&http.Client{Transport: transport}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestBuildCancellationWhileSharedPullIsPending(t *testing.T) {
 			defer close(release)
 			httpClient := server.Client()
 			httpClient.Transport = pendingInspectTransport{httpClient.Transport}
-			cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL), dockerclient.WithHTTPClient(httpClient))
+			cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"), dockerclient.WithHTTPClient(httpClient))
 			if err != nil {
 				t.Fatal(err)
 			}

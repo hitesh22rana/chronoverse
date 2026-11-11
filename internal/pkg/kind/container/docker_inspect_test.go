@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -63,7 +63,7 @@ func TestDockerInspectStateAndFailures(t *testing.T) {
 				}
 				return &http.Response{StatusCode: responseStatus, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(tc.body)), Request: r}, nil
 			})
-			cli, err := client.NewClientWithOpts(client.WithHost("http://docker.test"), client.WithVersion("1.51"), client.WithHTTPClient(&http.Client{Transport: transport}))
+			cli, err := client.New(client.WithHost("http://docker.test"), client.WithAPIVersion("1.51"), client.WithHTTPClient(&http.Client{Transport: transport}))
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, cli.Close()) })
 			workflow := &container.DockerWorkflow{Client: cli}

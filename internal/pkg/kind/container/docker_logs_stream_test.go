@@ -4,7 +4,9 @@ package container
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -13,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -101,12 +103,15 @@ func newFakeDockerWorkflow(t *testing.T, api fakeDockerAPI) *DockerWorkflow {
 
 // dockerLogFrame encodes one stdcopy frame, the framing of non-TTY daemon output.
 func dockerLogFrame(stream stdcopy.StdType, payload string) []byte {
-	var frame bytes.Buffer
-	if _, err := stdcopy.NewStdWriter(&frame, stream).Write([]byte(payload)); err != nil {
-		panic(fmt.Sprintf("failed to frame %d payload: %v", stream, err))
+	size := uint64(len(payload))
+	if size > math.MaxUint32 {
+		panic("log frame exceeds protocol length limit")
 	}
-
-	return frame.Bytes()
+	frame := make([]byte, 8+len(payload))
+	frame[0] = byte(stream)
+	binary.BigEndian.PutUint32(frame[4:8], uint32(size))
+	copy(frame[8:], payload)
+	return frame
 }
 
 // dockerLogStreamResult is everything a caller observed on the log channels.

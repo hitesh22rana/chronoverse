@@ -451,6 +451,20 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 - Docker proxy: token-authenticated, method-and-path-allowlisted node-local container lifecycle access.
 - LGTM: OpenTelemetry collection and dashboards.
 
+## Docker client compatibility
+
+Container workers use the supported Moby client and API modules with automatic
+Docker Engine API negotiation (minimum API `1.40`). An older daemon may report
+"client version too new" instead of a clear minimum-version error; check
+`docker version` and upgrade daemons below API `1.40`.
+
+Operators still patch their Docker daemon separately. `golang-migrate`'s
+`go.mod` carries the legacy Docker SDK as an indirect requirement, pulled
+in by its PostgreSQL-driver tests via upstream `dhui/dktest`. Chronoverse
+source and compiled packages use Moby. Upstream test-helper migration and module
+cleanup are separate follow-ups, without a fork or module replacement in this
+application.
+
 ## Design invariant
 
 Workers request state transitions from domain services rather than directly inventing workflow or job state. This keeps replay and ownership rules concentrated at the domain boundary.

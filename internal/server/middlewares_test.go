@@ -135,6 +135,8 @@ func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/notifications", http.NoBody)
+	type privateContextKey struct{}
+	req = req.WithContext(context.WithValue(req.Context(), privateContextKey{}, "private-context-value"))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 
@@ -150,6 +152,9 @@ func TestOtelMiddlewareLogsTraceIdentifiers(t *testing.T) {
 	fields := entries[0].ContextMap()
 	assertNonEmptyStringField(t, fields, "trace_id")
 	assertNonEmptyStringField(t, fields, "span_id")
+	if _, ok := fields["ctx"]; ok {
+		t.Fatal("request context must not be serialized into logs")
+	}
 }
 
 func TestRequestLoggingMiddlewarePreservesFlusher(t *testing.T) {

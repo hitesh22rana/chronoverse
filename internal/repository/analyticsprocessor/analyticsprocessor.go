@@ -3,6 +3,7 @@ package analyticsprocessor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -10,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/status"
 
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	kafkapkg "github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
@@ -68,17 +70,17 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	)
 	defer span.End()
 
-	logger := loggerpkg.FromContext(ctxWithTrace)
+	logger := loggerpkg.FromContext(ctxWithTrace).With(
+		zap.String("topic", record.Topic),
+		zap.Int64("offset", record.Offset),
+		zap.Int32("partition", record.Partition),
+	)
 
 	var event analyticsmodel.AnalyticEvent
 	if err := json.Unmarshal(record.Value, &event); err != nil {
 		logger.Error("failed to unmarshal record",
-			zap.Any("ctx", ctxWithTrace),
-			zap.String("topic", record.Topic),
-			zap.Int64("offset", record.Offset),
-			zap.Int32("partition", record.Partition),
-			zap.String("value", string(record.Value)),
-			zap.Error(err),
+			loggerpkg.TraceContext(ctxWithTrace),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
 		)
 		return nil
 	}
@@ -105,17 +107,23 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 		})
 	default:
 		logger.Warn("unknown event type",
-			zap.Any("ctx", ctxWithTrace),
-			zap.Any("event", event),
+			loggerpkg.TraceContext(ctxWithTrace),
+			zap.String("event_key", event.EventKey),
+			zap.String("workflow_id", event.WorkflowID),
+			zap.String("user_id", event.UserID),
+			zap.String("event_type", event.EventType.ToString()),
 		)
 		return nil
 	}
 
 	if processErr != nil {
 		logger.Error("error processing analytics event",
-			zap.Any("ctx", ctxWithTrace),
-			zap.Any("event", event),
-			zap.Error(processErr),
+			loggerpkg.TraceContext(ctxWithTrace),
+			zap.String("event_key", event.EventKey),
+			zap.String("workflow_id", event.WorkflowID),
+			zap.String("user_id", event.UserID),
+			zap.String("event_type", event.EventType.ToString()),
+			zap.String("error_code", status.Code(processErr).String()),
 		)
 	}
 

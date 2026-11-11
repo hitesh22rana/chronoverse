@@ -22,6 +22,15 @@ When a worker emits a follow-up event, the current processing context is injecte
 
 Services and workers export OpenTelemetry traces, metrics, and logs to the bundled LGTM collector over OTLP gRPC.
 
+Workflow and notification spans omit raw payload attributes. Consumer diagnostics
+omit raw broker values and whole analytics events, retaining broker/resource
+identifiers and error categories. Shared Kafka runner logs and span exceptions
+also omit processor error text without changing retry or commit decisions.
+Startup logs use the same non-serializing context field. The logging bridge receives context for trace
+correlation without serializing its values into console logs. Stored payloads
+and user-visible job logs are unaffected. Collector access, retention and exports
+remain operator-managed; previously collected telemetry is not removed.
+
 <Callout title="Propagation is correlation, not delivery">
 Trace context helps explain a distributed operation. Replay safety, outbox state, and leases remain the authoritative mechanisms for correctness.
 </Callout>

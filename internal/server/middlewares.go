@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
@@ -24,7 +25,7 @@ func (s *Server) withRequestLoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		spanCtx := trace.SpanContextFromContext(r.Context())
 		requestLogFields := []zap.Field{
-			zap.Any("ctx", r.Context()),
+			loggerpkg.TraceContext(r.Context()),
 			zap.String("method", r.Method),
 			zap.String("path", requestLogPath(r)),
 			zap.String("host", r.Host),

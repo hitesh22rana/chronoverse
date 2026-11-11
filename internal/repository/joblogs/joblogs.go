@@ -3,6 +3,7 @@ package joblogs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
@@ -161,12 +162,11 @@ func (r *Repository) parseRecord(ctx context.Context, record *kgo.Record) *queue
 	var logEntry jobsmodel.JobLogEvent
 	if err := json.Unmarshal(record.Value, &logEntry); err != nil {
 		logger.Error("failed to unmarshal record",
-			zap.Any("ctx", ctxWithTrace),
+			loggerpkg.TraceContext(ctxWithTrace),
 			zap.String("topic", record.Topic),
 			zap.Int64("offset", record.Offset),
 			zap.Int32("partition", record.Partition),
-			zap.String("value", string(record.Value)),
-			zap.Error(err),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
 		)
 		return nil
 	}

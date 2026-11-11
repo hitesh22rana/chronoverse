@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/meilisearch/meilisearch-go"
@@ -172,12 +173,11 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	if err := json.Unmarshal(record.Value, &workflowEntry); err != nil {
 		logger.Error(
 			"failed to unmarshal record",
-			zap.Any("ctx", ctxWithTrace),
+			loggerpkg.TraceContext(ctxWithTrace),
 			zap.String("topic", record.Topic),
 			zap.Int64("offset", record.Offset),
 			zap.Int32("partition", record.Partition),
-			zap.String("value", string(record.Value)),
-			zap.Error(err),
+			zap.String("error_type", fmt.Sprintf("%T", err)),
 		)
 		return nil
 	}
@@ -185,7 +185,7 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	workflowErr := r.runTargetWorkflow(ctxWithTrace, &workflowEntry)
 	if workflowErr == nil {
 		logger.Info("record processed successfully",
-			zap.Any("ctx", ctxWithTrace),
+			loggerpkg.TraceContext(ctxWithTrace),
 			zap.String("topic", record.Topic),
 			zap.Int64("offset", record.Offset),
 			zap.Int32("partition", record.Partition),
@@ -194,12 +194,11 @@ func (r *Repository) processRecord(ctx context.Context, record *kgo.Record) erro
 	}
 
 	fields := []zap.Field{
-		zap.Any("ctx", ctxWithTrace),
+		loggerpkg.TraceContext(ctxWithTrace),
 		zap.String("topic", record.Topic),
 		zap.Int64("offset", record.Offset),
 		zap.Int32("partition", record.Partition),
-		zap.String("value", string(record.Value)),
-		zap.Error(workflowErr),
+		zap.String("error_code", status.Code(workflowErr).String()),
 	}
 	if status.Code(workflowErr) == codes.Internal || status.Code(workflowErr) == codes.Unavailable {
 		logger.Error("internal error while executing workflow", fields...)

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/docker/docker/api/types/network"
+	"github.com/moby/moby/api/types/network"
 )
 
 func TestDockerOptionsReachDaemonAndContainerPolicy(t *testing.T) {
@@ -53,7 +53,7 @@ func TestDockerOptionsReachDaemonAndContainerPolicy(t *testing.T) {
 		if request.IPAM == nil || len(request.IPAM.Config) != 1 {
 			t.Fatal("missing network subnet")
 		}
-		if request.IPAM.Config[0].Subnet != subnet {
+		if request.IPAM.Config[0].Subnet.String() != subnet {
 			t.Errorf("subnet=%q, want %q", request.IPAM.Config[0].Subnet, subnet)
 		}
 	default:

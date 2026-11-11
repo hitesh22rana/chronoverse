@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	dockerclient "github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
 	goredis "github.com/redis/go-redis/v9"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"google.golang.org/grpc/codes"
@@ -120,12 +120,12 @@ func requirePatternDocker(t *testing.T) {
 	if parseErr != nil {
 		strict = false
 	}
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	client, err := dockerclient.New(dockerclient.FromEnv)
 	if err == nil {
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
-		_, err = client.Ping(ctx)
+		_, err = client.Ping(ctx, dockerclient.PingOptions{})
 	}
 	if err != nil {
 		if strict {

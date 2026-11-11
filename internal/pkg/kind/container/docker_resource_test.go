@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	dockerclient "github.com/docker/docker/client"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +54,7 @@ func TestDockerWorkflowExecuteAppliesResourceLimits(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL))
+	cli, err := dockerclient.New(dockerclient.WithHost(server.URL), dockerclient.WithAPIVersion("1.51"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, cli.Close())

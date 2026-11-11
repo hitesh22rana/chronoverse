@@ -32,8 +32,8 @@ import (
 	"testing"
 	"time"
 
-	dockerclient "github.com/docker/docker/client"
 	"github.com/meilisearch/meilisearch-go"
+	dockerclient "github.com/moby/moby/client"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -283,7 +283,7 @@ func RequireDocker(t *testing.T) {
 		t.Skip("skipping integration test in -short mode")
 	}
 
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		skipOrFailf(t, "docker daemon unavailable: %v", err)
 	}
@@ -291,7 +291,7 @@ func RequireDocker(t *testing.T) {
 
 	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := cli.Ping(pingCtx); err != nil {
+	if _, err := cli.Ping(pingCtx, dockerclient.PingOptions{}); err != nil {
 		skipOrFailf(t, "docker daemon unreachable: %v", err)
 	}
 }

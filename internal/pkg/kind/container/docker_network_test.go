@@ -7,13 +7,14 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -71,13 +72,13 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 		{name: "overlay driver", mutate: func(n *network.Inspect) { n.Driver = "overlay" }},
 		{name: "icc enabled", mutate: func(n *network.Inspect) { n.Options[workloadNetworkICCOption] = "true" }},
 		{name: "icc option absent", mutate: func(n *network.Inspect) { delete(n.Options, workloadNetworkICCOption) }},
-		{name: "wrong subnet bypasses firewall", mutate: func(n *network.Inspect) { n.IPAM.Config[0].Subnet = "10.9.9.0/24" }},
+		{name: "wrong subnet bypasses firewall", mutate: func(n *network.Inspect) { n.IPAM.Config[0].Subnet = netip.MustParsePrefix("10.9.9.0/24") }},
 		{name: "ipam absent", mutate: func(n *network.Inspect) { n.IPAM.Config = nil }},
 		{name: "extra range bypasses firewall", mutate: func(n *network.Inspect) {
-			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: "10.9.9.0/24"})
+			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: netip.MustParsePrefix("10.9.9.0/24")})
 		}},
 		{name: "dual-stack bypasses firewall", mutate: func(n *network.Inspect) {
-			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: "fd00:dead:beef::/64"})
+			n.IPAM.Config = append(n.IPAM.Config, network.IPAMConfig{Subnet: netip.MustParsePrefix("fd00:dead:beef::/64")})
 		}},
 		{name: "ipv6 enabled bypasses firewall", mutate: func(n *network.Inspect) { n.EnableIPv6 = true }},
 	}
@@ -92,7 +93,7 @@ func TestValidateWorkloadNetworkRequiresIsolatedBridge(t *testing.T) {
 					workloadNetworkICCOption:        "false",
 					workloadNetworkBridgeNameOption: workloadNetworkBridgeName,
 				},
-				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: DefaultWorkloadSubnet}}},
+				IPAM: network.IPAM{Config: []network.IPAMConfig{{Subnet: netip.MustParsePrefix(DefaultWorkloadSubnet)}}},
 			}
 			wantCode := codes.OK
 			if tt.mutate != nil {
@@ -127,6 +128,22 @@ func TestEnsureWorkloadNetworkValidatesExistingNetwork(t *testing.T) {
 	}
 	if got := createCalls.Load(); got != 0 {
 		t.Fatalf("network create calls = %d, want 0", got)
+	}
+}
+
+func TestEnsureWorkloadNetworkRejectsInvalidSubnetBeforeCreate(t *testing.T) {
+	t.Parallel()
+	workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("invalid subnet caused a mutating request: %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		writeDockerTestResponse(t, w, `{"message":"network not found"}`)
+	}))
+	workflow.workloadSubnet = "invalid CIDR"
+	if err := workflow.ensureWorkloadNetwork(t.Context()); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("invalid subnet error = %v", err)
 	}
 }
 
@@ -207,7 +224,7 @@ func newNetworkTestWorkflow(t *testing.T, handler http.Handler) *DockerWorkflow 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	cli, err := client.NewClientWithOpts(client.WithHost(server.URL), client.WithVersion("1.51"))
+	cli, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.51"))
 	if err != nil {
 		t.Fatalf("create Docker client: %v", err)
 	}

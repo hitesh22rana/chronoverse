@@ -3,6 +3,19 @@
 This guide covers day-to-day commands, startup behavior, health checks, tuning,
 and common troubleshooting paths for Compose and Kubernetes Chronoverse stacks.
 
+## Docker SDK Compatibility
+
+Container workers and test helpers use the supported `github.com/moby/moby/client`
+and `github.com/moby/moby/api` modules. The client negotiates Docker Engine API
+versions automatically, with a minimum supported API of `1.40`.
+
+Operators must keep the Docker daemon patched separately; an SDK migration does
+not patch the host engine. `golang-migrate` still brings the deprecated
+`github.com/docker/docker` module into the module graph through its upstream
+`dhui/dktest` test helper. Chronoverse source and compiled package dependencies no
+longer import that SDK. Upstream test-helper migration is a separate follow-up;
+no fork, module replacement or advisory suppression is used here.
+
 ## Running the Stack
 
 ### Development

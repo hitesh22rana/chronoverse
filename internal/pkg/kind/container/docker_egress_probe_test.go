@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,20 +65,23 @@ func TestIntegrationWorkloadEgressDropsHostListener(t *testing.T) {
 	port := tcpAddr.Port
 
 	resp, err := w.Client.ContainerCreate(ctx,
-		&container.Config{
-			Image: "alpine:3.24.2",
-			Cmd:   []string{"sh", "-c", fmt.Sprintf("echo probe | nc -w 5 %s %d", gateway, port)},
-		},
-		w.hostConfig(),
-		nil, nil, "")
+		client.ContainerCreateOptions{
+			Config: &container.Config{
+				Image: "alpine:3.24.2",
+				Cmd:   []string{"sh", "-c", fmt.Sprintf("echo probe | nc -w 5 %s %d", gateway, port)},
+			},
+			HostConfig: w.hostConfig(),
+		})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		//nolint:errcheck // Best-effort probe cleanup on a detached context.
-		_ = w.Client.ContainerRemove(context.WithoutCancel(ctx), resp.ID, container.RemoveOptions{Force: true})
+		_, _ = w.Client.ContainerRemove(context.WithoutCancel(ctx), resp.ID, client.ContainerRemoveOptions{Force: true})
 	})
-	require.NoError(t, w.Client.ContainerStart(ctx, resp.ID, container.StartOptions{}))
+	_, err = w.Client.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	require.NoError(t, err)
 
-	statusCh, errCh := w.Client.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	waitResult := w.Client.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+	statusCh, errCh := waitResult.Result, waitResult.Error
 	select {
 	case result := <-statusCh:
 		if result.StatusCode == 0 {

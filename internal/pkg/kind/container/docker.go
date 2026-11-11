@@ -436,7 +436,7 @@ func (w *DockerWorkflow) validateWorkloadNetwork(configuredName string, inspecte
 		return status.Errorf(codes.FailedPrecondition, "workload network %q has unexpected bridge interface (firewall -i match would miss)", configuredName)
 	}
 	// Refuse subnets the firewall doesn't cover instead of silently bypassing it.
-	if _, _, err := net.ParseCIDR(w.workloadSubnet); err != nil {
+	if _, err := netip.ParsePrefix(w.workloadSubnet); err != nil {
 		return status.Errorf(codes.FailedPrecondition, "workload subnet %q is invalid: %v", w.workloadSubnet, err)
 	}
 	// Exactly one IPAM range — the enforced subnet — and no IPv6: extra ranges

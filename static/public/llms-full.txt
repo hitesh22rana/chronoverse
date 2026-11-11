@@ -744,6 +744,11 @@ HTTP 413 responses trigger further splitting; every successful indexing task
 must complete before the batch proceeds. Stable document IDs support safe replay
 when a later submission fails.
 
+Indexing and search cleanup check task status immediately, then every 250 ms
+while pending, with a two-minute timeout per task. Cancellation and failed tasks
+still stop processing. The shorter interval reduces completion delay but increases
+task-status requests under concurrent indexing.
+
 An individually oversized document returns retryable `ResourceExhausted`;
 its Kafka batch remains uncommitted. Logs are neither truncated nor skipped.
 A server/proxy limit too small for one document requires an operator limit

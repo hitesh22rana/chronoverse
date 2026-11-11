@@ -34,7 +34,7 @@ type workflowLogPair struct {
 
 const (
 	jobLogsExternalOperationTimeout   = 2 * time.Minute
-	jobLogsMeiliSearchPollPeriod      = 2 * time.Second
+	jobLogsMeiliSearchPollPeriod      = 250 * time.Millisecond
 	jobLogsMeiliSearchMaxRequestBytes = 4 << 20
 )
 

@@ -14,7 +14,6 @@ jobs:
   lint:
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -32,7 +31,6 @@ jobs:
   build:
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -48,7 +46,6 @@ jobs:
     name: Check Generated Protobuf Stubs
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -71,7 +68,6 @@ jobs:
   test:
     permissions:
       contents: read
-      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Check out code

@@ -55,6 +55,52 @@ Useful endpoints:
 Production uses published images, internal service ports, generated TLS
 configuration, resource limits, and replicated worker settings.
 
+### Public HTTPS and Session Cookies
+
+Chronoverse supports HTTP for local or operator-managed deployments. For a
+public production endpoint, terminate HTTPS at your reverse proxy or load
+balancer using your own hostname and certificate. The internal TLS settings
+above do not secure the browser-to-Nginx connection; the production Compose
+file publishes plain HTTP on port 80.
+
+Set `SERVER_HOST_URL` to the browser-facing HTTPS origin, even when the TLS
+terminator forwards HTTP internally. Set `SERVER_ALLOWED_ORIGINS` to the exact
+dashboard origin (scheme, hostname, and port when nonstandard). For a dashboard
+and API served together at `https://chronoverse.example.com`, create a local
+`compose.https.yaml` override:
+
+```yaml
+services:
+  server:
+    environment:
+      SERVER_HOST_URL: https://chronoverse.example.com
+      SERVER_ALLOWED_ORIGINS: "https://chronoverse.example.com,"
+```
+
+With the production secrets above configured, start with both files:
+
+```sh
+docker compose -f compose.prod.yaml -f compose.https.yaml run --rm init-certs
+docker compose -f compose.prod.yaml -f compose.https.yaml up -d
+```
+
+Exporting `SERVER_HOST_URL` in the shell alone does not inject it into the
+server container; the override supplies the environment entry missing from the
+base Compose file. Route the HTTPS proxy to Nginx so `/api/` keeps its existing
+path rewrite, and restrict direct access to the backend HTTP port to the proxy.
+Redirect public HTTP requests to HTTPS. For Kubernetes, configure the public
+Ingress TLS endpoint and the server environment with the same public origin.
+
+The application derives the session and CSRF cookies' `Secure` attribute and
+HSTS header from the scheme in `SERVER_HOST_URL`, not from forwarded headers.
+An HTTPS terminator alone therefore does not enable these settings. Browsers
+send `Secure` cookies over HTTPS; setting an HTTPS public URL while accessing
+the application over ordinary HTTP prevents those cookies from being sent.
+If you intentionally use HTTP, configure an HTTP public URL and matching
+allowed origin. Cookies then lack transport encryption, so an on-path observer
+can capture and replay sessions. Transport security is the operator's
+responsibility; Chronoverse does not enforce HTTPS.
+
 ### Kubernetes
 
 ```sh

@@ -169,6 +169,13 @@ The public HTTP server reads:
 In development the dashboard calls the server directly. In production, Nginx
 proxies `/api/` to the server and rewrites the path before forwarding.
 
+`SERVER_HOST_URL` is the public URL used to derive cookie security settings,
+not the internal listener address. Use its HTTPS scheme behind a TLS terminator
+to enable `Secure` session/CSRF cookies and HSTS; keep
+`SERVER_ALLOWED_ORIGINS` aligned with the dashboard's browser origin. See
+[Public HTTPS and Session Cookies](operations.md#public-https-and-session-cookies)
+for a Compose override example and the risks of choosing HTTP.
+
 ### gRPC Servers and Clients
 
 Each gRPC service uses:

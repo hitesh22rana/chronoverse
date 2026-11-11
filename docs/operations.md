@@ -9,12 +9,18 @@ Container workers and test helpers use the supported `github.com/moby/moby/clien
 and `github.com/moby/moby/api` modules. The client negotiates Docker Engine API
 versions automatically, with a minimum supported API of `1.40`.
 
+If an older daemon reports "client version too new", check its supported API
+version with `docker version` and upgrade the daemon if it is below `1.40`.
+Negotiation failures can surface as a daemon-side version mismatch rather than a
+clear minimum-version error.
+
 Operators must keep the Docker daemon patched separately; an SDK migration does
-not patch the host engine. `golang-migrate` still brings the deprecated
-`github.com/docker/docker` module into the module graph through its upstream
-`dhui/dktest` test helper. Chronoverse source and compiled package dependencies no
-longer import that SDK. Upstream test-helper migration is a separate follow-up;
-no fork, module replacement or advisory suppression is used here.
+not patch the host engine. `golang-migrate` directly requires the deprecated
+`github.com/docker/docker` module in its `go.mod`; the import chain reaches it
+through PostgreSQL-driver tests using upstream `dhui/dktest`. Chronoverse source
+and compiled package dependencies no longer import that SDK. Upstream test-helper
+migration and module cleanup are separate follow-ups; no fork, module replacement
+or advisory suppression is used here.
 
 ## Running the Stack
 

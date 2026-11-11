@@ -1,4 +1,4 @@
-FROM golang:1.27.3-alpine3.24 AS build
+FROM golang:1.27.4-alpine3.24 AS build
 
 RUN apk --no-cache upgrade ca-certificates-bundle && \
     apk --no-cache add "ca-certificates>=20261020-r0"

@@ -592,8 +592,10 @@ hold up its partition until an operator raises the server/proxy payload limit;
 normal published log lines are capped at 256 KiB before JSON encoding. For a
 legacy document above the application budget, reducing incoming traffic or
 restarting the processor will not change its size: deletion through the normal
-workflow API is an explicit data-removing recovery option, not automatic cleanup.
-Keep limits large enough for one fully encoded document. Transient search failures
+workflow API is an explicit recovery option that removes the workflow and all
+its retained logs, not just the offending record; it is not automatic cleanup.
+Rejection errors include document, workflow and job IDs to identify the affected
+record. Keep limits large enough for one fully encoded document. Transient search failures
 remain retryable; do not force-commit offsets to clear a rejection.
 
 

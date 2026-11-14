@@ -290,63 +290,26 @@ inspect the failed migration's statements, restore the schema to a consistent
 state, clear the dirty flag (`migrate force` for PostgreSQL, deleting the row
 for ClickHouse), and restart `init-database-migration`.
 
-## Maintenance-Window Upgrades
+## Database Migrations
 
-Schema-changing releases must be deployed as an offline cutover. Chronoverse
-does not support mixed application versions across an idempotency-ledger
-migration.
+Run `database-migration` before starting application services. It applies pending
+PostgreSQL and ClickHouse migrations in dependency order and configures
+Meilisearch indexes. Confirm that the job completes successfully before
+proceeding with the rollout.
 
-1. Take and verify PostgreSQL and ClickHouse backups.
-2. Stop public traffic and mutation producers first. While the existing outbox
-   relay and workflow worker are still running, wait until terminal job outbox
-   rows are published and the workflow worker's consumer lag reaches zero. This
-   drain is required before migration 11 can safely seed completed terminal
-   identities. Then stop the server, scheduling and execution workers, workflow
-   workers, processors, and the outbox relay. Allow in-flight requests and
-   database transactions to finish before continuing.
-3. Run the new release's `database-migration` image while PostgreSQL remains
-   available. Migration preflight checks run before destructive schema changes;
-   an unexpired in-progress command, malformed legacy identity, or normalized-key
-   collision aborts the migration for operator reconciliation.
-4. Verify the schema version and migration logs, then delete Redis keys matching
-   `workflow:*` and `workflows:*` before starting any application process from
-   the new release. Migration-time failure-threshold reconciliation updates
-   PostgreSQL directly and cannot invalidate Redis atomically. Do not use
-   `FLUSHDB`: Redis also contains sessions and coordination state. Use an
-   approved `SCAN` plus `UNLINK` procedure for both patterns and verify both
-   scans are empty before continuing.
-5. Start domain services, then the outbox relay and workers while public traffic
-   remains stopped. Confirm health, consumer progress, outbox publication, and
-   runtime registration.
-6. Run an approved canary that exercises workflow create replay, changed-input
-   conflict, update, scheduling, termination, deletion, and deterministic outbox
-   keys. Remove its fixtures.
-7. Start the server and restore public traffic.
-
-For Compose, stop the mutation paths before replacing images:
-
-```sh
-docker compose -f compose.prod.yaml stop \
-  nginx server scheduling-worker workflow-worker execution-worker \
-  joblogs-processor analytics-processor outbox-relay
-docker compose -f compose.prod.yaml run --rm init-database-migration
-```
-
-The normal migration executable applies upgrades only. A rollback requires an
-operator-reviewed migration invocation or a verified database restore; do not
-assume that restarting old images reverses the schema.
+Before schema-changing releases, take and verify database backups and review
+migration compatibility with the running application. Pause traffic and workers
+when a migration requires exclusive access or changes the schema expected by
+running services.
 
 ### Rollback
 
-Keep traffic, workers, processors, and outbox publication stopped. Roll back the
-database schema before starting old binaries, verify the restored schema and
-data, then start the old release as one version. The legacy schema cannot
-represent completed terminal identities, non-workflow command-ledger records,
-or every reused manual command key. Migration 11 restores one legacy workflow
-row for every accepted canonical or raw workflow-ID operation/hash pair, so
-supported workflow-update retries remain idempotent after rollback. The
-remaining documented identity loss still requires explicit operator acceptance.
-Prefer restoring the pre-upgrade backup when that loss is unacceptable.
+The migration executable applies upgrades only. Restarting an earlier application
+image does not reverse database changes. Review the release's down migrations
+before using them, run them in reverse dependency order, and account for any data
+they remove. Keep affected application services stopped until the schema and
+application versions are compatible. Restore a verified backup when rollback
+requires recovering removed data.
 
 ## Health Checks
 

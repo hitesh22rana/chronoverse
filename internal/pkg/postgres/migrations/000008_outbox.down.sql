@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS outbox_events;
+DROP FUNCTION IF EXISTS update_outbox_events_updated_at;
+DROP TYPE IF EXISTS OUTBOX_STATUS;

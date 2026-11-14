@@ -24,3 +24,7 @@ CREATE TRIGGER trigger_update_users
 BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION update_users_updated_at();
+
+-- Enforce case-insensitive email uniqueness alongside the existing UNIQUE on email.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower_unique
+ON users (lower(email));

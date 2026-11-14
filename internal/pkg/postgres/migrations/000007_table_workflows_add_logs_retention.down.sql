@@ -1,1 +1,0 @@
-ALTER TABLE workflows DROP COLUMN IF EXISTS "log_retention";

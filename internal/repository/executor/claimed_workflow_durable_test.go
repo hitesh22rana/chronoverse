@@ -4,6 +4,7 @@ package executor
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -191,9 +192,11 @@ func (c *durableWorkflowsClient) GetWorkflowByID(
 
 // recordingHeartbeatSvc reports heartbeat executions and can run an action in the
 // middle of one, which is how a test steals a lease deterministically.
+// An execution error can also be injected at this service boundary.
 type recordingHeartbeatSvc struct {
 	calls atomic.Int32
 	onRun func(context.Context)
+	err   error
 }
 
 func (s *recordingHeartbeatSvc) Execute(ctx context.Context, _ time.Duration, _ string, _ int, _ map[string][]string) error {
@@ -202,7 +205,7 @@ func (s *recordingHeartbeatSvc) Execute(ctx context.Context, _ time.Duration, _ 
 		s.onRun(ctx)
 	}
 
-	return nil
+	return s.err
 }
 
 // rejectingContainerSvc fails the test if a fixture asks for container execution.
@@ -752,5 +755,69 @@ func assertDurableFollowUp(ctx context.Context, t *testing.T, pg *postgres.Postg
 	}
 	if observedJobs != 2 {
 		t.Fatalf("automatic job rows = %d, want 2 (the dispatched run plus its follow-up)", observedJobs)
+	}
+}
+
+func TestIntegrationClaimedRunClassifiesContextAndRuntimeFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		code   codes.Code
+		reason string
+	}{
+		{"raw cancellation", context.Canceled, codes.Canceled, ""},
+		{"wrapped cancellation", fmt.Errorf("execution: %w", context.Canceled), codes.Canceled, ""},
+		{"raw deadline", context.DeadlineExceeded, codes.DeadlineExceeded, ""},
+		{"aborted runtime operation", status.Error(codes.Aborted, "runtime operation aborted"), codes.Aborted, ""},
+		{"wrapped deadline", fmt.Errorf("execution: %w", context.DeadlineExceeded), codes.DeadlineExceeded, ""},
+		{"workload timeout", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), codes.DeadlineExceeded, terminalreason.TimeLimitExceeded.String()},
+	} {
+		for _, attempts := range []int32{1, 3} {
+			t.Run(fmt.Sprintf("%s/attempt=%d", tc.name, attempts), func(t *testing.T) {
+				ctx := t.Context()
+				pg := testkit.Postgres(t)
+				jobs, workflows := newDurableRepositories(pg)
+				fixture := seedDurableClaim(ctx, t, pg, jobs, workflowsmodel.WorkflowBuildStatusCompleted.ToString(), 3)
+				if _, err := pg.Exec(ctx, `UPDATE jobs SET attempts=$2 WHERE id=$1`, fixture.JobID, attempts); err != nil {
+					t.Fatal(err)
+				}
+				repo := newDurableExecutor(fixture, jobs, workflows, &recordingHeartbeatSvc{err: tc.err}, &rejectingContainerSvc{})
+				claim := fixture.claim()
+				claim.Attempts = attempts
+				err := repo.runClaimedWorkflow(ctx, claim, fixture.LastScheduledAt, fixture.Generation)
+				state := readDurableJobState(ctx, t, pg, fixture.JobID)
+				if attempts == 3 || tc.reason != "" {
+					if status.Code(err) != tc.code {
+						t.Errorf("terminal error = %v", err)
+					}
+				} else if err != nil {
+					t.Errorf("released claim error = %v", err)
+				}
+				assertDurableExecutionFailure(t, &state, attempts, tc.code, tc.reason)
+				if state.LeaseToken.Valid || repo.handoffs.size() != 0 {
+					t.Fatal("accepted settlement retained execution authority")
+				}
+			})
+		}
+	}
+}
+
+func assertDurableExecutionFailure(t *testing.T, state *durableJobState, attempts int32, code codes.Code, userReason string) {
+	t.Helper()
+	wantStatus, wantKind, wantReason, wantRetry := "PENDING", "SYSTEM", "", true
+	if attempts == 3 {
+		wantStatus, wantReason, wantRetry = "FAILED", terminalreason.SystemError.String(), false
+	}
+	if userReason != "" {
+		wantStatus, wantKind, wantReason, wantRetry = "FAILED", "USER", userReason, false
+	}
+	if state.Status != wantStatus || state.FailureKind.String != wantKind || state.LastErrorCode.String != code.String() || state.TerminalReasonCode.String != wantReason {
+		t.Fatalf("persisted failure = %+v, want %s/%s/%s/%s", state, wantStatus, wantKind, code, wantReason)
+	}
+	if state.NextAttemptAt.Valid != wantRetry {
+		t.Fatalf("retry scheduling = %v, want %v", state.NextAttemptAt, wantRetry)
+	}
+	if wantRetry && !state.NextAttemptAt.Time.After(time.Now()) {
+		t.Fatal("retry was not scheduled in the future")
 	}
 }

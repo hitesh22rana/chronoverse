@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"sync"
 	"time"
@@ -489,6 +490,7 @@ func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJo
 }
 
 func (r *Repository) releaseClaimForSystemRetry(ctx context.Context, claim *jobspb.ClaimJobResponse, cause error) error {
+	cause = normalizeExecutionError(cause)
 	if int(claim.GetAttempts()) >= r.cfg.SystemRetryLimit {
 		return r.failClaimedJob(ctx, claim, nil, cause, "")
 	}
@@ -530,6 +532,7 @@ func (r *Repository) failClaimedJob(
 	executeErr error,
 	containerID string,
 ) error {
+	executeErr = normalizeExecutionError(executeErr)
 	decision := classifyExecutionFailure(executeErr)
 	if decision.Retryable && int(claim.GetAttempts()) < r.cfg.SystemRetryLimit {
 		retryCtx := context.WithoutCancel(ctx)
@@ -630,7 +633,21 @@ type executionFailureDecision struct {
 	ReasonCode string
 }
 
+// normalizeExecutionError preserves explicit workload reasons while giving Go
+// context errors the same transport classification as their gRPC equivalents.
+func normalizeExecutionError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		normalized := status.FromContextError(err).Err()
+		if reason, ok := terminalreason.FromError(err); ok {
+			return terminalreason.Wrap(reason, normalized)
+		}
+		return normalized
+	}
+	return err
+}
+
 func classifyExecutionFailure(err error) executionFailureDecision {
+	err = normalizeExecutionError(err)
 	if err == nil {
 		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: terminalreason.ExecutionFailed.String()}
 	}
@@ -639,7 +656,7 @@ func classifyExecutionFailure(err error) executionFailureDecision {
 	}
 
 	switch status.Code(err) { //nolint:exhaustive // Only retryable infrastructure codes need special handling here.
-	case codes.Canceled, codes.Internal, codes.ResourceExhausted, codes.Unavailable:
+	case codes.Aborted, codes.Canceled, codes.Internal, codes.ResourceExhausted, codes.Unavailable:
 		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString(), ReasonCode: terminalreason.SystemError.String()}
 	case codes.DeadlineExceeded:
 		return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString(), ReasonCode: terminalreason.SystemError.String()}

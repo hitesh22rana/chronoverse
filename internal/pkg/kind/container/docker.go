@@ -887,13 +887,13 @@ func (w *DockerWorkflow) Build(ctx context.Context, imageName string) error {
 
 		out, err := w.Client.ImagePull(ctx, imageName, client.ImagePullOptions{})
 		if err != nil {
-			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.NotFound, "failed to pull image: %v", err))
+			return nil, dockerImagePullError(ctx, err)
 		}
 		defer out.Close()
 
 		// Read the output to completion so the pulled image is registered locally.
 		if _, err = io.Copy(io.Discard, out); err != nil {
-			return nil, terminalreason.Wrap(terminalreason.ImagePullFailed, status.Errorf(codes.Aborted, "failed to read image pull output: %v", err))
+			return nil, dockerImagePullError(ctx, err)
 		}
 
 		return struct{}{}, nil
@@ -966,6 +966,38 @@ func matchingRepositoryDigest(imageName string, repoDigests []string) (string, e
 		}
 	}
 	return "", status.Errorf(codes.FailedPrecondition, "image %s has no matching repository digest; use a registry-pullable image", imageName)
+}
+
+// dockerImagePullError distinguishes rejected image requests from runtime/transport faults.
+func dockerImagePullError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return status.FromContextError(ctxErr).Err()
+	}
+	code := codes.Unavailable
+	userFailure := false
+	switch {
+	case errors.Is(err, context.Canceled), cerrdefs.IsCanceled(err):
+		code = codes.Canceled
+	case errors.Is(err, context.DeadlineExceeded), cerrdefs.IsDeadlineExceeded(err):
+		code = codes.DeadlineExceeded
+	case cerrdefs.IsInvalidArgument(err):
+		code, userFailure = codes.InvalidArgument, true
+	case cerrdefs.IsNotFound(err):
+		code, userFailure = codes.NotFound, true
+	case cerrdefs.IsUnauthorized(err):
+		code, userFailure = codes.Unauthenticated, true
+	case cerrdefs.IsPermissionDenied(err):
+		code, userFailure = codes.PermissionDenied, true
+	case cerrdefs.IsResourceExhausted(err):
+		code = codes.ResourceExhausted
+	case cerrdefs.IsInternal(err):
+		code = codes.Internal
+	}
+	failure := status.Errorf(code, "failed to pull image: %v", err)
+	if userFailure {
+		return terminalreason.Wrap(terminalreason.ImagePullFailed, failure)
+	}
+	return failure
 }
 
 func dockerImageInspectError(err error) error {

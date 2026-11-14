@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 )
 
 // WorkflowWorker holds the workflow worker configuration.
@@ -36,6 +39,9 @@ func InitWorkflowWorkerConfig() (*WorkflowWorker, error) {
 	var cfg WorkflowWorker
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err
+	}
+	if err := (&imagepull.Config{TTL: cfg.ImagePullLockTTL, WaitTimeout: cfg.ImagePullLockWaitTimeout, RetryInterval: cfg.ImagePullLockRetryInterval}).Validate(); err != nil {
+		return nil, fmt.Errorf("invalid WORKFLOW_WORKER_IMAGE_PULL_LOCK_%w", err)
 	}
 	return &cfg, nil
 }

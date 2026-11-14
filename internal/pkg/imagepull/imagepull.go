@@ -16,12 +16,13 @@ const (
 	defaultLockTTL            = 10 * time.Minute
 	defaultLockWaitTimeout    = 10 * time.Minute
 	defaultLockRetryInterval  = 500 * time.Millisecond
-	minLockRenewInterval      = time.Second
+	minLockTTL                = 3 * time.Millisecond
 	defaultLockReleaseTimeout = 5 * time.Second
 	defaultLockRenewTimeout   = 5 * time.Second
 )
 
 // Client can inspect and pull images from a single Docker daemon.
+// Inspection and build must honor cancellation so protected work can be joined.
 type Client interface {
 	Build(ctx context.Context, imageName string) error
 	ImageExists(ctx context.Context, imageName string) (bool, error)
@@ -45,8 +46,26 @@ type Config struct {
 	LockScope     string
 }
 
+// Validate checks explicitly configured coordination durations.
+// Zero selects defaults; Redis TTL resolution is one millisecond.
+func (c Config) Validate() error {
+	if c.TTL != 0 && c.TTL < minLockTTL {
+		return errors.New("TTL must be zero or at least 3ms")
+	}
+	if c.WaitTimeout < 0 {
+		return errors.New("WAIT_TIMEOUT must be non-negative")
+	}
+	if c.RetryInterval < 0 {
+		return errors.New("RETRY_INTERVAL must be non-negative")
+	}
+	return nil
+}
+
 // Ensure makes imageName available on client, serializing cold pulls per runtime scope.
 func Ensure(ctx context.Context, client Client, locks LockStore, imageName string, cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid image-pull configuration: %v", err)
+	}
 	cfg = normalizeConfig(cfg)
 
 	exists, err := client.ImageExists(ctx, imageName)
@@ -63,12 +82,13 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 	defer cancel()
 
 	for {
+		started := time.Now()
 		token, acquired, err := locks.AcquireDistributedLockWithToken(waitCtx, key, cfg.TTL)
 		if err != nil {
 			return err
 		}
 		if acquired {
-			return buildWithLock(ctx, client, locks, imageName, key, token, cfg)
+			return buildWithLock(ctx, client, locks, imageName, key, token, cfg, started.Add(cfg.TTL))
 		}
 
 		if err := waitForLock(waitCtx, cfg.RetryInterval); err != nil {
@@ -78,19 +98,20 @@ func Ensure(ctx context.Context, client Client, locks LockStore, imageName strin
 }
 
 func normalizeConfig(cfg Config) Config {
-	if cfg.TTL <= 0 {
+	if cfg.TTL == 0 {
 		cfg.TTL = defaultLockTTL
 	}
-	if cfg.WaitTimeout <= 0 {
+	cfg.TTL = cfg.TTL.Truncate(time.Millisecond)
+	if cfg.WaitTimeout == 0 {
 		cfg.WaitTimeout = defaultLockWaitTimeout
 	}
-	if cfg.RetryInterval <= 0 {
+	if cfg.RetryInterval == 0 {
 		cfg.RetryInterval = defaultLockRetryInterval
 	}
 	return cfg
 }
 
-func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config) error {
+func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config, expiresAt time.Time) (err error) {
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultLockReleaseTimeout)
 		defer cancel()
@@ -98,64 +119,89 @@ func buildWithLock(ctx context.Context, client Client, locks LockStore, imageNam
 		_ = locks.ReleaseDistributedLockWithToken(releaseCtx, lockKey, token)
 	}()
 
-	exists, err := client.ImageExists(ctx, imageName)
+	if !time.Now().Before(expiresAt.Add(-cfg.TTL / 3)) {
+		return status.Error(codes.Unavailable, "image pull lock renewal budget exhausted after acquisition")
+	}
+	buildCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopRenewal := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL, expiresAt, cancel)
+	defer func() {
+		if renewErr := stopRenewal(); renewErr != nil {
+			err = imagePullResult(ctx, err, renewErr)
+		}
+	}()
+	exists, err := client.ImageExists(buildCtx, imageName)
 	if err != nil || exists {
 		return err
 	}
-
-	buildCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	stopRenewal, renewalErrCh := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL)
-	defer stopRenewal()
-
-	buildErrCh := make(chan error, 1)
-	go func() {
-		buildErrCh <- client.Build(buildCtx, imageName)
-	}()
-
-	select {
-	case err := <-buildErrCh:
-		return err
-	case err := <-renewalErrCh:
-		cancel()
-		//nolint:errcheck // Preserve the renewal failure after joining the canceled build.
-		<-buildErrCh
+	if err := buildCtx.Err(); err != nil {
 		return err
 	}
+	return client.Build(buildCtx, imageName)
 }
 
-func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration) (stop func(), errs <-chan error) {
+func imagePullResult(caller context.Context, workErr, renewErr error) error {
+	if workErr == nil || errors.Is(workErr, context.Canceled) || errors.Is(workErr, context.DeadlineExceeded) || status.Code(workErr) == codes.Canceled || status.Code(workErr) == codes.DeadlineExceeded {
+		if err := caller.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
+		return renewErr
+	}
+	return workErr
+}
+
+func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration, expiresAt time.Time, cancelWork context.CancelFunc) func() error {
 	renewCtx, cancel := context.WithCancel(ctx)
-	errCh := make(chan error, 1)
 	done := make(chan struct{})
+	var renewalErr error
 
 	go func() {
-		defer close(done)
-		ticker := time.NewTicker(max(ttl/3, minLockRenewInterval))
-		defer ticker.Stop()
+		defer func() {
+			if renewalErr != nil {
+				cancelWork()
+			}
+			close(done)
+		}()
+		interval := ttl / 3
+		timer := time.NewTimer(time.Until(expiresAt.Add(-ttl + interval)))
+		defer timer.Stop()
 
 		for {
 			select {
 			case <-renewCtx.Done():
 				return
-			case <-ticker.C:
-				callCtx, stop := context.WithTimeout(renewCtx, min(ttl/3, defaultLockRenewTimeout))
+			case <-timer.C:
+				started := time.Now()
+				deadline := started.Add(min(interval, defaultLockRenewTimeout))
+				if latest := expiresAt.Add(-interval); latest.Before(deadline) {
+					deadline = latest
+				}
+				if !deadline.After(started) {
+					renewalErr = status.Error(codes.Unavailable, "image pull lock renewal budget exhausted")
+					return
+				}
+				callCtx, stop := context.WithDeadline(renewCtx, deadline)
 				renewed, err := locks.ExtendDistributedLockWithToken(callCtx, lockKey, token, ttl)
 				stop()
+				if renewCtx.Err() != nil {
+					return
+				}
 				if err != nil {
-					errCh <- err
+					renewalErr = err
 					return
 				}
 				if !renewed {
-					errCh <- status.Error(codes.ResourceExhausted, "image pull lock ownership was lost")
+					renewalErr = status.Error(codes.ResourceExhausted, "image pull lock ownership was lost")
 					return
 				}
+				// Request start is a conservative lower bound for Redis expiry.
+				expiresAt = started.Add(ttl)
+				timer.Reset(time.Until(started.Add(interval)))
 			}
 		}
 	}()
 
-	return func() { cancel(); <-done }, errCh
+	return func() error { cancel(); <-done; return renewalErr }
 }
 
 func waitForLock(ctx context.Context, interval time.Duration) error {

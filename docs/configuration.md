@@ -486,6 +486,12 @@ These settings coordinate Docker image pulls for replicated workflow workers
 that share a runtime node. The lock is scoped by runtime node and exact image
 string; Docker host is used as a fallback when a request omits an explicit
 runtime scope. Compose defaults are `10m`, `10m`, `500ms`, `true`, and `8`.
+For both worker types, zero image-pull durations select defaults. Explicit TTLs
+must be at least `3ms` and are rounded down to whole milliseconds; negative TTL,
+wait timeout, or retry interval settings fail startup. Positive wait/retry
+durations are accepted. See [image-pull lease budgets](operations.md#workflow-workers)
+for renewal timing and cleanup behavior.
+
 Workflow workers do not
 launch workload containers, so `EXECUTION_WORKER_WORKLOAD_CONTAINER_*` limits do
 not apply to this image-pull path. For `CONTAINER` workflows, successful build
@@ -528,7 +534,8 @@ the runtime's nanocpu range. Keep lease duration longer than the renewal
 interval. Container execution uses the runtime endpoint
 returned by `ClaimJob`, not the worker pod's own Docker host. Before creating a
 container, the worker ensures the resolved image exists on that runtime daemon
-under a Redis lock scoped to runtime node plus exact image string.
+under a Redis lock scoped to runtime node plus exact image string. The shared
+[image-pull duration rules](#workflow-worker) also apply to execution workers.
 
 ### Job Logs Processor
 

@@ -141,7 +141,7 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 		fmt.Sprintf("Workflow '%s' has been terminated.", workflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
-		workflowOccurrenceKey(workflowEvent),
+		workflowEvent.EventKey,
 	)
 }
 
@@ -168,14 +168,6 @@ func (r *Repository) cleanupCanceledJobContainers(
 
 func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) error {
 	if !shouldCleanupJobContainer(workflow, job) {
-		return nil
-	}
-	if job.GetRuntimeEndpoint() == "" {
-		loggerpkg.FromContext(parentCtx).Warn("skipping container cleanup without runtime endpoint",
-			zap.String("workflow_id", workflow.GetId()),
-			zap.String("job_id", job.GetId()),
-			zap.String("container_id", job.GetContainerId()),
-		)
 		return nil
 	}
 

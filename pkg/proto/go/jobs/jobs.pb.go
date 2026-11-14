@@ -131,7 +131,7 @@ type ScheduleJobRequest struct {
 	UserId             string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`                                      // ID of the user
 	ScheduledAt        string                 `protobuf:"bytes,3,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`                       // Time the job is scheduled to run
 	Trigger            string                 `protobuf:"bytes,4,opt,name=trigger,proto3" json:"trigger,omitempty"`                                                  // Trigger type of the job (AUTOMATIC or MANUAL)
-	IdempotencyKey     string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`              // Optional idempotency key for scheduling
+	IdempotencyKey     string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`              // Required idempotency key for scheduling
 	WorkflowGeneration int64                  `protobuf:"varint,6,opt,name=workflow_generation,json=workflowGeneration,proto3" json:"workflow_generation,omitempty"` // Optional workflow generation guard for automatic scheduling
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache

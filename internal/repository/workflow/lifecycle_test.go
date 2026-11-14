@@ -79,7 +79,7 @@ func lifecycleWorkflow() *workflowspb.GetWorkflowByIDResponse {
 }
 
 func lifecycleEvent(action workflowsmodel.Action) *workflowsmodel.WorkflowEvent {
-	return &workflowsmodel.WorkflowEvent{ID: "workflow-1", UserID: "user-1", Generation: 3, Action: action}
+	return &workflowsmodel.WorkflowEvent{EventKey: idempotency.WorkflowEventKey("workflow-1", action.ToString(), 3), ID: "workflow-1", UserID: "user-1", Generation: 3, Action: action}
 }
 
 func lifecycleRepository(workflow *workflowspb.GetWorkflowByIDResponse) (*Repository, *lifecycleLock) {
@@ -177,7 +177,7 @@ func TestRescheduleWorkflowReplayPreservesCommandIdentity(t *testing.T) {
 		}
 		if req.GetWorkflowId() != w.GetId() || req.GetUserId() != w.GetUserId() || req.GetWorkflowGeneration() != 3 ||
 			req.GetTrigger() != jobsmodel.JobTriggerAutomatic.ToString() ||
-			req.GetIdempotencyKey() != idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(e)) {
+			req.GetIdempotencyKey() != idempotency.AutomaticScheduleEventKey(e.EventKey) {
 			t.Fatalf("schedule request=%v", req)
 		}
 	}
@@ -388,7 +388,7 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 	if !reflect.DeepEqual(l.released, l.keys) || len(l.released) != 2 {
 		t.Fatalf("release=%v", l.released)
 	}
-	assertTerminationNotificationReplay(t, notifications, idempotency.WorkflowNotificationEventKey(w.GetId(), "Workflow Terminated", workflowOccurrenceKey(e)))
+	assertTerminationNotificationReplay(t, notifications, idempotency.WorkflowNotificationEventKey(w.GetId(), "Workflow Terminated", e.EventKey))
 	// Only the first pass cancels jobs; the replay lists nothing new, so each
 	// canceled job is notified exactly once across both passes.
 	assertNotificationKeys(t, jobNotifications,

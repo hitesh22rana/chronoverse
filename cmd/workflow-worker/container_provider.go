@@ -20,7 +20,6 @@ func newContainerProvider(cfg *config.WorkflowWorker, locks imagepull.LockStore)
 	})
 	policy := imagepull.Config{TTL: cfg.ImagePullLockTTL, WaitTimeout: cfg.ImagePullLockWaitTimeout, RetryInterval: cfg.ImagePullLockRetryInterval}
 	provider = func(runtimeID, endpoint string) (workflowrepo.ContainerSvc, error) {
-		endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
 		client, err := cache.Get(endpoint)
 		if err != nil {
 			return nil, err

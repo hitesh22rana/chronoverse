@@ -39,8 +39,6 @@ const (
 	dockerHealthCheckTimeout  = 10 * time.Second
 	dockerIdleConnTimeout     = 30 * time.Second
 	dockerMaxIdleConns        = 6
-	legacyDockerProxyPort     = "2375"
-	dockerProxyTLSPort        = "2376"
 
 	// dockerLogStreamStdout / dockerLogStreamStderr label published log lines.
 	dockerLogStreamStdout = "stdout"
@@ -249,25 +247,6 @@ func verifyDockerProxyConnection(state *tls.ConnectionState, caFile, serverName 
 	return err
 }
 
-// NormalizeDockerProxyEndpoint migrates persisted plaintext proxy endpoints
-// to the mTLS listener while preserving the exact runtime host. It is a no-op
-// unless Docker proxy TLS is configured, so ordinary plaintext Docker daemons
-// on port 2375 remain untouched.
-func NormalizeDockerProxyEndpoint(endpoint string, tlsConfigured bool) string {
-	if !tlsConfigured {
-		return endpoint
-	}
-	const tcpPrefix = "tcp://"
-	if !strings.HasPrefix(endpoint, tcpPrefix) {
-		return endpoint
-	}
-	host, port, err := net.SplitHostPort(strings.TrimPrefix(endpoint, tcpPrefix))
-	if err != nil || host == "" || port != legacyDockerProxyPort {
-		return endpoint
-	}
-	return tcpPrefix + net.JoinHostPort(host, dockerProxyTLSPort)
-}
-
 // NewDockerWorkflow creates a new DockerWorkflow.
 func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error) {
 	w := &DockerWorkflow{
@@ -280,7 +259,6 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 			option(w)
 		}
 	}
-	w.dockerHost = NormalizeDockerProxyEndpoint(w.dockerHost, w.dockerProxyTLS.CAFile != "")
 
 	clientOptions := []client.Opt{client.FromEnv}
 	if w.dockerHost != "" {
@@ -614,7 +592,7 @@ func (w *DockerWorkflow) hostConfig() *container.HostConfig {
 	// Workload isolation (VULN-004a): dedicated network, no capabilities, no
 	// privilege escalation, read-only rootfs with a writable /tmp.
 	networkMode := DefaultWorkloadNetwork
-	if w != nil && w.workloadNetwork != "" {
+	if w.workloadNetwork != "" {
 		networkMode = w.workloadNetwork
 	}
 
@@ -629,10 +607,6 @@ func (w *DockerWorkflow) hostConfig() *container.HostConfig {
 		},
 		IpcMode: container.IPCModePrivate,
 	}
-	if w == nil {
-		return hostConfig
-	}
-
 	resources := container.Resources{}
 	if w.resourceLimits.MemoryBytes > 0 {
 		resources.Memory = w.resourceLimits.MemoryBytes

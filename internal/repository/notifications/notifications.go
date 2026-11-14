@@ -110,19 +110,6 @@ func (r *Repository) CreateNotification(ctx context.Context, userID, kind, paylo
 		}
 		return reservation.ResourceID, nil
 	}
-	notificationID, legacyReplay, err := r.adoptLegacyNotificationCommand(
-		ctx, tx, userID, idempotencyKey, requestHash,
-	)
-	if err != nil {
-		return "", err
-	}
-	if legacyReplay {
-		if err = tx.Commit(ctx); err != nil {
-			return "", status.Errorf(codes.Internal, "failed to commit legacy notification replay: %v", err)
-		}
-		return notificationID, nil
-	}
-
 	notificationID, err = r.insertNotification(ctx, tx, userID, kind, payload, idempotencyKey, requestHash)
 	if err != nil {
 		return "", err
@@ -177,53 +164,6 @@ func (r *Repository) insertNotification(
 		return "", err
 	}
 	return notificationID, nil
-}
-
-func (r *Repository) adoptLegacyNotificationCommand(
-	ctx context.Context,
-	tx pgx.Tx,
-	userID,
-	idempotencyKey,
-	requestHash string,
-) (notificationID string, found bool, err error) {
-	query := fmt.Sprintf(`
-		SELECT id, kind, payload
-		FROM %s
-		WHERE user_id = $1
-		  AND idempotency_key IS NOT NULL
-		  AND btrim(idempotency_key, ' ') = $2
-		FOR UPDATE
-		LIMIT 1;
-	`, postgres.TableNotifications)
-	var storedKind, storedPayload string
-	err = tx.QueryRow(ctx, query, userID, idempotencyKey).Scan(
-		&notificationID,
-		&storedKind,
-		&storedPayload,
-	)
-	if r.pg.IsNoRows(err) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, status.Errorf(codes.Internal, "failed to read legacy notification command: %v", err)
-	}
-	if validationErr := validateStoredNotificationCommand(requestHash, userID, storedKind, storedPayload); validationErr != nil {
-		return "", false, validationErr
-	}
-	if completeErr := commandidempotency.Complete(
-		ctx,
-		tx,
-		commandidempotency.UserScope(userID),
-		commandidempotency.OperationNotificationCreate,
-		idempotencyKey,
-		requestHash,
-		notificationID,
-		map[string]string{"id": notificationID},
-		r.cfg.EventCommandRetention,
-	); completeErr != nil {
-		return "", false, completeErr
-	}
-	return notificationID, true, nil
 }
 
 func validateStoredNotificationCommand(requestHash, userID, kind, payload string) error {

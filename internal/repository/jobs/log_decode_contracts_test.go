@@ -27,9 +27,9 @@ func TestDecodeSearchJobLogContracts(t *testing.T) {
 			timestamp: time.Date(2026, 1, 2, 3, 4, 5, 123000000, time.UTC),
 		},
 		{
-			name:     "string sequence and legacy event identity",
-			document: `{"id":"legacy-document","sequence_num":"4294967295","message":"plain","stream":"stderr"}`,
-			event:    "legacy-document", message: "plain", stream: "stderr", cursor: "legacy-document", sequence: 4294967295,
+			name:     "string sequence and explicit event identity",
+			document: `{"id":"document","event_id":"event","sequence_num":"4294967295","message":"plain","stream":"stderr"}`,
+			event:    "event", message: "plain", stream: "stderr", cursor: "document", sequence: 4294967295,
 		},
 		{name: "missing optional fields", document: `{}`},
 		{name: "wrong optional field types", document: `{"id":17,"event_id":false,"sequence_num":null,"message":12,"stream":false,"timestamp":1,"_formatted":{"message":false}}`},

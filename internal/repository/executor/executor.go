@@ -403,6 +403,7 @@ func (r *Repository) scheduleNextAutomaticJob(
 		UserId:             workflow.GetUserId(),
 		ScheduledAt:        lastScheduledAt.Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
 		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+		IdempotencyKey:     idempotency.AutomaticScheduleEventKey("job:" + idempotency.CanonicalUUIDText(claim.GetId())),
 		WorkflowGeneration: workflowGeneration,
 	})
 	if status.Code(err) == codes.FailedPrecondition && workflowGeneration > 0 {

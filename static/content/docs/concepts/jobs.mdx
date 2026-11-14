@@ -19,7 +19,7 @@ Infrastructure failures may release a job for a bounded retry. The dispatch atte
 
 User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
 
-Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Historical terminal records whose cause cannot be identified safely return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
+Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Terminal records without a recognized reason code return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
 
 ## Execution ownership
 

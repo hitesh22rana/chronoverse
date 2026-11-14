@@ -275,7 +275,7 @@ func TestRedisStatsRejectsMalformedServerData(t *testing.T) {
 	}
 }
 
-func TestRedisLegacyLockProtocolOutcomes(t *testing.T) {
+func TestRedisSharedValueLockProtocolOutcomes(t *testing.T) {
 	for _, tc := range []struct {
 		name, response string
 		want           codes.Code
@@ -283,7 +283,7 @@ func TestRedisLegacyLockProtocolOutcomes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			address := redisProtocolPeer(t, nil, func(args []string) string {
 				if strings.EqualFold(args[0], "eval") {
-					if len(args) != 5 || args[2] != "1" || args[3] != "legacy-lock" || args[4] != "locked" {
+					if len(args) != 5 || args[2] != "1" || args[3] != "shared-value-lock" || args[4] != "locked" {
 						t.Errorf("EVAL arguments = %v", args)
 					}
 					return tc.response
@@ -292,7 +292,7 @@ func TestRedisLegacyLockProtocolOutcomes(t *testing.T) {
 			})
 			client := goredis.NewClient(&goredis.Options{Addr: address, MaxRetries: -1})
 			defer client.Close()
-			if err := (&Store{client: client}).ReleaseDistributedLock(t.Context(), "legacy-lock"); status.Code(err) != tc.want {
+			if err := (&Store{client: client}).ReleaseDistributedLock(t.Context(), "shared-value-lock"); status.Code(err) != tc.want {
 				t.Fatalf("release = %v", err)
 			}
 		})

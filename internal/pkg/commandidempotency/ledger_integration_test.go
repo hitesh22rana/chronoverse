@@ -102,35 +102,6 @@ func TestIntegrationLedgerReplaysCompletedCommand(t *testing.T) {
 	}
 }
 
-func TestIntegrationLedgerAcceptsCompatibleLegacyHashes(t *testing.T) {
-	ctx := context.Background()
-	pg := testkit.Postgres(t)
-	scope := "ledger-it-" + t.Name()
-	const operation = commandidempotency.OperationWorkflowCreate
-	key, requestHash, legacyHash := "compat-key", testHash(10), testHash(11)
-
-	fresh, freshErr := tryReserve(ctx, t, pg, scope, operation, key, requestHash, legacyHash)
-	if freshErr != nil {
-		t.Fatalf("Reserve (with legacy alias): %v", freshErr)
-	}
-	if fresh.Replay {
-		t.Fatalf("reservation = %+v, want a fresh reservation", fresh)
-	}
-	if completeErr := tryComplete(ctx, t, pg, scope, operation, key, requestHash, "workflow-1", nil, commandidempotency.ClientCommandRetention); completeErr != nil {
-		t.Fatalf("Complete: %v", completeErr)
-	}
-
-	// The stored alias identifies the same command, so the pre-migration
-	// spelling replays instead of conflicting.
-	replay, replayErr := tryReserve(ctx, t, pg, scope, operation, key, legacyHash)
-	if replayErr != nil {
-		t.Fatalf("Reserve (legacy hash): %v", replayErr)
-	}
-	if !replay.Replay || replay.ResourceID != "workflow-1" {
-		t.Fatalf("legacy replay = %+v, want replay of workflow-1", replay)
-	}
-}
-
 func TestIntegrationLedgerExpiredKeyIsReplacedAsFresh(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -202,12 +173,11 @@ func tryReserve(
 	t *testing.T,
 	pg *postgres.Postgres,
 	scope, operation, key, requestHash string,
-	compatibleRequestHashes ...string,
 ) (*commandidempotency.Reservation, error) {
 	t.Helper()
 
 	tx := reserveTx(ctx, t, pg)
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, key, requestHash, compatibleRequestHashes...)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, key, requestHash)
 	if err != nil {
 		//nolint:errcheck // Best-effort rollback before returning the error.
 		_ = tx.Rollback(ctx)

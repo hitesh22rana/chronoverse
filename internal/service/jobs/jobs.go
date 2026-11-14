@@ -117,7 +117,7 @@ type ScheduleJobRequest struct {
 	UserID             string `validate:"required"`
 	ScheduledAt        string `validate:"required"`
 	Trigger            string `validate:"required"`
-	IdempotencyKey     string `validate:"omitempty"`
+	IdempotencyKey     string `validate:"required"`
 	WorkflowGeneration int64  `validate:"omitempty,min=0"`
 }
 
@@ -153,10 +153,6 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 	err = validateJobTrigger(req.GetTrigger())
 	if err != nil {
 		return "", err
-	}
-
-	if req.GetTrigger() == jobsmodel.JobTriggerManual.ToString() && req.GetIdempotencyKey() == "" {
-		return "", status.Error(codes.InvalidArgument, "idempotency key is required for manual jobs")
 	}
 
 	res, err := s.repo.ScheduleJob(

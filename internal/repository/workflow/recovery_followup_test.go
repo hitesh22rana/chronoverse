@@ -199,7 +199,7 @@ func TestHeartbeatBuildCompletesThroughWorkerEntry(t *testing.T) {
 			Workflows: &testWorkflowsClient{workflow: workflow},
 			Jobs: &testJobsClient{scheduleJob: func(_ context.Context, req *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
 				schedules++
-				assertSkippedSchedule(t, req, workflow, event, idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(event)))
+				assertSkippedSchedule(t, req, workflow, event, idempotency.AutomaticScheduleEventKey(event.EventKey))
 				return &jobspb.ScheduleJobResponse{}, nil
 			}},
 			Notifications: testNotificationsClient{createNotification: func(_ context.Context, req *notificationspb.CreateNotificationRequest) (*notificationspb.CreateNotificationResponse, error) {

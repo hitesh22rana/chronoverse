@@ -14,14 +14,19 @@ func TestGetJobResponseTerminalReason(t *testing.T) {
 	res := (&jobsmodel.GetJobResponse{
 		ID: "job", WorkflowID: "workflow", JobStatus: jobsmodel.JobStatusFailed.ToString(),
 		ScheduledAt: now, CreatedAt: now, UpdatedAt: now,
+		StartedAt:          sql.NullTime{Time: now, Valid: true},
+		CompletedAt:        sql.NullTime{Time: now.Add(time.Minute), Valid: true},
 		TerminalReasonCode: sql.NullString{String: terminalreason.NonZeroExit.String(), Valid: true},
 	}).ToProto()
+	if res.GetStartedAt() != now.Format(time.RFC3339Nano) || res.GetCompletedAt() != now.Add(time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("job execution timestamps = %q, %q", res.GetStartedAt(), res.GetCompletedAt())
+	}
 	if res.GetStatusReasonCode() != terminalreason.NonZeroExit.String() || res.GetStatusReasonMessage() != "Process exited with non zero exit code" {
 		t.Fatalf("terminal reason = %q, %q", res.GetStatusReasonCode(), res.GetStatusReasonMessage())
 	}
 }
 
-func TestGetJobResponseHistoricalFallbacks(t *testing.T) {
+func TestGetJobResponseMissingReasonFallbacks(t *testing.T) {
 	now := time.Now()
 	failed := (&jobsmodel.GetJobResponse{
 		ID: "failed", JobStatus: jobsmodel.JobStatusFailed.ToString(), ScheduledAt: now, CreatedAt: now, UpdatedAt: now,

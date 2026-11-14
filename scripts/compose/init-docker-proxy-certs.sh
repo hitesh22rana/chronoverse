@@ -2,7 +2,6 @@
 set -eu
 
 root_dir="${1:-/docker-proxy-certs}"
-legacy_dir="${2:-/certs/docker-proxy}"
 cert_days="${DOCKER_PROXY_CERT_DAYS:-365}"
 rotate="${DOCKER_PROXY_ROTATE_CERTS:-false}"
 
@@ -108,11 +107,5 @@ for role in runtime-agent workflow-worker execution-worker; do
     "$root_dir/$role/client.key" "$root_dir/$role/token"
 done
 
-if [ -d "$legacy_dir" ]; then
-  case "$legacy_dir" in
-    /certs/docker-proxy|*/certs/docker-proxy) rm -rf "$legacy_dir" ;;
-    *) echo "refusing unsafe legacy certificate directory: $legacy_dir" >&2; exit 1 ;;
-  esac
-fi
 
 echo "Docker proxy identities are isolated and ready"

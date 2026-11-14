@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
@@ -37,13 +35,6 @@ type updateWorkflowActionDecision struct {
 	rescheduleRequired bool
 	nextGeneration     int64
 	buildStatus        string
-}
-
-type workflowRequestIdentitySet struct {
-	requestHash         string
-	compatibleHashes    []string
-	canonicalLegacyHash string
-	rawLegacyHash       string
 }
 
 // validateWorkflowPayloadKind rejects payloads that do not match the
@@ -100,123 +91,24 @@ func decideWorkflowUpdateAction(
 	return decision
 }
 
-// workflowRequestHashes hashes stable scalar workflow request fields.
-func workflowRequestHashes(fields map[string]any) (canonicalHash, legacyHash string, err error) {
-	legacyFields := make(map[string]any, len(fields))
+// workflowRequestHash hashes canonical workflow request fields without changing the input.
+func workflowRequestHash(fields map[string]any) (string, error) {
 	canonicalFields := make(map[string]any, len(fields))
 	for key, value := range fields {
-		legacyFields[key] = value
 		canonicalFields[key] = value
 	}
-
-	legacyHash, err = idempotency.HashCanonical(legacyFields)
-	if err != nil {
-		return "", "", status.Errorf(codes.Internal, "failed to hash legacy idempotency request: %v", err)
-	}
 	if payload, ok := canonicalFields[workflowRequestPayloadField].(string); ok {
-		canonicalPayload, canonicalErr := idempotency.CanonicalJSON(payload)
-		if canonicalErr != nil {
-			return "", "", status.Errorf(codes.InvalidArgument, "invalid workflow payload JSON: %v", canonicalErr)
+		canonicalPayload, err := idempotency.CanonicalJSON(payload)
+		if err != nil {
+			return "", status.Errorf(codes.InvalidArgument, "invalid workflow payload JSON: %v", err)
 		}
 		canonicalFields[workflowRequestPayloadField] = string(canonicalPayload)
 	}
-	// Only the validated payload string differs from the checked legacy fields.
-	//nolint:errcheck // Stable scalar fields remain serializable after string replacement.
-	canonicalHash, _ = idempotency.HashCanonical(canonicalFields)
-	return canonicalHash, legacyHash, nil
-}
-
-func workflowRequestHashSet(
-	canonicalFields map[string]any,
-	rawUUIDFields map[string]string,
-) (workflowRequestIdentitySet, error) {
-	requestHash, legacyHash, err := workflowRequestHashes(canonicalFields)
+	hash, err := idempotency.HashCanonical(canonicalFields)
 	if err != nil {
-		return workflowRequestIdentitySet{}, err
+		return "", status.Errorf(codes.Internal, "failed to hash idempotency request: %v", err)
 	}
-
-	rawFields := make(map[string]any, len(canonicalFields))
-	for key, value := range canonicalFields {
-		rawFields[key] = value
-	}
-	identityChanged := false
-	for key, rawValue := range rawUUIDFields {
-		if canonicalValue, ok := canonicalFields[key].(string); ok && rawValue != canonicalValue {
-			rawFields[key] = rawValue
-			identityChanged = true
-		}
-	}
-
-	// Keep the canonical-UUID legacy hash first, even when it equals the primary
-	// canonical-payload hash, so raw UUID spellings never displace it.
-	compatibleHashes := []string{legacyHash}
-	var rawLegacyHash string
-	if identityChanged {
-		// Only UUID strings differ from the already validated request fields.
-		//nolint:errcheck // Replacing scalar UUID strings cannot invalidate hashing or payload JSON.
-		_, computedRawLegacyHash, _ := workflowRequestHashes(rawFields)
-		rawLegacyHash = computedRawLegacyHash
-		// Raw UUID spelling remains an additional forward-upgrade matching
-		// alias; it must not displace the rollback-compatible hash above.
-		compatibleHashes = append(compatibleHashes, rawLegacyHash)
-	}
-	return workflowRequestIdentitySet{
-		requestHash:         requestHash,
-		compatibleHashes:    uniqueRequestHashes(compatibleHashes),
-		canonicalLegacyHash: legacyHash,
-		rawLegacyHash:       rawLegacyHash,
-	}, nil
-}
-
-func workflowCreateLegacyIdentities(set workflowRequestIdentitySet) []commandidempotency.LegacyIdentity {
-	return []commandidempotency.LegacyIdentity{{
-		Operation:   commandidempotency.LegacyOperationWorkflowCreate,
-		RequestHash: set.canonicalLegacyHash,
-	}}
-}
-
-func workflowUpdateLegacyIdentities(
-	canonicalWorkflowID,
-	rawWorkflowID string,
-	set workflowRequestIdentitySet,
-) []commandidempotency.LegacyIdentity {
-	identities := []commandidempotency.LegacyIdentity{{
-		Operation:   commandidempotency.LegacyWorkflowUpdateOperation(canonicalWorkflowID),
-		RequestHash: set.canonicalLegacyHash,
-	}}
-	if rawWorkflowID != canonicalWorkflowID {
-		identities = append(identities, commandidempotency.LegacyIdentity{
-			Operation:   commandidempotency.LegacyWorkflowUpdateOperation(rawWorkflowID),
-			RequestHash: set.rawLegacyHash,
-		})
-	}
-	return identities
-}
-
-func uniqueRequestHashes(hashes []string) []string {
-	unique := make([]string, 0, len(hashes))
-	seen := make(map[string]struct{}, len(hashes))
-	for _, hash := range hashes {
-		if _, exists := seen[hash]; exists {
-			continue
-		}
-		seen[hash] = struct{}{}
-		unique = append(unique, hash)
-	}
-	return unique
-}
-
-func isLegacyWorkflowCreateResponse(response json.RawMessage) bool {
-	if len(response) == 0 {
-		return false
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(response, &fields); err != nil || len(fields) != 1 {
-		return false
-	}
-	_, lowerID := fields["id"]
-	_, upperID := fields["ID"]
-	return lowerID || upperID
+	return hash, nil
 }
 
 func workflowEventPayload(workflowID, userID string, action workflowsmodel.Action, generation int64) *workflowsmodel.WorkflowEvent {

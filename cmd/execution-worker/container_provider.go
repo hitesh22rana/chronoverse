@@ -24,7 +24,6 @@ func newContainerProvider(
 	})
 	policy := imagepull.Config{TTL: cfg.ImagePullLockTTL, WaitTimeout: cfg.ImagePullLockWaitTimeout, RetryInterval: cfg.ImagePullLockRetryInterval}
 	provider = func(runtimeID, endpoint string) (executorrepo.ContainerSvc, error) {
-		endpoint = container.NormalizeDockerProxyEndpoint(endpoint, cfg.DockerProxy.TLS.CAFile != "")
 		client, err := cache.Get(endpoint)
 		if err != nil {
 			return nil, err

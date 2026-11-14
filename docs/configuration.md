@@ -22,7 +22,7 @@ Compose automatically reloads this file for later commands and restarts.
 | Dashboard | `3001` | Next.js dashboard, built with `NEXT_PUBLIC_API_URL=http://localhost:8080` |
 | HTTP API | `8080` | Direct server access |
 | OTLP gRPC | `4317` | OpenTelemetry collector endpoint |
-| LGTM Grafana | — | Not host-published by default; use the loopback override or Kubernetes port-forward described in [Grafana access and Compose upgrades](#grafana-access-and-compose-upgrades). Anonymous access is disabled; development credentials default to `admin` / `chronoverse-local-grafana-password` |
+| LGTM Grafana | — | Not host-published by default; use the loopback override or Kubernetes port-forward described in [Grafana access](#grafana-access). Anonymous access is disabled; development credentials default to `admin` / `chronoverse-local-grafana-password` |
 | PostgreSQL | `5432` | TLS-enabled database |
 | ClickHouse | `9440` | Secure native protocol |
 | Redis | `6379` | TLS-enabled Redis |
@@ -49,7 +49,7 @@ exposure is intentionally small:
 | Nginx | `80` | Dashboard and `/api/...` reverse proxy |
 | LGTM Grafana | — | Not host-published by default. Access via the opt-in Compose loopback override or `kubectl port-forward`; anonymous access is disabled and production credentials come from `GF_SECURITY_ADMIN_PASSWORD` (Compose, required) or `grafana-secret` (Kubernetes) |
 
-### Grafana access and Compose upgrades
+### Grafana access
 
 Compose keeps Grafana private by default. To expose the UI only on the Docker
 host loopback interface, recreate `lgtm` with the opt-in override:
@@ -64,15 +64,9 @@ The host port defaults to `3000`; set `GRAFANA_HOST_PORT` to choose another.
 Kubernetes uses
 `kubectl -n chronoverse port-forward svc/lgtm 3000:3000` instead.
 
-Grafana applies `GF_SECURITY_ADMIN_PASSWORD` only when it first creates its
-database. When upgrading an existing Compose `lgtm:/data` volume, first
-recreate the container from the updated Compose file. This detaches the old
-`/otel-lgtm` application volume so the pinned image supplies its hardened
-startup script and binaries. Then run the repository helper, which resets the
-database password from the container's configured
-`GF_SECURITY_ADMIN_PASSWORD`, migrates a legacy stored admin login to the
-configured `GF_SECURITY_ADMIN_USER`, and verifies anonymous `401` plus
-authenticated `200` responses:
+Grafana initializes its administrator credentials when it first creates its
+database. To rotate the password, update `GF_SECURITY_ADMIN_PASSWORD`, recreate
+`lgtm` with the same administrator username, and apply the configured password:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
@@ -80,35 +74,9 @@ docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
 scripts/grafana/reset-admin-password.sh
 ```
 
-The helper assumes an old login of `admin` when the configured username does
-not already authenticate. If an existing database uses another login and you
-are changing it, supply that stored login explicitly:
-
-```sh
-GRAFANA_CURRENT_ADMIN_USER=old-login scripts/grafana/reset-admin-password.sh
-```
-
-Set `GRAFANA_CONTAINER` when the container is not named `lgtm`. Passwords are
-fed to Grafana through standard input, so values beginning with `-` are not
-parsed as CLI flags. Do not remove the `lgtm` volume as an authentication
-migration: `/data` contains the Grafana database and dashboards together with
-persisted Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
-
-Production Kafka topic partition defaults are:
-
-- `KAFKA_WORKFLOWS_TOPIC_PARTITIONS=2`
-- `KAFKA_JOBS_TOPIC_PARTITIONS=4`
-- `KAFKA_JOB_LOGS_TOPIC_PARTITIONS=4`
-- `KAFKA_ANALYTICS_TOPIC_PARTITIONS=2`
-
-Workers are configured with compose resource reservations and two replicas for
-the low/mid/high-resource worker groups.
-
-| Worker group | Services | Limit | Reservation |
-| --- | --- | --- | --- |
-| Low | `scheduling-worker`, `analytics-processor`, `outbox-relay` | `0.25` CPU, `512M` memory | `0.1` CPU, `256M` memory |
-| Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
-| High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
+The helper passes the password to Grafana CLI through standard input and verifies
+that anonymous requests return `401` and configured credentials return `200`.
+Preserve the `lgtm:/data` volume during password rotation.
 
 ## Kubernetes Overlays
 
@@ -453,15 +421,10 @@ makes the node endpoint reachable across nodes and remains valid when nodes are
 added or replaced; restrict node-to-node TCP 2376 at the infrastructure
 firewall layer.
 
-When mTLS is configured, the shared Docker client also normalizes a legacy
-`tcp://<same-host>:2375` endpoint to
-`tcp://<same-host>:2376`. The exact DNS name, IPv4 address, or bracketed IPv6
-address is preserved. Runtime-agent applies this to its configured health
-endpoint, and workers normalize persisted endpoints before the bounded
-endpoint-cache lookup so old and new snapshots share one client. This is a
-no-op when mTLS is not configured, for Unix sockets, and for every other port.
-It lets jobs and workflow command snapshots created before the `2376`
-migration finish without a database rewrite in Compose or Kubernetes.
+Configure Docker endpoints with the listener's exact host and port. The proxy
+uses TCP `2376`; workers connect to the endpoint registered by runtime-agent.
+Endpoints are used as configured, including Unix sockets and direct Docker
+connections.
 
 Certificate identity is also authorization, not just authentication:
 

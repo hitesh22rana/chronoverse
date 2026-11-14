@@ -107,13 +107,12 @@ func TestCanonicalHashBindsImageButIgnoresExecutionDetails(t *testing.T) {
 	}
 }
 
-func TestEventKeysPreserveLegacyAndCanonicalIdentityContracts(t *testing.T) {
+func TestEventKeysUseCanonicalIdentities(t *testing.T) {
 	t.Parallel()
 	const upper = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
 	const canonical = "a0b1c2d3-e4f5-4678-9abc-def012345678"
 	for _, tt := range []struct{ got, want string }{
-		{idempotency.WorkflowEventKey(upper, "BUILD", 0), "workflow:" + canonical + ":BUILD"},
-		{idempotency.AutomaticScheduleEventKey(""), "workflow:unknown-event:automatic-job"},
+		{idempotency.WorkflowEventKey(upper, "BUILD", 1), "workflow:" + canonical + ":BUILD:1"},
 		{idempotency.AutomaticScheduleEventKey("workflow:1:BUILD:2"), "workflow:1:BUILD:2:automatic-job"},
 		{idempotency.JobCompletedAnalyticsEventKey(upper), "analytics:job:" + canonical + ":completed"},
 		{idempotency.WorkflowAnalyticsEventKey(upper), "analytics:workflow:" + canonical},

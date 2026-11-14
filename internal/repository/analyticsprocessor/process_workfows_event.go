@@ -28,24 +28,7 @@ func (r *Repository) processWorkflowsEvent(ctx context.Context, event *analytics
 	}
 
 	if event.EventKey == "" {
-		query := fmt.Sprintf(`
-			INSERT INTO %s
-			(user_id, workflow_id, kind)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, workflow_id)
-			DO UPDATE SET
-				kind = EXCLUDED.kind
-		`, postgres.TableAnalytics)
-
-		if _, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, data.Kind); err != nil {
-			return status.Error(codes.Internal, "failed to insert/update workflows analytics")
-		}
-		logger.Info("successfully processed workflows event",
-			zap.String("user_id", event.UserID),
-			zap.String("workflow_id", event.WorkflowID),
-			zap.String("kind", data.Kind),
-		)
-		return nil
+		return status.Error(codes.InvalidArgument, "analytics event key is required")
 	}
 
 	query := fmt.Sprintf(`

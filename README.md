@@ -125,10 +125,7 @@ Development defaults expose internal ports for debugging:
   which binds Grafana to `127.0.0.1:${GRAFANA_HOST_PORT:-3000}`, or use
   `kubectl -n chronoverse port-forward svc/lgtm 3000:3000` with Kubernetes.
   Sign in with the development default `admin` /
-  `chronoverse-local-grafana-password`. After upgrading an existing
-  `lgtm:/data` volume, run
-  `scripts/grafana/reset-admin-password.sh`; if its stored admin login is not
-  `admin`, set `GRAFANA_CURRENT_ADMIN_USER` to that login.
+  `chronoverse-local-grafana-password`.
 
 ### Production Stack
 
@@ -161,9 +158,8 @@ replicated workers, and a single Nginx entry point:
   `kubectl -n chronoverse port-forward svc/lgtm 3000:3000` for
   Kubernetes. Compose uses `GF_SECURITY_ADMIN_USER` /
   `GF_SECURITY_ADMIN_PASSWORD`; Kubernetes production uses `grafana-secret`.
-  Run `scripts/grafana/reset-admin-password.sh` after upgrading an existing
-  Compose `lgtm:/data` volume, with `GRAFANA_CURRENT_ADMIN_USER` set when the
-  stored login is not the legacy default `admin`.
+  Use `scripts/grafana/reset-admin-password.sh` to apply a rotated Compose
+  administrator password without deleting the data volume.
 
 Before running a real deployment, replace development secrets, default
 passwords, and generated local certificate assumptions with environment-specific

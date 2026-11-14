@@ -117,6 +117,9 @@ func New(
 }
 
 func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workflowsmodel.WorkflowEvent) error {
+	if workflowEntry.EventKey == "" {
+		return status.Error(codes.InvalidArgument, "workflow event key is required")
+	}
 	switch workflowEntry.Action {
 	case workflowsmodel.ActionBuild:
 		return r.buildWorkflow(ctx, workflowEntry)
@@ -133,14 +136,6 @@ func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workf
 	default:
 		return status.Errorf(codes.InvalidArgument, "unknown workflow action: %s", workflowEntry.Action)
 	}
-}
-
-func workflowOccurrenceKey(workflowEvent *workflowsmodel.WorkflowEvent) string {
-	if workflowEvent.EventKey != "" {
-		return workflowEvent.EventKey
-	}
-
-	return idempotency.WorkflowEventKey(workflowEvent.ID, workflowEvent.Action.ToString(), workflowEvent.Generation)
 }
 
 func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent *workflowsmodel.WorkflowEvent) bool {

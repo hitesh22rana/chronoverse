@@ -16,17 +16,14 @@ func TestDedupeLogsInBatch(t *testing.T) {
 	}
 
 	deduped := dedupeLogsInBatch(logs)
-	if len(deduped) != 3 {
-		t.Fatalf("expected 3 logs after dedupe, got %d", len(deduped))
+	if len(deduped) != 2 {
+		t.Fatalf("expected 2 logs after dedupe, got %d", len(deduped))
 	}
 	if deduped[0].Message != "first" {
 		t.Fatalf("expected first copy to be retained, got %q", deduped[0].Message)
 	}
 	if deduped[1].EventKey != "log-2" {
 		t.Fatalf("expected second unique event key, got %q", deduped[1].EventKey)
-	}
-	if deduped[2].Message != "without-key" {
-		t.Fatalf("expected log without event key to be retained, got %q", deduped[2].Message)
 	}
 }
 
@@ -96,6 +93,7 @@ func TestRetainedLogsFromBatch(t *testing.T) {
 	records := []*queueData{
 		{
 			logEntry: &jobsmodel.JobLogEvent{
+				EventKey:    "log:job-1:stdout:1",
 				JobID:       "job-1",
 				Stream:      "stdout",
 				SequenceNum: 1,

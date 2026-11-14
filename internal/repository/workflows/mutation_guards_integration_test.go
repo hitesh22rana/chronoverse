@@ -553,7 +553,7 @@ func TestIntegrationUpdateWorkflowReplayIsDurableAndIdempotent(t *testing.T) {
 		}
 		assertMutationState(t, fmt.Sprintf("replay %d", attempt+1), readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID), settled)
 	}
-	// A replay still runs the ledger and legacy-identity writes and commits, so
+	// A replay still runs the ledger reservation and commits, so
 	// the key has to stay one durable row rather than gain one per attempt.
 	if count := countCommandKeys(ctx, t, pg, updateKey); count != 1 {
 		t.Fatalf("ledger rows for the replayed key %q = %d, want the original 1", updateKey, count)

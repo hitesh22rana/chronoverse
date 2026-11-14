@@ -62,9 +62,9 @@ func TestIntegrationProcessesAnalyticsEvents(t *testing.T) {
 
 	// Produce one event of each type.
 	events := [][]byte{
-		mustAnalyticEvent(t, "", userID, workflowID, analyticsmodel.EventTypeWorkflows, analyticsmodel.EventTypeWorkflowsData{Kind: "CONTAINER"}),
-		mustAnalyticEvent(t, "", userID, workflowID, analyticsmodel.EventTypeJobs, analyticsmodel.EventTypeJobsData{JobExecutionDuration: 42}),
-		mustAnalyticEvent(t, "", userID, workflowID, analyticsmodel.EventTypeLogs, analyticsmodel.EventTypeLogsData{Count: 7}),
+		mustAnalyticEvent(t, "workflow:"+workflowID, userID, workflowID, analyticsmodel.EventTypeWorkflows, analyticsmodel.EventTypeWorkflowsData{Kind: "CONTAINER"}),
+		mustAnalyticEvent(t, "job:"+workflowID, userID, workflowID, analyticsmodel.EventTypeJobs, analyticsmodel.EventTypeJobsData{JobExecutionDuration: 42}),
+		mustAnalyticEvent(t, "logs:"+workflowID, userID, workflowID, analyticsmodel.EventTypeLogs, analyticsmodel.EventTypeLogsData{Count: 7}),
 	}
 	for _, event := range events {
 		if err := producer.ProduceSync(ctx, &kgo.Record{Topic: kafkapkg.TopicAnalytics, Value: event}).FirstErr(); err != nil {

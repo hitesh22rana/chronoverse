@@ -44,8 +44,9 @@ func batchContractEvent(t *testing.T, repo *Repository, retention bool) *queueDa
 	t.Helper()
 	userID := testkit.SeedUser(t.Context(), t, repo.pg, "joblogs-"+uuid.NewString()+"@chronoverse.test")
 	workflowID := testkit.SeedWorkflow(t.Context(), t, repo.pg, userID, "joblogs-"+t.Name())
+	jobID := uuid.NewString()
 	return &queueData{logEntry: &jobsmodel.JobLogEvent{
-		JobID: uuid.NewString(), WorkflowID: workflowID, UserID: userID,
+		EventKey: idempotency.LogEventKey(jobID, "stdout", 1, 1), JobID: jobID, WorkflowID: workflowID, UserID: userID,
 		Stream: "stdout", SequenceNum: 1, Message: "batch contract " + t.Name(),
 		TimeStamp: time.Now().UTC().Truncate(time.Millisecond), Retention: retention,
 	}}
@@ -70,9 +71,6 @@ func assertBatchAnalytics(t *testing.T, repo *Repository, item *queueData, want 
 func batchProcessedIdentityCount(t *testing.T, repo *Repository, item *queueData) int64 {
 	t.Helper()
 	key := item.logEntry.EventKey
-	if key == "" {
-		key = idempotency.LogEventKey(item.logEntry.JobID, item.logEntry.Stream, item.logEntry.SequenceNum)
-	}
 	var count int64
 	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer=$1 AND event_key=$2`, logAnalyticsConsumer, key).Scan(&count); err != nil {
 		t.Fatalf("read processed identity: %v", err)
@@ -85,11 +83,12 @@ func TestIntegrationBatchProcessedIdentityAssertion(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("explicit-%t", explicit), func(t *testing.T) {
 			item := &queueData{logEntry: &jobsmodel.JobLogEvent{JobID: uuid.NewString(), Stream: "stderr", SequenceNum: 7}}
-			key := idempotency.LogEventKey(item.logEntry.JobID, item.logEntry.Stream, item.logEntry.SequenceNum)
+			key := idempotency.LogEventKey(item.logEntry.JobID, item.logEntry.Stream, item.logEntry.SequenceNum, 1)
 			if explicit {
 				key = "explicit-" + uuid.NewString()
 				item.logEntry.EventKey = key
 			}
+			item.logEntry.EventKey = key
 			original := item.logEntry.EventKey
 			if got := batchProcessedIdentityCount(t, repo, item); got != 0 {
 				t.Fatalf("unprocessed identity count = %d, want 0", got)
@@ -140,7 +139,7 @@ func TestIntegrationBatchRetentionAndReplay(t *testing.T) {
 				if err != nil || len(got) != 2 || got[0] != item || got[1] != duplicate {
 					t.Fatalf("attempt %d returned %v, %v", attempt, got, err)
 				}
-				expectedKey := fmt.Sprintf("log:%s:stdout:1", item.logEntry.JobID)
+				expectedKey := fmt.Sprintf("log:%s:attempt:1:stdout:1", item.logEntry.JobID)
 				if item.logEntry.EventKey != expectedKey || duplicate.logEntry.EventKey != expectedKey {
 					t.Fatalf("event key = %q, want %q", item.logEntry.EventKey, expectedKey)
 				}

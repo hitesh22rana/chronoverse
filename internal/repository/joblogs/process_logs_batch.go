@@ -21,7 +21,6 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/clickhouse"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
@@ -66,9 +65,6 @@ func (r *Repository) processLogsBatch(ctx context.Context, batch []*queueData) (
 
 	for _, item := range batch {
 		log := item.logEntry
-		if log.EventKey == "" {
-			log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
-		}
 
 		if !log.Retention {
 			continue
@@ -297,7 +293,6 @@ func dedupeLogsInBatch(logs []*jobsmodel.JobLogEvent) []*jobsmodel.JobLogEvent {
 	filtered := make([]*jobsmodel.JobLogEvent, 0, len(logs))
 	for _, log := range logs {
 		if log.EventKey == "" {
-			filtered = append(filtered, log)
 			continue
 		}
 		if _, ok := seen[log.EventKey]; ok {
@@ -320,9 +315,6 @@ func retainedLogsFromBatch(batch []*queueData) []*jobsmodel.JobLogEvent {
 		log := item.logEntry
 		if !log.Retention {
 			continue
-		}
-		if log.EventKey == "" {
-			log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
 		}
 
 		logs = append(logs, log)

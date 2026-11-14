@@ -17,47 +17,19 @@ const log = (sequence: number, message = `message-${sequence}`): JobLog => ({
 })
 
 describe("log data", () => {
-    it("normalizes wire field variants and stderr", () => {
-        expect(normalizeJobLog({
-            eventId: "job:7",
-            sequenceNum: "7",
-            message: "failed",
-            stream: "stderr",
-        })).toMatchObject({
-            event_id: "job:7",
-            sequence_num: 7,
-            message: "failed",
-            stream: "stderr",
+    it("uses the API event identity and explicit sequence", () => {
+        expect(normalizeJobLog({event_id: "event:7", sequence_num: 7, stream: "stderr"}, "highlight")).toEqual({
+            event_id: "event:7", sequence_num: 7, stream: "stderr", timestamp: "", message: "", highlightToken: "highlight",
         })
+        expect(normalizeJobLog({event_id: "event:7"}).sequence_num).toBe(0)
     })
 
-    it.each([
-        [{ event_id: "snake:8", eventId: "camel:9", sequence_num: "0", sequenceNum: 9 }, "snake:8", 0],
-        [{ sequence_num: 0, sequenceNum: 9, event_id: "job:8" }, "job:8", 0],
-        [{ eventId: "job:segment:12" }, "job:segment:12", 12],
-        [{ event_id: "", eventId: "job:4" }, "job:4", 4],
-        [{ event_id: "not-a-sequence" }, "not-a-sequence", 0],
-        [{ sequence_num: "invalid", sequenceNum: 4, event_id: "job:8" }, "job:8", 0],
-        [{ sequenceNum: Infinity }, undefined, 0],
-        [{ sequence_num: NaN }, undefined, 0],
-        [{ sequence_num: -2 }, undefined, -2],
-        [{}, undefined, 0],
-    ])("normalizes compatible fields without overriding explicit sequences: %j", (wire, eventID, sequence) => {
-        expect(normalizeJobLog(wire, "highlight")).toEqual({
-            event_id: eventID,
-            highlightToken: "highlight",
-            sequence_num: sequence,
-            timestamp: "",
-            message: "",
-            stream: "stdout",
-        })
+    it.each([undefined, ""])("rejects a missing event identity: %j", (event_id) => {
+        expect(() => normalizeJobLog({event_id})).toThrow("Log event identity is required")
     })
 
-    it("preserves timestamp, message, and defaults unknown streams to stdout", () => {
-        expect(normalizeJobLog({
-            sequence_num: "2.5", timestamp: "2026-07-20T00:00:00Z",
-            message: "kept", stream: "unknown",
-        })).toMatchObject({ sequence_num: 2.5, timestamp: "2026-07-20T00:00:00Z", message: "kept", stream: "stdout" })
+    it.each([NaN, Infinity, -1, 2.5, 4294967296])("rejects an invalid uint32 sequence: %j", (sequence_num) => {
+        expect(() => normalizeJobLog({event_id: "event", sequence_num})).toThrow("Log sequence number must be a uint32")
     })
 
     it("orders equal sequences by stream and event identity regardless of arrival order", () => {
@@ -81,18 +53,6 @@ describe("log data", () => {
         expect(mergeLiveLogs([newest], [old])).toEqual([newest])
         expect(existing).toEqual([old, log(1)])
         expect(incoming).toEqual([newest, log(5), old])
-    })
-
-    it("deduplicates missing identities by the complete fallback key", () => {
-        const first = { ...log(3), event_id: undefined, message: "a" }
-        const second = { ...first, message: "b" }
-        const otherTime = { ...first, timestamp: "2026-07-21T00:00:00Z" }
-        const otherStream = { ...first, stream: "stderr" as const }
-        const otherSequence = { ...first, sequence_num: 4 }
-        expect(mergeLiveLogs(
-            [otherTime, second, otherSequence],
-            [first, { ...first }, otherStream],
-        )).toEqual([otherSequence, otherStream, first, second, otherTime])
     })
 
     it("prefers the highest sequence when duplicate event identities disagree", () => {

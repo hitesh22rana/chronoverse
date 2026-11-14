@@ -21,7 +21,6 @@ import (
 
 type boundaryLedgerSnapshot struct {
 	Hash, Status       string
-	Aliases            []string
 	Resource, Response sql.NullString
 	Created, Updated   time.Time
 	Completed, Expires sql.NullTime
@@ -34,10 +33,10 @@ type ledgerSnapshotReader interface {
 func readBoundaryLedger(t *testing.T, reader ledgerSnapshotReader, scope string) boundaryLedgerSnapshot {
 	t.Helper()
 	var state boundaryLedgerSnapshot
-	err := reader.QueryRow(t.Context(), `SELECT request_hash,status,request_hash_aliases,resource_id,response::text,
+	err := reader.QueryRow(t.Context(), `SELECT request_hash,status,resource_id,response::text,
  created_at,updated_at,completed_at,expires_at FROM command_idempotency_keys
  WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`, scope, ledger.OperationUserRegister, "command").Scan(
-		&state.Hash, &state.Status, &state.Aliases, &state.Resource, &state.Response, &state.Created, &state.Updated, &state.Completed, &state.Expires,
+		&state.Hash, &state.Status, &state.Resource, &state.Response, &state.Created, &state.Updated, &state.Completed, &state.Expires,
 	)
 	require.NoError(t, err)
 	return state
@@ -82,30 +81,6 @@ func TestIntegrationLedgerCompletionValidationKeepsTransactionAndOwner(t *testin
 	require.True(t, after.Expires.Valid)
 	require.Equal(t, time.Hour, after.Expires.Time.Sub(after.Completed.Time))
 	require.JSONEq(t, `{"id":"resource"}`, after.Response.String)
-}
-
-func TestIntegrationLedgerReplaysSharedAliasWithoutRenewingOwnership(t *testing.T) {
-	pg := testkit.Postgres(t)
-	scope := "alias-boundary-" + uuid.NewString()
-	key := "command"
-	oldHash, newHash, commonHash := testHash(81), testHash(82), testHash(83)
-	tx := reserveTx(t.Context(), t, pg)
-	cleanupBoundaryTx(t, tx)
-	reservation, err := ledger.Reserve(t.Context(), tx, scope, ledger.OperationUserRegister, key, oldHash, commonHash)
-	require.NoError(t, err)
-	require.False(t, reservation.Replay)
-	require.NoError(t, ledger.Complete(t.Context(), tx, scope, ledger.OperationUserRegister, key, oldHash, "resource", map[string]string{"id": "resource"}, time.Hour))
-	require.NoError(t, tx.Commit(t.Context()))
-	before := readBoundaryLedger(t, pg, scope)
-	replayTx := reserveTx(t.Context(), t, pg)
-	cleanupBoundaryTx(t, replayTx)
-	replay, err := ledger.Reserve(t.Context(), replayTx, scope, ledger.OperationUserRegister, key, newHash, commonHash)
-	require.NoError(t, err)
-	require.True(t, replay.Replay)
-	require.Equal(t, "resource", replay.ResourceID)
-	require.JSONEq(t, `{"id":"resource"}`, string(replay.Response))
-	require.NoError(t, replayTx.Commit(t.Context()))
-	require.Equal(t, before, readBoundaryLedger(t, pg, scope))
 }
 
 // cancelOnReplayReadTx cancels the context when Reserve reads a completed row.

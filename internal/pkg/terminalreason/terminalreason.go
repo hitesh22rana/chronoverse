@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,13 +28,13 @@ const (
 	ExecutionFailed Code = "EXECUTION_FAILED"
 	// SystemError is the safe fallback for infrastructure failures.
 	SystemError Code = "SYSTEM_ERROR"
-	// FailureReasonUnavailable indicates a historical failure cannot be classified safely.
+	// FailureReasonUnavailable indicates a failure has no recognized reason code.
 	FailureReasonUnavailable Code = "FAILURE_REASON_UNAVAILABLE"
 	// WorkflowTerminated indicates cancellation caused by workflow termination.
 	WorkflowTerminated Code = "WORKFLOW_TERMINATED"
 	// WorkflowUpdated indicates cancellation caused by a workflow change.
 	WorkflowUpdated Code = "WORKFLOW_UPDATED"
-	// CancellationReasonUnavailable indicates a historical cancellation has no reason.
+	// CancellationReasonUnavailable indicates a cancellation has no recognized reason code.
 	CancellationReasonUnavailable Code = "CANCELLATION_REASON_UNAVAILABLE"
 )
 
@@ -136,12 +135,12 @@ func FromError(err error) (Code, bool) {
 }
 
 // Resolve returns the safe terminal reason fields for a job response.
-func Resolve(jobStatus, persistedCode, failureKind, errorCode, errorMessage string) (Code, string, bool) {
+func Resolve(jobStatus, persistedCode string) (Code, string, bool) {
 	switch jobStatus {
 	case "FAILED":
 		code := Code(persistedCode)
 		if _, ok := failureCodes[code]; !ok {
-			code = deriveHistoricalFailure(failureKind, errorCode, errorMessage)
+			code = FailureReasonUnavailable
 		}
 		message, _ := Message(code)
 		return code, message, true
@@ -154,23 +153,5 @@ func Resolve(jobStatus, persistedCode, failureKind, errorCode, errorMessage stri
 		return code, message, true
 	default:
 		return "", "", false
-	}
-}
-
-func deriveHistoricalFailure(failureKind, errorCode, errorMessage string) Code {
-	message := strings.ToLower(errorMessage)
-	switch {
-	case errorCode == "DeadlineExceeded" && strings.Contains(message, "container execution timed out"):
-		return TimeLimitExceeded
-	case strings.Contains(message, "container exited with non-zero code"):
-		return NonZeroExit
-	case strings.Contains(message, "failed to pull image") || strings.Contains(message, "image pull output"):
-		return ImagePullFailed
-	case strings.Contains(message, "unexpected status code"):
-		return UnexpectedStatusCode
-	case failureKind == "SYSTEM":
-		return SystemError
-	default:
-		return FailureReasonUnavailable
 	}
 }

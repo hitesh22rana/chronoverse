@@ -47,8 +47,6 @@ func New(cfg *Config, pg *postgres.Postgres) *Repository {
 }
 
 // CreateWorkflow creates a new workflow.
-//
-//nolint:gocyclo // The cyclomatic complexity is high due to the different conditions and queries.
 func (r *Repository) CreateWorkflow(
 	ctx context.Context,
 	userID,
@@ -68,7 +66,6 @@ func (r *Repository) CreateWorkflow(
 		}
 		span.End()
 	}()
-	rawUserID := userID
 	userID, err = commandidempotency.CanonicalUUID(userID, "user ID")
 	if err != nil {
 		return nil, err
@@ -81,7 +78,7 @@ func (r *Repository) CreateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	identitySet, err := workflowRequestHashSet(map[string]any{
+	requestHash, err := workflowRequestHash(map[string]any{
 		workflowRequestUserIDField:                    userID,
 		workflowRequestNameField:                      name,
 		workflowRequestPayloadField:                   payload,
@@ -89,28 +86,19 @@ func (r *Repository) CreateWorkflow(
 		workflowRequestIntervalField:                  interval,
 		workflowRequestMaxConsecutiveJobFailuresField: maxConsecutiveJobFailuresAllowed,
 		"log_retention":                               logRetention,
-	}, map[string]string{
-		workflowRequestUserIDField: rawUserID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	requestHash := identitySet.requestHash
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.OperationWorkflowCreate
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, identitySet.compatibleHashes...)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return nil, err
 	}
-	if syncErr := commandidempotency.SyncLegacyIdentities(
-		ctx, tx, scope, operation, idempotencyKey, !reservation.Replay,
-		workflowCreateLegacyIdentities(identitySet)...,
-	); syncErr != nil {
-		return nil, syncErr
-	}
 	if reservation.Replay {
-		return r.replayCreatedWorkflow(ctx, tx, userID, reservation)
+		return r.replayCreatedWorkflow(ctx, tx, reservation)
 	}
 
 	buildHash, err := idempotency.WorkflowBuildHash(kind, payload)
@@ -178,26 +166,15 @@ func (r *Repository) CreateWorkflow(
 func (r *Repository) replayCreatedWorkflow(
 	ctx context.Context,
 	tx pgx.Tx,
-	userID string,
 	reservation *commandidempotency.Reservation,
 ) (*workflowsmodel.GetWorkflowResponse, error) {
 	if err := tx.Commit(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
 	}
-	if isLegacyWorkflowCreateResponse(reservation.Response) {
-		res, err := r.GetWorkflow(ctx, reservation.ResourceID, userID)
-		if err != nil {
-			return nil, err
-		}
-		res.IdempotencyReplay = true
-		return res, nil
-	}
 
-	res := &workflowsmodel.GetWorkflowResponse{ID: reservation.ResourceID}
-	if len(reservation.Response) > 0 {
-		if err := json.Unmarshal(reservation.Response, res); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
-		}
+	res := &workflowsmodel.GetWorkflowResponse{}
+	if err := json.Unmarshal(reservation.Response, res); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
 	}
 	res.IdempotencyReplay = true
 	return res, nil
@@ -224,7 +201,6 @@ func (r *Repository) UpdateWorkflow(
 		}
 		span.End()
 	}()
-	rawWorkflowID, rawUserID := workflowID, userID
 	workflowID, userID, err = commandidempotency.CanonicalWorkflowIdentity(workflowID, userID)
 	if err != nil {
 		return err
@@ -237,33 +213,23 @@ func (r *Repository) UpdateWorkflow(
 	//nolint:errcheck // The error is handled in the next line
 	defer tx.Rollback(ctx)
 
-	identitySet, err := workflowRequestHashSet(map[string]any{
+	requestHash, err := workflowRequestHash(map[string]any{
 		workflowRequestWorkflowIDField:                workflowID,
 		workflowRequestUserIDField:                    userID,
 		workflowRequestNameField:                      name,
 		workflowRequestPayloadField:                   payload,
 		workflowRequestIntervalField:                  interval,
 		workflowRequestMaxConsecutiveJobFailuresField: maxConsecutiveJobFailuresAllowed,
-	}, map[string]string{
-		workflowRequestWorkflowIDField: rawWorkflowID,
-		workflowRequestUserIDField:     rawUserID,
 	})
 	if err != nil {
 		return err
 	}
-	requestHash := identitySet.requestHash
 
 	scope := commandidempotency.UserScope(userID)
 	operation := commandidempotency.WorkflowUpdateOperation(workflowID)
-	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash, identitySet.compatibleHashes...)
+	reservation, err := commandidempotency.Reserve(ctx, tx, scope, operation, idempotencyKey, requestHash)
 	if err != nil {
 		return err
-	}
-	if syncErr := commandidempotency.SyncLegacyIdentities(
-		ctx, tx, scope, operation, idempotencyKey, !reservation.Replay,
-		workflowUpdateLegacyIdentities(workflowID, rawWorkflowID, identitySet)...,
-	); syncErr != nil {
-		return syncErr
 	}
 	if reservation.Replay {
 		if reservation.ResourceID != workflowID {

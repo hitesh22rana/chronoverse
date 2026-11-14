@@ -23,24 +23,19 @@ docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
 `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000`; it does not expose Grafana to the
 LAN.
 
-For an existing Compose `lgtm:/data` volume, recreate `lgtm` from the updated
-Compose file and reset the database credential from the configured container
-secret:
+To rotate the Compose administrator password, update
+`GF_SECURITY_ADMIN_PASSWORD`, recreate `lgtm` with the same administrator
+username, and apply the password to Grafana's database:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
 scripts/grafana/reset-admin-password.sh
 ```
 
-The helper refuses containers that still mount the obsolete `/otel-lgtm`
-application volume. It uses Grafana's supported `grafana cli` command with the
-correct image home and data paths, passes the password through standard input,
-and migrates the stored `admin` login to `GF_SECURITY_ADMIN_USER` when needed.
-If the stored login is not `admin`, run the helper with
-`GRAFANA_CURRENT_ADMIN_USER=old-login`. It then verifies anonymous requests
-return `401` and the configured credentials return `200`. Do not delete the
-`lgtm` volume for this migration: `/data` contains the Grafana database and
-dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
+The helper uses Grafana CLI, passes the password through standard input, and
+verifies anonymous requests return `401` and configured credentials return
+`200`. Preserve `lgtm:/data`: it contains the Grafana database and dashboards,
+Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 ## Built-in dashboard
 

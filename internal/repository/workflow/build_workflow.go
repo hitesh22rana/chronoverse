@@ -44,7 +44,7 @@ var transientBuildRetryErrorCodes = []codes.Code{
 // buildWorkflow executes the build workflow.
 func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *workflowsmodel.WorkflowEvent) error {
 	workflowID := workflowEvent.ID
-	occurrenceKey := workflowOccurrenceKey(workflowEvent)
+	occurrenceKey := workflowEvent.EventKey
 	scheduleIdempotencyKey := idempotency.AutomaticScheduleEventKey(occurrenceKey)
 
 	ctx, err := r.withAuthorization(parentCtx)

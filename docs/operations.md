@@ -290,20 +290,26 @@ inspect the failed migration's statements, restore the schema to a consistent
 state, clear the dirty flag (`migrate force` for PostgreSQL, deleting the row
 for ClickHouse), and restart `init-database-migration`.
 
-## Database Schema Baseline
+## Database Migrations
 
-PostgreSQL and ClickHouse migrations define the current schema from scratch,
-with one numbered up/down pair per responsibility. Related columns, indexes,
-types, and triggers live together. Numbers preserve dependency order; down
-migrations must run in reverse order.
+Run `database-migration` before starting application services. It applies pending
+PostgreSQL and ClickHouse migrations in dependency order and configures
+Meilisearch indexes. Confirm that the job completes successfully before
+proceeding with the rollout.
 
-This pre-production baseline replaces the previous migration history. Existing
-development databases must be recreated before applying it. Resetting only
-`schema_migrations` is insufficient. Preserve any needed development data
-before recreating databases. Legacy backfills and upgrade paths are not included.
+Before schema-changing releases, take and verify database backups and review
+migration compatibility with the running application. Pause traffic and workers
+when a migration requires exclusive access or changes the schema expected by
+running services.
 
-The normal migration executable applies upgrades only. Down migrations remove
-the objects and their data; they do not restore an earlier application schema.
+### Rollback
+
+The migration executable applies upgrades only. Restarting an earlier application
+image does not reverse database changes. Review the release's down migrations
+before using them, run them in reverse dependency order, and account for any data
+they remove. Keep affected application services stopped until the schema and
+application versions are compatible. Restore a verified backup when rollback
+requires recovering removed data.
 
 ## Health Checks
 

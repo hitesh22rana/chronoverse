@@ -256,7 +256,7 @@ func (r *Repository) containerSvcForRuntime(runtimeNodeID, endpoint string) (Con
 	return r.svc.CsvcForEndpoint(runtimeNodeID, endpoint)
 }
 
-// releaseLifecycleLock allows canceled operations to relinquish ownership without unbounded cleanup.
+// releaseLifecycleLock detaches caller cancellation; its explicit deadline bounds Redis socket I/O.
 func (r *Repository) releaseLifecycleLock(parentCtx context.Context, key, token string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), lifecycleLockReleaseTimeout)
 	defer cancel()

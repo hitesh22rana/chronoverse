@@ -147,6 +147,8 @@ func New(ctx context.Context, cfg *Config) (*Store, error) {
 		}
 	}
 
+	// Apply caller deadlines to socket I/O as well as pool waits and retries.
+	redisOptions.ContextTimeoutEnabled = true
 	client := redis.NewClient(redisOptions)
 
 	if err := client.ConfigSet(ctx, "maxmemory", cfg.MaxMemory).Err(); err != nil {

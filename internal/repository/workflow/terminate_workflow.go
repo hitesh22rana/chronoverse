@@ -505,10 +505,7 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		return distributedLockError(parentCtx)
 	}
 
-	defer func() {
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
-		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
-	}()
+	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
 
 	cleanupJobs, err := r.markRunningJobsCanceled(ctx, workflow, userID)
 	if err != nil {

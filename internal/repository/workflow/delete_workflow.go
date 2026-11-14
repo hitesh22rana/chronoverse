@@ -36,10 +36,7 @@ func (r *Repository) deleteWorkflow(parentCtx context.Context, workflowID, userI
 		return distributedLockError(parentCtx)
 	}
 
-	defer func() {
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
-		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
-	}()
+	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
 
 	return r.deleteWorkflowLogs(parentCtx, workflowID, userID)
 }

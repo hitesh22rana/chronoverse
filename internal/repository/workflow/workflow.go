@@ -32,9 +32,10 @@ import (
 )
 
 const (
-	authSubject   = "internal/workflow"
-	retryBackoff  = time.Second
-	lockKeyPrefix = "workflow"
+	authSubject                 = "internal/workflow"
+	retryBackoff                = time.Second
+	lockKeyPrefix               = "workflow"
+	lifecycleLockReleaseTimeout = 5 * time.Second
 )
 
 // ContainerSvc represents the container service.
@@ -253,4 +254,12 @@ func (r *Repository) containerSvcForRuntime(runtimeNodeID, endpoint string) (Con
 	}
 
 	return r.svc.CsvcForEndpoint(runtimeNodeID, endpoint)
+}
+
+// releaseLifecycleLock detaches caller cancellation; its explicit deadline bounds Redis socket I/O.
+func (r *Repository) releaseLifecycleLock(parentCtx context.Context, key, token string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), lifecycleLockReleaseTimeout)
+	defer cancel()
+	//nolint:errcheck // Release is best effort; the lock may have expired or changed owners.
+	_ = r.rdb.ReleaseDistributedLockWithToken(ctx, key, token)
 }

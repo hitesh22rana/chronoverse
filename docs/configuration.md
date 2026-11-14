@@ -213,6 +213,10 @@ Common settings:
 - `REDIS_TLS_ENABLED`, `REDIS_TLS_CA_FILE`, `REDIS_TLS_CERT_FILE`,
   `REDIS_TLS_KEY_FILE`
 
+Redis socket I/O uses the earlier of the caller context deadline and the configured
+`REDIS_READ_TIMEOUT` or `REDIS_WRITE_TIMEOUT`. Without a caller deadline, the
+configured socket timeout applies.
+
 Redis is used for sessions, cached reads, and live log stream state. Production
 compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
 client process so one late-starting service does not reset Redis back to the

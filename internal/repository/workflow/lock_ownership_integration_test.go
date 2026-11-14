@@ -3,6 +3,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -87,5 +88,32 @@ func TestIntegrationExpiredWorkflowOwnerCannotReleaseReplacementLock(t *testing.
 	}
 	if count, err := client.Exists(ctx, key).Result(); err != nil || count != 0 {
 		t.Fatalf("replacement owner did not release its lock: exists=%d err=%v", count, err)
+	}
+}
+
+func TestIntegrationCanceledWorkflowReleasesOwnedLock(t *testing.T) {
+	store := testkit.Redis(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	workflow := lifecycleWorkflow()
+	workflow.Id = uuid.NewString()
+	event := lifecycleEvent(workflowsmodel.ActionReschedule)
+	event.ID = workflow.Id
+	repo, _ := lifecycleRepository(workflow)
+	repo.rdb = store
+	repo.svc.Jobs = &testJobsClient{scheduleJob: func(ctx context.Context, _ *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
+		cancel()
+		return nil, ctx.Err()
+	}}
+	if err := repo.rescheduleWorkflow(ctx, event); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled reschedule = %v", err)
+	}
+	key := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, event.Action.ToString(), workflow.Id)
+	token, acquired, err := store.AcquireDistributedLockWithToken(t.Context(), key, time.Minute)
+	if err != nil || !acquired {
+		t.Fatalf("canceled owner retained lock: acquired=%v err=%v", acquired, err)
+	}
+	if err := store.ReleaseDistributedLockWithToken(t.Context(), key, token); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -429,3 +429,58 @@ func assertTokenLockCommand(t *testing.T, operation string, args []string) {
 		t.Errorf("extend arguments = %v", args)
 	}
 }
+
+func TestRedisLockReleaseRespectsContextDeadline(t *testing.T) {
+	for _, tlsEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("TLS=%v", tlsEnabled), func(t *testing.T) {
+			var serverTLS *tls.Config
+			clientTLS := &TLSConfig{}
+			if tlsEnabled {
+				cert, key := adapterTLSIdentity(t)
+				identity, err := tls.LoadX509KeyPair(cert, key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				serverTLS = &tls.Config{Certificates: []tls.Certificate{identity}, MinVersion: tls.VersionTLS12}
+				clientTLS = &TLSConfig{Enabled: true, CertFile: cert, KeyFile: key, CAFile: cert}
+			}
+			entered := make(chan struct{}, 1)
+			address := redisProtocolPeer(t, serverTLS, func(args []string) string {
+				if strings.EqualFold(args[0], "eval") {
+					select {
+					case entered <- struct{}{}:
+					default:
+					}
+					return "" // Accept the release but never send its reply.
+				}
+				return redisHandshakeReply(args)
+			})
+			cfg := redisProtocolConfig(t, address)
+			cfg.TLSConfig = clientTLS
+			cfg.ReadTimeout, cfg.WriteTimeout = 3*time.Second, 3*time.Second
+			store, err := New(t.Context(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.client.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- store.ReleaseDistributedLockWithToken(ctx, "workflow:BUILD:one", "owner") }()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("release did not reach Redis")
+			}
+			<-ctx.Done()
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("stalled release succeeded")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("release remained blocked beyond its context deadline")
+			}
+		})
+	}
+}

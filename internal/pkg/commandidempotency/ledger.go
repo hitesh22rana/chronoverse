@@ -5,9 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"regexp"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -32,8 +30,6 @@ const (
 	MinimumEventCommandRetention = 7 * 24 * time.Hour
 )
 
-var requestHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
 // Stable command-ledger operation names. These are protocol values and must
 // not be renamed without an explicit data migration.
 const (
@@ -50,17 +46,12 @@ const (
 	OperationJobReleaseForRetry      = "job.release_for_retry"
 	OperationJobRecoverExpiredLeases = "job.recover_expired_leases"
 
-	// LegacyOperationWorkflowCreate is the workflow-create operation restored
-	// for binaries using the pre-shared-ledger workflow table.
-	LegacyOperationWorkflowCreate = "create_workflow"
-
-	workflowUpdateOperationPrefix       = "workflow.update:"
-	manualScheduleOperationPrefix       = "job.schedule.manual:"
-	legacyWorkflowUpdateOperationPrefix = "update_workflow:"
-	userScopePrefix                     = "user:"
-	workflowScopePrefix                 = "workflow:"
-	jobScopePrefix                      = "job:"
-	workerScopePrefix                   = "worker:"
+	workflowUpdateOperationPrefix = "workflow.update:"
+	manualScheduleOperationPrefix = "job.schedule.manual:"
+	userScopePrefix               = "user:"
+	workflowScopePrefix           = "workflow:"
+	jobScopePrefix                = "job:"
+	workerScopePrefix             = "worker:"
 )
 
 // WorkflowUpdateOperation returns the stable workflow-update operation name.
@@ -71,13 +62,6 @@ func WorkflowUpdateOperation(workflowID string) string {
 // ManualScheduleOperation returns the stable manual-schedule operation name.
 func ManualScheduleOperation(workflowID string) string {
 	return manualScheduleOperationPrefix + idempotency.CanonicalUUIDText(workflowID)
-}
-
-// LegacyWorkflowUpdateOperation returns the exact pre-shared-ledger operation
-// for one accepted workflow-ID spelling. It deliberately does not canonicalize
-// the input because rollback must preserve the client's original path identity.
-func LegacyWorkflowUpdateOperation(rawWorkflowID string) string {
-	return legacyWorkflowUpdateOperationPrefix + rawWorkflowID
 }
 
 // UserScope returns a user command scope.
@@ -129,13 +113,6 @@ type Reservation struct {
 	Response   json.RawMessage
 }
 
-// LegacyIdentity is one exact operation/hash pair understood by the workflow
-// idempotency implementation restored by migration 11's down migration.
-type LegacyIdentity struct {
-	Operation   string
-	RequestHash string
-}
-
 const (
 	// idempotencyKeyMinLength is the minimum normalized idempotency key length in bytes.
 	idempotencyKeyMinLength = 1
@@ -172,34 +149,28 @@ func NormalizeKey(raw string) (string, error) {
 // A fresh reservation must be mutated and completed in this same transaction;
 // callers must never commit a PROCESSING row because it deliberately has no
 // replay expiry and represents transaction-local command ownership.
-// Compatible request hashes are accepted only when matching an existing row;
-// fresh reservations always persist the primary request hash.
 func Reserve(
 	ctx context.Context,
 	tx pgx.Tx,
 	scope, operation, rawKey, requestHash string,
-	compatibleRequestHashes ...string,
 ) (*Reservation, error) {
 	key, err := NormalizeKey(rawKey)
 	if err != nil {
 		return nil, err
 	}
-	requestHashAliases := normalizeRequestHashAliases(compatibleRequestHashes)
-
 	query := fmt.Sprintf(`
 		WITH reservation AS (
 			SELECT clock_timestamp() AT TIME ZONE 'utc' AS reserved_at
 		)
 		INSERT INTO %s AS keys (
-			scope, operation, idempotency_key, request_hash, request_hash_aliases, status,
+			scope, operation, idempotency_key, request_hash, status,
 			resource_id, response, created_at, updated_at, completed_at, expires_at
 		)
-		SELECT $1, $2, $3, $4, $5, 'PROCESSING', NULL, NULL,
+		SELECT $1, $2, $3, $4, 'PROCESSING', NULL, NULL,
 			reservation.reserved_at, reservation.reserved_at, NULL, NULL
 		FROM reservation
 		ON CONFLICT (scope, operation, idempotency_key) DO UPDATE
 		SET request_hash = EXCLUDED.request_hash,
-			request_hash_aliases = EXCLUDED.request_hash_aliases,
 			status = 'PROCESSING',
 			resource_id = NULL,
 			response = NULL,
@@ -211,7 +182,7 @@ func Reserve(
 		  AND keys.expires_at <= clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableCommandIdempotencyKeys)
 
-	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, requestHashAliases)
+	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to reserve command idempotency key: %v", err)
 	}
@@ -221,25 +192,23 @@ func Reserve(
 	}
 
 	var storedHash, storedStatus string
-	var storedHashAliases []string
 	var resourceID sql.NullString
 	var response []byte
 	query = fmt.Sprintf(`
-		SELECT request_hash, request_hash_aliases, status, resource_id, response
+		SELECT request_hash, status, resource_id, response
 		FROM %s
 		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
 		LIMIT 1;
 	`, postgres.TableCommandIdempotencyKeys)
 	if err = tx.QueryRow(ctx, query, scope, operation, key).Scan(
 		&storedHash,
-		&storedHashAliases,
 		&storedStatus,
 		&resourceID,
 		&response,
 	); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read command idempotency key: %v", err)
 	}
-	if !requestHashMatches(storedHash, storedHashAliases, requestHash, compatibleRequestHashes) {
+	if storedHash != requestHash {
 		recordOutcome(ctx, operation, "conflict")
 		return nil, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
@@ -251,117 +220,11 @@ func Reserve(
 	return &Reservation{Replay: true, ResourceID: resourceID.String, Response: response}, nil
 }
 
-func requestHashMatches(storedHash string, storedAliases []string, requestHash string, requestAliases []string) bool {
-	if storedHash == requestHash {
-		return true
-	}
-	for _, h := range requestAliases {
-		if storedHash == h {
-			return true
-		}
-	}
-	for _, h := range storedAliases {
-		if h == requestHash {
-			return true
-		}
-		for _, w := range requestAliases {
-			if h == w {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func normalizeRequestHashAliases(aliases []string) []string {
-	if aliases == nil {
-		return []string{}
-	}
-	return aliases
-}
-
 func recordOutcome(ctx context.Context, operation, outcome string) {
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String("chronoverse.idempotency.operation", operation),
 		attribute.String("chronoverse.idempotency.outcome", outcome),
 	)
-}
-
-// SyncLegacyIdentities records rollback-compatible identities for an accepted
-// workflow command. Fresh reservations replace identities left by an expired
-// key; completed replays append newly accepted UUID spellings without touching
-// the parent ledger timestamps.
-func SyncLegacyIdentities(
-	ctx context.Context,
-	tx pgx.Tx,
-	scope, operation, rawKey string,
-	fresh bool,
-	identities ...LegacyIdentity,
-) error {
-	key, err := NormalizeKey(rawKey)
-	if err != nil {
-		return err
-	}
-	if len(identities) == 0 {
-		return status.Error(codes.Internal, "workflow command has no rollback-compatible identity")
-	}
-
-	if fresh {
-		query := fmt.Sprintf(`
-			DELETE FROM %s
-			WHERE scope = $1 AND operation = $2 AND idempotency_key = $3;
-		`, postgres.TableCommandIdempotencyLegacyIdentities)
-		if _, err = tx.Exec(ctx, query, scope, operation, key); err != nil {
-			return status.Errorf(codes.Internal, "failed to reset command legacy identities: %v", err)
-		}
-	}
-
-	query := fmt.Sprintf(`
-		INSERT INTO %s AS identities (
-			scope, operation, idempotency_key, legacy_operation, legacy_request_hash
-		)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (scope, operation, idempotency_key, legacy_operation) DO UPDATE
-		SET legacy_request_hash = EXCLUDED.legacy_request_hash
-		WHERE identities.legacy_request_hash = EXCLUDED.legacy_request_hash;
-	`, postgres.TableCommandIdempotencyLegacyIdentities)
-	seen := make(map[string]string, len(identities))
-	for _, identity := range identities {
-		if identity.Operation == "" || !requestHashPattern.MatchString(identity.RequestHash) {
-			return status.Error(codes.Internal, "invalid rollback-compatible command identity")
-		}
-		if existingHash, exists := seen[identity.Operation]; exists {
-			if existingHash != identity.RequestHash {
-				return status.Error(codes.Internal, "legacy operation resolved to multiple request hashes")
-			}
-			continue
-		}
-		seen[identity.Operation] = identity.RequestHash
-
-		tag, execErr := tx.Exec(ctx, query, scope, operation, key, identity.Operation, identity.RequestHash)
-		if execErr != nil {
-			return status.Errorf(codes.Internal, "failed to store command legacy identity: %v", execErr)
-		}
-		if err = validateLegacyIdentityWrite(fresh, tag.RowsAffected()); err != nil {
-			return status.Error(codes.Internal, "legacy operation was already associated with a different request hash")
-		}
-	}
-	return nil
-}
-
-func validateLegacyIdentityWrite(fresh bool, rowsAffected int64) error {
-	if rowsAffected == 1 {
-		return nil
-	}
-	// Reserve has already established that a completed replay is canonically
-	// equivalent. Its raw legacy hash can still differ because the old workflow
-	// implementation hashed the payload's lexical JSON representation. Keep the
-	// original operation/hash pair so rollback preserves a valid replay identity;
-	// newly observed raw UUID operations are inserted independently above.
-	if !fresh && rowsAffected == 0 {
-		return nil
-	}
-	return errors.New("legacy identity write invariant violated")
 }
 
 // Complete compare-and-set completes exactly one owned PROCESSING reservation.

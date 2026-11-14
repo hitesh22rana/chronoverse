@@ -661,7 +661,7 @@ services:
         fi
 
         DOCKER_PROXY_ROTATE_CERTS="$${DOCKER_PROXY_ROTATE_CERTS:-false}" \
-          /usr/local/bin/init-docker-proxy-certs /docker-proxy-certs /certs/docker-proxy
+          /usr/local/bin/init-docker-proxy-certs /docker-proxy-certs
 
         echo "🔐 Setting permissions for all certificates..."
 

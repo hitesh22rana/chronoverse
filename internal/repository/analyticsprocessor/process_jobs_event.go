@@ -28,25 +28,7 @@ func (r *Repository) processJobsEvent(ctx context.Context, event *analyticsmodel
 	}
 
 	if event.EventKey == "" {
-		query := fmt.Sprintf(`
-			INSERT INTO %s
-			(user_id, workflow_id, jobs_count, total_job_execution_duration)
-			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (user_id, workflow_id)
-			DO UPDATE SET
-				jobs_count = %s.jobs_count + EXCLUDED.jobs_count,
-				total_job_execution_duration = %s.total_job_execution_duration + EXCLUDED.total_job_execution_duration
-		`, postgres.TableAnalytics, postgres.TableAnalytics, postgres.TableAnalytics)
-
-		if _, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, 1, data.JobExecutionDuration); err != nil {
-			return status.Error(codes.Internal, "failed to insert/update jobs analytics")
-		}
-		logger.Info("successfully processed jobs event",
-			zap.String("user_id", event.UserID),
-			zap.String("workflow_id", event.WorkflowID),
-			zap.Uint64("job_execution_duration", data.JobExecutionDuration),
-		)
-		return nil
+		return status.Error(codes.InvalidArgument, "analytics event key is required")
 	}
 
 	query := fmt.Sprintf(`

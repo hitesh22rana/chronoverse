@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 )
@@ -34,7 +33,7 @@ func Marshal(event *jobsmodel.JobLogEvent) ([]byte, error) {
 		return nil, status.Error(codes.InvalidArgument, "job log event is required")
 	}
 	if event.EventKey == "" {
-		event.EventKey = idempotency.LogEventKey(event.JobID, event.Stream, event.SequenceNum)
+		return nil, status.Error(codes.InvalidArgument, "job log event key is required")
 	}
 
 	payload, err := json.Marshal(event)

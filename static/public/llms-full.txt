@@ -290,7 +290,7 @@ Infrastructure failures may release a job for a bounded retry. The dispatch atte
 
 User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
 
-Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Historical terminal records whose cause cannot be identified safely return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
+Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Terminal records without a recognized reason code return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
 
 ## Execution ownership
 
@@ -548,7 +548,7 @@ Client and random command results remain replayable for 24 hours. Deterministic 
 
 Automatic jobs and notifications also retain their deterministic identity in their domain rows. After the shared-ledger record expires, exact replay can reconstruct it without creating a duplicate resource, while changed input still conflicts. Cancellation remains effect-idempotent after expiry, but its original cleanup snapshot is guaranteed only during the configured event window. Workflow terminal effects follow the owning workflow lifecycle instead of a time-based ledger policy.
 
-Workflow commands keep canonical identities for current execution and exact legacy operation/hash pairs for every accepted raw UUID spelling. Migration rollback restores each pair, preventing a spelling-only retry from repeating a workflow update.
+Workflow commands hash canonical UUID identities and JSON payloads. Equivalent UUID spellings and JSON formatting resolve to the same request; changed input conflicts with an unexpired command.
 
 ## Atomic publication intent
 
@@ -767,10 +767,9 @@ An individually oversized document returns retryable `ResourceExhausted`;
 its Kafka batch remains uncommitted. Logs are neither truncated nor skipped.
 A server/proxy limit too small for one document requires an operator limit
 increase and can still block that partition until corrected. Normal log lines
-are limited to 256 KiB before encoding. A legacy document exceeding the 4 MiB
-application budget requires explicit operator recovery; normal workflow deletion
-removes the workflow and all its retained logs, not just the offending record, and can
-clear its pending records. Rejection errors include document, workflow and job
+are limited to 256 KiB before encoding. A document exceeding the 4 MiB
+application budget requires inspecting its producer and correcting the source of
+oversized events before retrying. Rejection errors include document, workflow and job
 IDs for diagnosis. Do not force-commit offsets.
 </doc>
 
@@ -1224,7 +1223,7 @@ docker compose -f compose.dev.yaml up -d --build jobs-service
 ```
 
 Changes to the shared Docker client package require rebuilding all three
-consumers so endpoint migration, mTLS, and certificate reload behavior stay in
+consumers so endpoint configuration, mTLS, and certificate reload behavior stay in
 sync:
 
 ```bash
@@ -1287,26 +1286,19 @@ traffic.
 
 Application services and infrastructure otherwise remain on Compose networks. The Compose production profile still represents one Docker runtime named `local-docker`. In Kubernetes, production is self-hosted: PostgreSQL, Redis, Kafka, ClickHouse, Meilisearch, services, workers, and runtime-agent run inside the cluster. Each Docker-capable node should run `runtime-agent` beside `docker-proxy` and register `tcp://$(NODE_IP):2376` via `hostNetwork` (`127.0.0.1:2376` health); workers can schedule anywhere and route Docker work through the runtime registry. Kubernetes setup generates `docker-proxy-ca`/`server`/`client-*` mTLS material plus `docker-proxy-auth` token. The proxy binds `:2376 ssl ... verify required` and enforces token + exact method/path allowlist via `WithDockerProxyTLS`/`WithDockerProxyToken`.
 
-## Maintenance-window upgrades
+## Database migrations and rollback
 
-Deploy schema-changing releases as an offline cutover; mixed application
-versions are not supported across an idempotency-ledger migration.
+Run `database-migration` before starting application services and confirm it
+completes successfully. Before schema-changing releases, take and verify backups
+and review compatibility with running services. Pause traffic and workers when
+the migration requires exclusive access or changes their expected schema.
 
-<Steps>
-  <Step title="Quiesce mutations">Back up the databases, stop public traffic, and stop the server, workers, processors, and outbox relay. Drain in-flight requests and transactions.</Step>
-  <Step title="Apply the new schema">Run the new release's database-migration image. Resolve any preflight failure before changing application versions. Then use an approved Redis `SCAN` plus `UNLINK` procedure to delete keys matching `workflow:*` and `workflows:*`, and verify both scans are empty while application processes remain stopped. Migration-time threshold reconciliation updates PostgreSQL directly and cannot invalidate Redis atomically. Do not use `FLUSHDB`, because Redis also stores sessions and coordination state.</Step>
-  <Step title="Start internal processing">Start one version of the domain services, then the relay and workers. Keep public traffic stopped while checking health, consumer progress, outbox publication, and runtime registration.</Step>
-  <Step title="Canary and resume">Exercise replay, changed-input conflict, scheduling, termination, deletion, and deterministic outbox keys with approved fixtures. Clean them up before restoring public traffic.</Step>
-</Steps>
+The migration executable applies upgrades only. Rollback requires reviewed down
+migrations in reverse dependency order or a verified backup restore. Keep affected
+services stopped until the schema and application versions are compatible, and
+account for data removed by down migrations.
 
-The standard migration executable applies upgrades only. Rollback requires an
-operator-reviewed down migration or a verified pre-upgrade database restore
-while all mutation paths remain stopped. Starting old images against the new
-schema is unsafe. Prefer restoring the backup if the legacy schema's documented
-loss of non-workflow command identities, completed terminal identities, and
-superseded reused manual keys is unacceptable.
-
-<SourceLink path="docs/operations.md">Complete upgrade and rollback runbook</SourceLink>
+<SourceLink path="docs/operations.md">Migration and rollback operations</SourceLink>
 
 ## Images
 
@@ -1478,7 +1470,7 @@ The proxy server identity and runtime-agent client identity are separate project
 
 `workflow-worker` and `execution-worker` no longer require Docker-node affinity. They can scale horizontally on any schedulable node and use the runtime endpoint returned by jobs-service for image resolution, execution, logs, termination, deletion, and expired-lease recovery. Runtime capacity is controlled by `runtime_nodes.max_concurrency`, not worker pod placement.
 
-During an upgrade from plaintext `2375`, deploy matching runtime-agent, workflow-worker, and execution-worker images. With proxy mTLS configured, runtime-agent normalizes its configured health endpoint, while both workers preserve the stored runtime host and normalize only a legacy `tcp://<host>:2375` endpoint before cache lookup. This covers historical job and idempotency snapshots on both single-node and multi-node clusters without rewriting PostgreSQL. Endpoints remain unchanged when proxy TLS is disabled.
+Runtime-agent advertises the Docker proxy endpoint on TCP `2376`. Workers use the registered host and port directly; configure matching endpoints and mTLS credentials for each runtime.
 
 Workers must be able to reach runtime node IPs on TCP `2376`. The base NetworkPolicy allows that egress port, but `hostNetwork` bypasses pod `NetworkPolicy`, so production must restrict `2376` at the infrastructure layer (node firewall / security group / CNI host policy) in addition to mTLS `verify required` + token + allowlist. Never expose `2376` publicly.
 
@@ -1646,7 +1638,7 @@ Execution components use an mTLS socket proxy with a narrow API surface instead 
 
 Compose stores the proxy issuer, server identity, and each client role outside the shared `certs` tree and mounts only the exact role directory into a runtime service. Kubernetes uses separate projected volumes and non-root-readable `0440` role keys; the proxy server key is never mounted into runtime-agent. TLS clients reload the CA bundle and client keypair on every new handshake, which supports staged rotation without pinning cached clients to old files.
 
-The `2375` to `2376` upgrade is backward-compatible with persisted runtime references. When proxy mTLS is configured, runtime-agent normalizes its configured health endpoint, while both Docker-using workers preserve each stored DNS name or node IP and normalize only the legacy TCP port before their bounded endpoint-cache lookup. Historical jobs and command snapshots therefore require no database rewrite. Plaintext Docker endpoints are not changed when proxy TLS is disabled.
+Runtime-agent advertises the Docker proxy endpoint on TCP `2376`. Workers use the registered host and port directly; configure matching endpoints and mTLS credentials for each runtime.
 
 The runtime uses the two allowed network operations solely to guarantee the dedicated `chronoverse-workloads` isolation network exists (bridge driver, inter-container communication disabled) before any workload runs. It revalidates the network immediately before each container creation, recreates a safely pruned network, and fails closed if the network has been replaced with an unsafe configuration.
 
@@ -2471,24 +2463,19 @@ docker compose -f compose.dev.yaml -f compose.grafana.yaml up -d lgtm
 `127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000`; it does not expose Grafana to the
 LAN.
 
-For an existing Compose `lgtm:/data` volume, recreate `lgtm` from the updated
-Compose file and reset the database credential from the configured container
-secret:
+To rotate the Compose administrator password, update
+`GF_SECURITY_ADMIN_PASSWORD`, recreate `lgtm` with the same administrator
+username, and apply the password to Grafana's database:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --force-recreate --no-deps lgtm
 scripts/grafana/reset-admin-password.sh
 ```
 
-The helper refuses containers that still mount the obsolete `/otel-lgtm`
-application volume. It uses Grafana's supported `grafana cli` command with the
-correct image home and data paths, passes the password through standard input,
-and migrates the stored `admin` login to `GF_SECURITY_ADMIN_USER` when needed.
-If the stored login is not `admin`, run the helper with
-`GRAFANA_CURRENT_ADMIN_USER=old-login`. It then verifies anonymous requests
-return `401` and the configured credentials return `200`. Do not delete the
-`lgtm` volume for this migration: `/data` contains the Grafana database and
-dashboards, Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
+The helper uses Grafana CLI, passes the password through standard input, and
+verifies anonymous requests return `401` and configured credentials return
+`200`. Preserve `lgtm:/data`: it contains the Grafana database and dashboards,
+Prometheus metrics, Loki logs, Tempo traces, and Pyroscope profiles.
 
 ## Built-in dashboard
 

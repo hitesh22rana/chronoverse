@@ -187,15 +187,9 @@ limitations; use a pod-IP endpoint override only for emulator-only validation.
 they can schedule anywhere with network access to TCP `2376` on registered
 runtime endpoints.
 
-When upgrading an existing installation from plaintext `2375`, rebuild and
-restart `runtime-agent`, `workflow-worker`, and `execution-worker` together.
-With Docker proxy mTLS configured, runtime-agent normalizes its configured
-health endpoint and both workers preserve the stored runtime host while
-normalizing legacy `tcp://<host>:2375` snapshots to port `2376`. Workers do
-this before endpoint-cache lookup. Current runtime registrations already use
-`2376`, and historical jobs or idempotency snapshots therefore need no manual
-database rewrite. Plaintext Docker endpoints remain unchanged when proxy TLS
-is disabled.
+Runtime-agent registers the Docker proxy endpoint on port `2376`. Workers use
+the registered runtime host and port for jobs and command snapshots. Update the
+runtime-agent configuration when changing a listener address.
 
 The execution-worker identity remains node-root-equivalent if its key and token
 are compromised because it can create containers on a host Docker daemon. Role
@@ -599,10 +593,8 @@ sent alone, returns retryable `ResourceExhausted`. No log is truncated or skippe
 and the Kafka batch remains uncommitted. A single-document rejection can still
 hold up its partition until an operator raises the server/proxy payload limit;
 normal published log lines are capped at 256 KiB before JSON encoding. For a
-legacy document above the application budget, reducing incoming traffic or
-restarting the processor will not change its size: deletion through the normal
-workflow API is an explicit recovery option that removes the workflow and all
-its retained logs, not just the offending record; it is not automatic cleanup.
+document above the application budget, inspect its producer and correct the
+source of oversized events before retrying.
 Rejection errors include document, workflow and job IDs to identify the affected
 record. Keep limits large enough for one fully encoded document. Transient search failures
 remain retryable; do not force-commit offsets to clear a rejection.

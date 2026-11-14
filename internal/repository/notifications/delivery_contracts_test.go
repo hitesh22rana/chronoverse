@@ -1,4 +1,4 @@
-//nolint:testpackage // Exercises notification command transactions and legacy rows.
+//nolint:testpackage // Exercises notification command transactions and replay safety.
 package notifications
 
 import (
@@ -15,44 +15,6 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
-
-func TestIntegrationNotificationLegacyAdoptionContracts(t *testing.T) {
-	for _, payload := range []string{`{"message":"same"}`, `{"message":"different"}`, `[]`} {
-		t.Run(payload, func(t *testing.T) {
-			repo := newTestRepository(t, "ALL", 20)
-			user := seedNotificationContractUser(t, repo)
-			key := uuid.NewString()
-			var legacy string
-			query := `INSERT INTO notifications(user_id,kind,payload,idempotency_key) VALUES($1,'WEB_INFO',$2,$3) RETURNING id`
-			if err := repo.pg.QueryRow(t.Context(), query, user, payload, "  "+key+"  ").Scan(&legacy); err != nil {
-				t.Fatal(err)
-			}
-			id, err := repo.CreateNotification(t.Context(), user, "WEB_INFO", `{"message":"same"}`, key)
-			want := codes.OK
-			switch payload {
-			case `[]`:
-				want = codes.Internal
-			case `{"message":"different"}`:
-				want = codes.AlreadyExists
-			}
-			if status.Code(err) != want {
-				t.Fatalf("id=%q error=%v want %s", id, err, want)
-			}
-			if want == codes.OK {
-				if id != legacy {
-					t.Fatalf("adopted %q want %q", id, legacy)
-				}
-				replay, replayErr := repo.CreateNotification(t.Context(), user, "WEB_INFO", `{ "message": "same" }`, key)
-				if replayErr != nil || replay != legacy {
-					t.Fatalf("replay=%q error=%v", replay, replayErr)
-				}
-			} else if id != "" {
-				t.Fatalf("failed adoption returned id %q", id)
-			}
-			assertNotificationCounts(t, repo, user, 1, map[bool]int{true: 1, false: 0}[want == codes.OK])
-		})
-	}
-}
 
 func assertNotificationCounts(t *testing.T, repo *Repository, user string, wantRows, wantLedger int) {
 	t.Helper()
@@ -224,15 +186,14 @@ func installNotificationFailure(t *testing.T, repo *Repository, table, event, pr
 }
 
 func TestIntegrationNotificationSQLFailuresRollbackCommandAndRead(t *testing.T) {
-	for _, stage := range []string{"insert", "complete", "commit", "legacy complete", "legacy commit", "read update", "read commit"} {
+	for _, stage := range []string{"insert", "complete", "commit", "read update", "read commit"} {
 		t.Run(stage, func(t *testing.T) {
 			repo := newTestRepository(t, "ALL", 20)
 			user := seedNotificationContractUser(t, repo)
 			key := uuid.NewString()
-			legacy := strings.HasPrefix(stage, "legacy")
 			reading := strings.HasPrefix(stage, "read")
 			var id string
-			if legacy || reading {
+			if reading {
 				if err := repo.pg.QueryRow(t.Context(), `INSERT INTO notifications(user_id,kind,payload,idempotency_key) VALUES($1,'WEB_INFO','{}',$2) RETURNING id`, user, " "+key+" ").Scan(&id); err != nil {
 					t.Fatal(err)
 				}
@@ -254,7 +215,7 @@ func TestIntegrationNotificationSQLFailuresRollbackCommandAndRead(t *testing.T) 
 				}
 			}
 			rows := 0
-			if legacy || reading {
+			if reading {
 				rows = 1
 			}
 			assertNotificationCounts(t, repo, user, rows, 0)
@@ -274,7 +235,7 @@ func TestNotificationConstructorDefaultsAndExplicitRetention(t *testing.T) {
 	}
 }
 
-func TestIntegrationLegacyNotificationNullPayloadFailsWithoutAdoption(t *testing.T) {
+func TestIntegrationNotificationNullPayloadConflictRollsBack(t *testing.T) {
 	repo := newTestRepository(t, "ALL", 20)
 	user := seedNotificationContractUser(t, repo)
 	key := uuid.NewString()
@@ -282,7 +243,7 @@ func TestIntegrationLegacyNotificationNullPayloadFailsWithoutAdoption(t *testing
 		t.Fatal(err)
 	}
 	id, err := repo.CreateNotification(t.Context(), user, "WEB_INFO", `{}`, key)
-	if id != "" || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to read legacy notification command") {
+	if id != "" || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to create notification") {
 		t.Fatalf("id=%q error=%v", id, err)
 	}
 	assertNotificationCounts(t, repo, user, 1, 0)
@@ -323,11 +284,10 @@ func TestIntegrationNotificationInsertCancellation(t *testing.T) {
 
 func installNotificationStageFailure(t *testing.T, repo *Repository, user, stage string) {
 	t.Helper()
-	legacy := strings.HasPrefix(stage, "legacy")
 	reading := strings.HasPrefix(stage, "read")
 	table, event, predicate := "notifications", "INSERT", fmt.Sprintf("NEW.user_id = '%s'::uuid", user)
 	deferred := strings.Contains(stage, "commit")
-	if strings.Contains(stage, "complete") || legacy {
+	if strings.Contains(stage, "complete") {
 		table, event = "command_idempotency_keys", "UPDATE"
 		predicate = fmt.Sprintf("NEW.scope = 'user:%s'", user)
 	}

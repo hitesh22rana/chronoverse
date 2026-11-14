@@ -77,7 +77,7 @@ func TestReplayCreatedWorkflowReportsCommitAndDecodeFailures(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			res, err := (&Repository{}).replayCreatedWorkflow(context.Background(), tc.tx, testUserID, tc.reservation)
+			res, err := (&Repository{}).replayCreatedWorkflow(context.Background(), tc.tx, tc.reservation)
 			if res != nil || status.Code(err) != codes.Internal || !strings.Contains(status.Convert(err).Message(), tc.message) {
 				t.Fatalf("replay = (%+v, %v), want nil and Internal containing %q", res, err, tc.message)
 			}

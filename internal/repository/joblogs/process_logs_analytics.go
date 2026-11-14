@@ -11,7 +11,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
@@ -177,14 +176,6 @@ func logAnalyticsEventKey(log *jobsmodel.JobLogEvent) string {
 	if log == nil {
 		return ""
 	}
-	if log.EventKey != "" {
-		return log.EventKey
-	}
-	if log.JobID == "" || log.Stream == "" {
-		return ""
-	}
-
-	log.EventKey = idempotency.LogEventKey(log.JobID, log.Stream, log.SequenceNum)
 	return log.EventKey
 }
 

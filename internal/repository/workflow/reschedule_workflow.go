@@ -58,7 +58,7 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 		UserId:             userID,
 		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
 		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
-		IdempotencyKey:     idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(workflowEvent)),
+		IdempotencyKey:     idempotency.AutomaticScheduleEventKey(workflowEvent.EventKey),
 		WorkflowGeneration: workflowEvent.Generation,
 	})
 	if status.Code(err) == codes.FailedPrecondition {

@@ -90,30 +90,35 @@ func TestWrappedGRPCContextIdentity(t *testing.T) {
 }
 
 func TestResolveFallbacks(t *testing.T) {
-	code, message, ok := terminalreason.Resolve("FAILED", "UNKNOWN", "USER", "Unknown", "ambiguous")
+	code, message, ok := terminalreason.Resolve("FAILED", "UNKNOWN")
 	if !ok || code != terminalreason.FailureReasonUnavailable || message != "Failure reason unavailable" {
 		t.Fatalf("Resolve failed fallback = %q, %q, %v", code, message, ok)
 	}
-	code, message, ok = terminalreason.Resolve("CANCELED", "", "", "", "")
+	code, message, ok = terminalreason.Resolve("CANCELED", "")
 	if !ok || code != terminalreason.CancellationReasonUnavailable || message != "Cancellation reason unavailable" {
 		t.Fatalf("Resolve cancellation fallback = %q, %q, %v", code, message, ok)
 	}
-	code, message, ok = terminalreason.Resolve("COMPLETED", terminalreason.NonZeroExit.String(), "USER", "", "")
+	code, message, ok = terminalreason.Resolve("COMPLETED", terminalreason.NonZeroExit.String())
 	if ok || code != "" || message != "" {
 		t.Fatalf("Resolve non-terminal = %q, %q, %v; want empty, empty, false", code, message, ok)
 	}
 }
 
-func TestResolveCancellationReasons(t *testing.T) {
+func TestResolvePersistedReasons(t *testing.T) {
 	for _, tc := range []struct {
+		status  string
 		code    terminalreason.Code
 		message string
 	}{
-		{terminalreason.WorkflowTerminated, "Canceled because the workflow was terminated"},
-		{terminalreason.WorkflowUpdated, "Canceled because the workflow was updated"},
+		{"FAILED", terminalreason.TimeLimitExceeded, "Execution time limit exceeded"},
+		{"FAILED", terminalreason.NonZeroExit, "Process exited with non zero exit code"},
+		{"FAILED", terminalreason.ImagePullFailed, "Container image could not be pulled"},
+		{"FAILED", terminalreason.SystemError, "Job failed because of a system error"},
+		{"CANCELED", terminalreason.WorkflowTerminated, "Canceled because the workflow was terminated"},
+		{"CANCELED", terminalreason.WorkflowUpdated, "Canceled because the workflow was updated"},
 	} {
 		t.Run(tc.code.String(), func(t *testing.T) {
-			code, message, ok := terminalreason.Resolve("CANCELED", tc.code.String(), "", "", "")
+			code, message, ok := terminalreason.Resolve(tc.status, tc.code.String())
 			if !ok || code != tc.code || message != tc.message {
 				t.Fatalf("Resolve() = %q, %q, %v; want %q, %q, true", code, message, ok, tc.code, tc.message)
 			}

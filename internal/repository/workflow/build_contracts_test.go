@@ -77,7 +77,7 @@ func TestSkippedBuildCompletesBeforeSchedulingAndNotifying(t *testing.T) {
 				workflow := buildContractWorkflow()
 				workflow.BuildStatus = workflowsmodel.WorkflowBuildStatusQueued.ToString()
 				event := buildContractEvent()
-				effectKey := workflowOccurrenceKey(event)
+				effectKey := event.EventKey
 				scheduledKey := idempotency.AutomaticScheduleEventKey(effectKey)
 				updates, gets, schedules := 0, 0, 0
 				notifications := make(chan *notificationspb.CreateNotificationRequest, 1)
@@ -364,7 +364,7 @@ func TestAutomaticScheduleSuppressesPreconditionRacesAndPreservesFailures(t *tes
 			synctest.Test(t, func(t *testing.T) {
 				workflow := buildContractWorkflow()
 				event := buildContractEvent()
-				key := idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(event))
+				key := idempotency.AutomaticScheduleEventKey(event.EventKey)
 				calls := 0
 				repo := &Repository{svc: &Services{Jobs: &testJobsClient{scheduleJob: func(_ context.Context, req *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
 					calls++

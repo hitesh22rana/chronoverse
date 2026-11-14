@@ -291,7 +291,7 @@ func TestMapBeginTxErrorClassifiesTheCallersThatWentAway(t *testing.T) {
 	}
 }
 
-func TestManualScheduleHashMatchesMigrationContract(t *testing.T) {
+func TestManualScheduleHashGoldenValue(t *testing.T) {
 	t.Parallel()
 
 	fields := scheduleJobHashFields(
@@ -304,9 +304,9 @@ func TestManualScheduleHashMatchesMigrationContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashCanonical() error = %v", err)
 	}
-	const migrationHash = "17fdb0dc876aca70a2bca5498d2df43622b843bb9f34448913ef5e31ce913a3f"
-	if hash != migrationHash {
-		t.Fatalf("manual schedule hash = %q, want migration contract %q", hash, migrationHash)
+	const expectedHash = "17fdb0dc876aca70a2bca5498d2df43622b843bb9f34448913ef5e31ce913a3f"
+	if hash != expectedHash {
+		t.Fatalf("manual schedule hash = %q, want %q", hash, expectedHash)
 	}
 }
 
@@ -376,7 +376,7 @@ func TestValidateStoredAutomaticScheduleCommand(t *testing.T) {
 		jobsmodel.JobTriggerAutomatic.ToString(),
 		sql.NullInt64{},
 	)); code != codes.AlreadyExists {
-		t.Fatalf("unknown legacy generation code = %s, want %s", code, codes.AlreadyExists)
+		t.Fatalf("missing automatic generation code = %s, want %s", code, codes.AlreadyExists)
 	}
 	if code := status.Code(validateStoredScheduleCommand(
 		requestHash,

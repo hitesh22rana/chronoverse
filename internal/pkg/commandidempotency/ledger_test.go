@@ -165,15 +165,3 @@ func TestCanonicalWorkflowIdentity(t *testing.T) {
 		})
 	}
 }
-
-func TestLegacyWorkflowOperationsPreserveRawIdentity(t *testing.T) {
-	t.Parallel()
-
-	const upper = "A0B1C2D3-E4F5-4678-9ABC-DEF012345678"
-	if commandidempotency.LegacyOperationWorkflowCreate != "create_workflow" {
-		t.Fatalf("legacy create operation = %q", commandidempotency.LegacyOperationWorkflowCreate)
-	}
-	if got := commandidempotency.LegacyWorkflowUpdateOperation(upper); got != "update_workflow:"+upper {
-		t.Fatalf("legacy update operation = %q", got)
-	}
-}

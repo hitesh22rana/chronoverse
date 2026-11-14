@@ -177,9 +177,10 @@ func TestIntegrationDeleteWorkflowActionDeletesOnlyTenantLogs(t *testing.T) {
 	deleteWorkflowAssertLockFree(ctx, t, repo.rdb, lockKey)
 
 	deleteEvent := &workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: ownerID,
-		Action: workflowsmodel.ActionDelete,
+		EventKey: "workflow:" + workflowID + ":DELETE:1",
+		ID:       workflowID,
+		UserID:   ownerID,
+		Action:   workflowsmodel.ActionDelete,
 	}
 	if err := repo.runTargetWorkflow(ctx, deleteEvent); err != nil {
 		t.Fatalf("ActionDelete dispatch: %v", err)
@@ -235,9 +236,10 @@ func TestIntegrationDeleteWorkflowActionLockContentionPreservesLogs(t *testing.T
 	}
 
 	deleteEvent := &workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: ownerID,
-		Action: workflowsmodel.ActionDelete,
+		EventKey: "workflow:" + workflowID + ":DELETE:1",
+		ID:       workflowID,
+		UserID:   ownerID,
+		Action:   workflowsmodel.ActionDelete,
 	}
 	err = repo.runTargetWorkflow(ctx, deleteEvent)
 	if status.Code(err) != codes.Aborted || !strings.Contains(err.Error(), "failed to acquire distributed lock") {
@@ -288,9 +290,10 @@ func TestIntegrationDeleteWorkflowActionMeiliEnqueueFailureReleasesLock(t *testi
 	deleteWorkflowSeedClickHouseLog(ctx, t, repo.ch, "meili-failure-log", ownerID, workflowID, jobID, 1)
 
 	err := repo.runTargetWorkflow(ctx, &workflowsmodel.WorkflowEvent{
-		ID:     workflowID,
-		UserID: ownerID,
-		Action: workflowsmodel.ActionDelete,
+		EventKey: "workflow:" + workflowID + ":DELETE:1",
+		ID:       workflowID,
+		UserID:   ownerID,
+		Action:   workflowsmodel.ActionDelete,
 	})
 	if status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "failed to enqueue Meilisearch logs deletion") {
 		t.Fatalf("ActionDelete error = %v, want Internal enqueue failure", err)

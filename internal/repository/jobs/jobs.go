@@ -200,49 +200,6 @@ func (r *Repository) ScheduleJob(
 		storedTrigger            string
 		storedWorkflowGeneration sql.NullInt64
 	)
-	if automatic {
-		legacyQuery := fmt.Sprintf(`
-			SELECT id, workflow_id, user_id, trigger, workflow_generation
-			FROM %s
-			WHERE workflow_id = $1
-			  AND trigger = 'AUTOMATIC'
-			  AND idempotency_key IS NOT NULL
-			  AND btrim(idempotency_key, ' ') = $2
-			FOR UPDATE
-			LIMIT 1;
-		`, postgres.TableJobs)
-		legacyErr := tx.QueryRow(ctx, legacyQuery, workflowID, idempotencyKey).Scan(
-			&jobID,
-			&storedWorkflowID,
-			&storedUserID,
-			&storedTrigger,
-			&storedWorkflowGeneration,
-		)
-		switch {
-		case legacyErr == nil:
-			if validateErr := validateStoredScheduleCommand(
-				requestHash,
-				storedWorkflowID,
-				storedUserID,
-				storedTrigger,
-				storedWorkflowGeneration,
-			); validateErr != nil {
-				return "", validateErr
-			}
-			if completeErr := commandidempotency.Complete(
-				ctx, tx, scope, operation, idempotencyKey, requestHash,
-				jobID, map[string]string{"id": jobID}, r.cfg.EventCommandRetention,
-			); completeErr != nil {
-				return "", completeErr
-			}
-			if err = tx.Commit(ctx); err != nil {
-				return "", status.Errorf(codes.Internal, "failed to commit legacy schedule replay: %v", err)
-			}
-			return jobID, nil
-		case !r.pg.IsNoRows(legacyErr):
-			return "", status.Errorf(codes.Internal, "failed to read legacy schedule command: %v", legacyErr)
-		}
-	}
 	query, args, err := scheduleJobInsertStatement(
 		workflowID,
 		userID,
@@ -297,7 +254,7 @@ func validateStoredScheduleCommand(
 	workflowGeneration sql.NullInt64,
 ) error {
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !workflowGeneration.Valid {
-		return status.Error(codes.AlreadyExists, "legacy automatic job input cannot be verified")
+		return status.Error(codes.AlreadyExists, "automatic job workflow generation is required")
 	}
 	storedGeneration := int64(0)
 	if workflowGeneration.Valid {
@@ -1314,9 +1271,6 @@ func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobL
 	}
 
 	log.EventID = searchHitString(source, jobLogsEventIDField)
-	if log.EventID == "" {
-		log.EventID = searchHitString(source, "id")
-	}
 
 	if msg, ok := source[jobLogsMessageField].(string); ok {
 		log.Message = msg

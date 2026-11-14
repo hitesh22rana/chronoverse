@@ -44,13 +44,11 @@ func TestIntegrationAnalyticsDeliveryContracts(t *testing.T) {
 				}
 			}
 			assertAnalyticsState(t, repo, user, workflow, "", 0, 0, 0, false)
-			// Unkeyed deliveries deliberately preserve the legacy at-least-once behavior.
 			event.Data = json.RawMessage(payload)
-			for range 2 {
-				if err := process(t.Context(), event); err != nil {
-					t.Fatal(err)
-				}
+			if err := process(t.Context(), event); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("missing event key: %v", err)
 			}
+			assertAnalyticsState(t, repo, user, workflow, "", 0, 0, 0, false)
 			// A keyed duplicate with a conflicting payload is ignored by event identity.
 			event.EventKey = uuid.NewString()
 			if err := process(t.Context(), event); err != nil {
@@ -63,9 +61,9 @@ func TestIntegrationAnalyticsDeliveryContracts(t *testing.T) {
 			wantKind, jobs, logs, duration := "", int64(0), int64(0), int64(0)
 			switch kind {
 			case analyticsmodel.EventTypeJobs:
-				jobs, duration = 3, 33
+				jobs, duration = 1, 11
 			case analyticsmodel.EventTypeLogs:
-				logs = 21
+				logs = 7
 			case analyticsmodel.EventTypeWorkflows:
 				wantKind = "CONTAINER"
 			}
@@ -134,12 +132,10 @@ func assertAnalyticsFailureRetry(
 	// FK failure must roll back the CTE's processed-event insertion as well.
 	failedKey := uuid.NewString()
 	event.EventKey, event.UserID = failedKey, uuid.NewString()
-	for _, key := range []string{"", failedKey} {
-		event.EventKey = key
-		if err := process(t.Context(), event); status.Code(err) != codes.Internal {
-			t.Fatalf("failed SQL key=%q: %v", key, err)
-		}
+	if err := process(t.Context(), event); status.Code(err) != codes.Internal {
+		t.Fatalf("failed SQL key=%q: %v", failedKey, err)
 	}
+
 	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer='analytics-processor' AND event_key=$1`, failedKey).Scan(&ledger); err != nil || ledger != 0 {
 		t.Fatalf("failed ledger=%d error=%v", ledger, err)
 	}

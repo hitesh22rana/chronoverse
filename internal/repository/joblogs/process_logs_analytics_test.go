@@ -17,7 +17,7 @@ import (
 )
 
 func TestCollectLogAnalyticsEvents(t *testing.T) {
-	generatedKey := "log:job-2:stderr:7"
+	explicitKey := "log:job-2:stderr:7"
 
 	events := collectLogAnalyticsEvents([]*queueData{
 		logRecord("log-2", "workflow-2", "user-2"),
@@ -25,6 +25,7 @@ func TestCollectLogAnalyticsEvents(t *testing.T) {
 		logRecord("log-1", "workflow-1", "user-1"),
 		{
 			logEntry: &jobsmodel.JobLogEvent{
+				EventKey:    "log:job-2:stderr:7",
 				JobID:       "job-2",
 				WorkflowID:  "workflow-2",
 				UserID:      "user-2",
@@ -47,8 +48,8 @@ func TestCollectLogAnalyticsEvents(t *testing.T) {
 	if events[1].eventKey != "log-2" {
 		t.Fatalf("expected log-2 as second event, got %q", events[1].eventKey)
 	}
-	if events[2].eventKey != generatedKey {
-		t.Fatalf("expected generated key %q third after sort, got %q", generatedKey, events[2].eventKey)
+	if events[2].eventKey != explicitKey {
+		t.Fatalf("expected explicit key %q third after sort, got %q", explicitKey, events[2].eventKey)
 	}
 }
 
@@ -119,9 +120,9 @@ func TestLogAnalyticsEventKey(t *testing.T) {
 	if got := logAnalyticsEventKey(&jobsmodel.JobLogEvent{JobID: "job-1"}); got != "" {
 		t.Fatalf("missing stream key = %q, want empty", got)
 	}
-	event := &jobsmodel.JobLogEvent{JobID: "job-1", Stream: "stdout", SequenceNum: 3}
+	event := &jobsmodel.JobLogEvent{EventKey: "log:job-1:stdout:3", JobID: "job-1", Stream: "stdout", SequenceNum: 3}
 	if got := logAnalyticsEventKey(event); got != "log:job-1:stdout:3" || event.EventKey != got {
-		t.Fatalf("generated key = %q (stored %q)", got, event.EventKey)
+		t.Fatalf("event key = %q (stored %q)", got, event.EventKey)
 	}
 }
 

@@ -18,19 +18,18 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
-func assertCreateEffects(ctx context.Context, t *testing.T, repo *Repository, userID string, wantWorkflows, wantEvents, wantCommands, wantAliases int) {
+func assertCreateEffects(ctx context.Context, t *testing.T, repo *Repository, userID string, wantWorkflows, wantEvents, wantCommands int) {
 	t.Helper()
-	var workflows, events, commands, aliases int
+	var workflows, events, commands int
 	err := repo.pg.QueryRow(ctx, `SELECT
   (SELECT count(*) FROM workflows WHERE user_id=$1::uuid),
   (SELECT count(*) FROM outbox_events WHERE payload->>'UserID'=$1::text),
-  (SELECT count(*) FROM command_idempotency_keys WHERE scope=$2),
-  (SELECT count(*) FROM command_idempotency_legacy_identities WHERE scope=$2)`, userID, commandidempotency.UserScope(userID)).Scan(&workflows, &events, &commands, &aliases)
+  (SELECT count(*) FROM command_idempotency_keys WHERE scope=$2)`, userID, commandidempotency.UserScope(userID)).Scan(&workflows, &events, &commands)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if workflows != wantWorkflows || events != wantEvents || commands != wantCommands || aliases != wantAliases {
-		t.Fatalf("effects workflows/events/commands/aliases=%d/%d/%d/%d, want %d/%d/%d/%d", workflows, events, commands, aliases, wantWorkflows, wantEvents, wantCommands, wantAliases)
+	if workflows != wantWorkflows || events != wantEvents || commands != wantCommands {
+		t.Fatalf("effects workflows/events/commands=%d/%d/%d, want %d/%d/%d", workflows, events, commands, wantWorkflows, wantEvents, wantCommands)
 	}
 }
 
@@ -51,7 +50,6 @@ func TestIntegrationCreateWorkflowFaultsRollBack(t *testing.T) {
 		deferred                    bool
 	}{
 		{"reserve", postgres.TableCommandIdempotencyKeys, "INSERT", "failed to reserve command idempotency key", false},
-		{"legacy identity", postgres.TableCommandIdempotencyLegacyIdentities, "INSERT", "failed to store command legacy identity", false},
 		{"workflow", postgres.TableWorkflows, "INSERT", "failed to insert workflow", false},
 		{"outbox", postgres.TableOutboxEvents, "INSERT", "failed to insert outbox event", false},
 		{"complete", postgres.TableCommandIdempotencyKeys, "UPDATE", "failed to complete command idempotency key", false},
@@ -75,7 +73,7 @@ func TestIntegrationCreateWorkflowFaultsRollBack(t *testing.T) {
 				!strings.Contains(status.Convert(err).Message(), tc.message) {
 				t.Fatalf("CreateWorkflow=%+v err=%v, want Internal containing %q", got, err, tc.message)
 			}
-			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0, 0)
+			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0)
 		})
 	}
 }
@@ -95,7 +93,7 @@ func TestIntegrationCreateWorkflowRejectedRequestsLeaveNoEffects(t *testing.T) {
 			if got != nil || status.Code(err) != codes.InvalidArgument {
 				t.Fatalf("CreateWorkflow=%+v err=%v, want InvalidArgument", got, err)
 			}
-			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0, 0)
+			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0)
 		})
 	}
 	got, err := repo.CreateWorkflow(ctx, "invalid", "bad-user", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, uuid.NewString())
@@ -117,7 +115,7 @@ func TestIntegrationCreateWorkflowRejectedRequestsLeaveNoEffects(t *testing.T) {
 		if got != nil || status.Code(err) != code {
 			t.Fatalf("canceled create=%+v err=%v, want %v", got, err, code)
 		}
-		assertCreateEffects(ctx, t, repo, userID, 0, 0, 0, 0)
+		assertCreateEffects(ctx, t, repo, userID, 0, 0, 0)
 	}
 }
 
@@ -140,7 +138,7 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 	if replay.ID != created.ID || !replay.IdempotencyReplay || !replay.CreatedAt.Equal(created.CreatedAt) {
 		t.Fatalf("replay=%+v, created=%+v", replay, created)
 	}
-	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
+	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1)
 	assertBuildEvent(ctx, t, repo, created.ID, created.Generation)
 	conflict, err := repo.CreateWorkflow(ctx, userID, "changed", `{"endpoint":"https://example.com","timeout":"10s"}`, "HEARTBEAT", 60, 3, true, key)
 	if conflict != nil || status.Code(err) != codes.AlreadyExists {
@@ -153,7 +151,7 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 	if stored.Name != created.Name {
 		t.Fatalf("conflicting reuse renamed workflow to %q, want %q", stored.Name, created.Name)
 	}
-	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
+	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1)
 }
 
 func TestIntegrationCreateWorkflowInterruptedInsertRollsBack(t *testing.T) {
@@ -182,12 +180,12 @@ func TestIntegrationCreateWorkflowInterruptedInsertRollsBack(t *testing.T) {
 			if status.Code(err) != want {
 				t.Fatalf("interrupted create=%v, want %v", err, want)
 			}
-			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0, 0)
+			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0)
 			created, err := repo.CreateWorkflow(ctx, userID, "interrupted-create", `{"image":"alpine:3.22.2"}`, "CONTAINER", 60, 3, true, key)
 			if err != nil || created == nil || created.IdempotencyReplay {
 				t.Fatalf("retry=%+v err=%v", created, err)
 			}
-			assertCreateEffects(ctx, t, repo, userID, 1, 1, 1, 1)
+			assertCreateEffects(ctx, t, repo, userID, 1, 1, 1)
 			assertBuildEvent(ctx, t, repo, created.ID, created.Generation)
 		})
 	}

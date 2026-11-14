@@ -141,7 +141,7 @@ func (r *Repository) sendWorkflowTerminatedNotification(
 		fmt.Sprintf("Workflow '%s' has been terminated.", workflow.GetName()),
 		notificationsmodel.KindWebInfo.ToString(),
 		notificationsmodel.EntityWorkflow.ToString(),
-		workflowOccurrenceKey(workflowEvent),
+		workflowEvent.EventKey,
 	)
 }
 

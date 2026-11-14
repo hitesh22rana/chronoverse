@@ -28,24 +28,7 @@ func (r *Repository) processLogsEvent(ctx context.Context, event *analyticsmodel
 	}
 
 	if event.EventKey == "" {
-		query := fmt.Sprintf(`
-			INSERT INTO %s
-			(user_id, workflow_id, logs_count)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (user_id, workflow_id)
-			DO UPDATE SET
-				logs_count = %s.logs_count + EXCLUDED.logs_count
-		`, postgres.TableAnalytics, postgres.TableAnalytics)
-
-		if _, err := r.pg.Exec(ctx, query, event.UserID, event.WorkflowID, data.Count); err != nil {
-			return status.Error(codes.Internal, "failed to insert/update logs analytics")
-		}
-		logger.Info("successfully processed logs event",
-			zap.String("user_id", event.UserID),
-			zap.String("workflow_id", event.WorkflowID),
-			zap.Uint64("logs_count", data.Count),
-		)
-		return nil
+		return status.Error(codes.InvalidArgument, "analytics event key is required")
 	}
 
 	query := fmt.Sprintf(`

@@ -21,7 +21,7 @@ func TestGetJobResponseTerminalReason(t *testing.T) {
 	}
 }
 
-func TestGetJobResponseHistoricalFallbacks(t *testing.T) {
+func TestGetJobResponseMissingReasonFallbacks(t *testing.T) {
 	now := time.Now()
 	failed := (&jobsmodel.GetJobResponse{
 		ID: "failed", JobStatus: jobsmodel.JobStatusFailed.ToString(), ScheduledAt: now, CreatedAt: now, UpdatedAt: now,

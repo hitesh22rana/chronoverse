@@ -181,12 +181,12 @@ func TestWorkflowRoutingAndOccurrenceHelperContracts(t *testing.T) {
 	}
 	event := buildContractEvent()
 	event.EventKey = "persisted-occurrence"
-	if got := workflowOccurrenceKey(event); got != "persisted-occurrence" {
+	if got := event.EventKey; got != "persisted-occurrence" {
 		t.Fatalf("explicit occurrence=%q", got)
 	}
 	event.EventKey = ""
-	if got := workflowOccurrenceKey(event); got != idempotency.WorkflowEventKey(event.ID, event.Action.ToString(), event.Generation) {
-		t.Fatalf("legacy occurrence=%q", got)
+	if err := repo.runTargetWorkflow(t.Context(), event); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing event identity: %v", err)
 	}
 	for _, kind := range []string{"HEARTBEAT", "CONTAINER", "future-kind"} {
 		if got := isBuildStepRequired(kind); got != (kind != workflowsmodel.KindHeartbeat.ToString()) {
@@ -522,7 +522,7 @@ func TestCompletedBuildReplayRetriesOnlyAutomaticSchedule(t *testing.T) {
 				repo := &Repository{auth: testAuth{}, svc: &Services{Workflows: &testWorkflowsClient{workflow: workflow}, Jobs: &testJobsClient{
 					scheduleJob: func(_ context.Context, req *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
 						calls++
-						assertSkippedSchedule(t, req, workflow, event, idempotency.AutomaticScheduleEventKey(workflowOccurrenceKey(event)))
+						assertSkippedSchedule(t, req, workflow, event, idempotency.AutomaticScheduleEventKey(event.EventKey))
 						if code == codes.OK {
 							return &jobspb.ScheduleJobResponse{}, nil
 						}

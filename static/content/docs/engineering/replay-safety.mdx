@@ -10,7 +10,7 @@ Client and random command results remain replayable for 24 hours. Deterministic 
 
 Automatic jobs and notifications also retain their deterministic identity in their domain rows. After the shared-ledger record expires, exact replay can reconstruct it without creating a duplicate resource, while changed input still conflicts. Cancellation remains effect-idempotent after expiry, but its original cleanup snapshot is guaranteed only during the configured event window. Workflow terminal effects follow the owning workflow lifecycle instead of a time-based ledger policy.
 
-Workflow commands keep canonical identities for current execution and exact legacy operation/hash pairs for every accepted raw UUID spelling. Migration rollback restores each pair, preventing a spelling-only retry from repeating a workflow update.
+Workflow commands hash canonical UUID identities and JSON payloads. Equivalent UUID spellings and JSON formatting resolve to the same request; changed input conflicts with an unexpired command.
 
 ## Atomic publication intent
 

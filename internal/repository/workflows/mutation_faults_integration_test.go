@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -58,16 +57,6 @@ func lockWorkflowStateRead(fixture *workflowFixture) interruptionLock {
 // workflows read, so a probe cannot mistake another command's read for it.
 func lockTerminateStateRead(*workflowFixture) interruptionLock {
 	return lockWholeTable(postgres.TableWorkflows, "%SELECT generation%FROM "+postgres.TableWorkflows+"%")
-}
-
-// lockLegacyIdentities stops a command at the rollback-compatible identity it
-// records. The ledger reservation that precedes it writes a different table, so
-// this lock stops the identity write without disturbing anything before it.
-func lockLegacyIdentities(*workflowFixture) interruptionLock {
-	return lockWholeTable(
-		postgres.TableCommandIdempotencyLegacyIdentities,
-		"%"+postgres.TableCommandIdempotencyLegacyIdentities+"%",
-	)
 }
 
 // cancelBlockedStatement cancels, inside PostgreSQL, the statement the command is
@@ -370,55 +359,10 @@ func TestIntegrationUpdateWorkflowWriteRefusedRollsBackTheUpdate(t *testing.T) {
 }
 
 // TestIntegrationUpdateWorkflowLedgerWriteRefusedRollsBackTheUpdate proves the
-// rollback-compatible identity and the completion that make an update replayable
-// belong to the same transaction as the mutation. When either cannot be recorded,
+// completion that makes an update replayable
+// belongs to the same transaction as the mutation. When it cannot be recorded,
 // none of what the update had already written survives it, and the key stays free.
 func TestIntegrationUpdateWorkflowLedgerWriteRefusedRollsBackTheUpdate(t *testing.T) {
-	t.Run("IdentityWriteRefused", func(t *testing.T) {
-		ctx := context.Background()
-		pg := testkit.Postgres(t)
-		repo := newTestRepository(t)
-
-		fixture := seedWorkflowFixture(ctx, t, pg, repo, 3)
-		queuedJobID := seedFixturePendingJob(ctx, t, pg, fixture, "AUTOMATIC", 0)
-		before := readWorkflowMutationState(ctx, t, pg, fixture.WorkflowID)
-		eventsBefore := countWorkflowEvents(ctx, t, pg, fixture.WorkflowID)
-		updateKey := "cv-identity-" + fixtureTag()
-		lock := lockLegacyIdentities(fixture)
-
-		_, release := holdStatementLock(ctx, t, pg, lock)
-		defer release()
-
-		commandCtx, cancelCommand := context.WithCancel(ctx)
-		defer cancelCommand()
-		done := make(chan error, 1)
-		finished := make(chan struct{})
-		go func() {
-			defer close(finished)
-			done <- repo.UpdateWorkflow(
-				commandCtx, fixture.WorkflowID, fixture.UserID, "cv-blocked-"+fixtureTag(), fixturePayload,
-				fixture.Interval*2, fixture.MaxConsecutiveJobFailures, updateKey,
-			)
-		}()
-		// A fatal probe or step failure must still release the lock and join the
-		// command goroutine, or the lock outlives the test.
-		defer func() {
-			cancelCommand()
-			release()
-			select {
-			case <-finished:
-			case <-time.After(blockedStatementTimeout):
-				t.Errorf("command did not stop after releasing %s", lock.label)
-			}
-		}()
-
-		waitForBlockedStatement(ctx, t, pg, lock, done)
-		cancelCaller(nil, cancelCommand)
-
-		assertCode(t, "UpdateWorkflow (identity write refused)", <-done, codes.Internal)
-		assertMutationUndone(ctx, t, pg, fixture, before, eventsBefore, queuedJobID, updateKey, "identity write refused")
-	})
-
 	t.Run("CompletionRefused", func(t *testing.T) {
 		ctx := context.Background()
 		pg := testkit.Postgres(t)

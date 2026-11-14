@@ -92,7 +92,7 @@ func (r *GetJobResponse) ToProto() *jobspb.GetJobResponse {
 		CreatedAt:   r.CreatedAt.Format(time.RFC3339Nano),
 		UpdatedAt:   r.UpdatedAt.Format(time.RFC3339Nano),
 	}
-	if code, message, ok := terminalreason.Resolve(r.JobStatus, r.TerminalReasonCode.String, r.FailureKind.String, r.LastErrorCode.String, r.LastErrorMessage.String); ok {
+	if code, message, ok := terminalreason.Resolve(r.JobStatus, r.TerminalReasonCode.String); ok {
 		res.StatusReasonCode = code.String()
 		res.StatusReasonMessage = message
 	}
@@ -403,7 +403,7 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 			UpdatedAt:   j.UpdatedAt.Format(time.RFC3339Nano),
 			Attempts:    j.Attempts,
 		}
-		if code, message, ok := terminalreason.Resolve(j.JobStatus, j.TerminalReasonCode.String, j.FailureKind.String, j.LastErrorCode.String, j.LastErrorMessage.String); ok {
+		if code, message, ok := terminalreason.Resolve(j.JobStatus, j.TerminalReasonCode.String); ok {
 			jobs[i].StatusReasonCode = code.String()
 			jobs[i].StatusReasonMessage = message
 		}

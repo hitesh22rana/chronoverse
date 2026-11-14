@@ -988,3 +988,7 @@ type testKafkaProducer struct{}
 func (testKafkaProducer) ProduceSync(context.Context, ...*kgo.Record) kgo.ProduceResults {
 	return nil
 }
+
+func (*testWorkflowLockStore) ExtendDistributedLockWithToken(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}

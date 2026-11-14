@@ -167,17 +167,22 @@ func (r *Repository) cleanupCanceledJobContainers(
 }
 
 func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) error {
+	if err := parentCtx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
 	if !shouldCleanupJobContainer(workflow, job) {
 		return nil
 	}
 
-	cleanupCtx := context.WithoutCancel(parentCtx)
 	csvc, err := r.containerSvcForJob(job)
 	if err != nil {
 		return err
 	}
-	if err := csvc.Terminate(cleanupCtx, job.GetContainerId()); err != nil {
+	if err := csvc.Terminate(parentCtx, job.GetContainerId()); err != nil {
 		return err
+	}
+	if err := parentCtx.Err(); err != nil {
+		return status.FromContextError(err).Err()
 	}
 	if err := r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
 		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
@@ -188,7 +193,10 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		)
 	}
 
-	return csvc.Remove(cleanupCtx, job.GetContainerId())
+	if err := parentCtx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	return csvc.Remove(parentCtx, job.GetContainerId())
 }
 
 func (r *Repository) replayCanceledJobContainerLogs(
@@ -197,7 +205,7 @@ func (r *Repository) replayCanceledJobContainerLogs(
 	workflow *workflowspb.GetWorkflowByIDResponse,
 	job *jobspb.JobsResponse,
 ) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), canceledJobLogReplayTimeout)
+	ctx, cancel := context.WithTimeout(parentCtx, canceledJobLogReplayTimeout)
 	defer cancel()
 
 	logs, errs, err := csvc.Logs(ctx, job.GetContainerId())
@@ -228,8 +236,8 @@ func (r *Repository) replayCanceledJobContainerLogs(
 			}
 			return err
 		case <-ctx.Done():
-			// Parent cancellation is detached; the only active cancel is this timeout.
-			return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+			// Preserve caller cancellation separately from the replay deadline.
+			return status.FromContextError(ctx.Err()).Err()
 		}
 	}
 
@@ -500,53 +508,51 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		workflowsmodel.ActionTerminate.ToString(),
 		workflowID,
 	)
-	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, terminateWorkflowExpirationTimeout)
-	if err != nil || !isLockAcquired {
-		return distributedLockError(parentCtx)
-	}
+	return r.withLifecycleLock(ctx, lockKey, terminateWorkflowExpirationTimeout, func(ctx context.Context) error {
+		cleanupJobs, err := r.markRunningJobsCanceled(ctx, workflow, userID)
+		if err != nil {
+			return err
+		}
 
-	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
+		pendingCleanupJobs, err := r.markJobsCanceledWithStatusAndTriggerExcept(
+			ctx,
+			workflow,
+			userID,
+			jobsmodel.JobStatusPending.ToString(),
+			"",
+		)
+		if err != nil {
+			return err
+		}
+		cleanupJobs = append(cleanupJobs, pendingCleanupJobs...)
 
-	cleanupJobs, err := r.markRunningJobsCanceled(ctx, workflow, userID)
-	if err != nil {
-		return err
-	}
+		queuedCleanupJobs, err := r.markJobsCanceledWithStatusAndTriggerExcept(
+			ctx,
+			workflow,
+			userID,
+			jobsmodel.JobStatusQueued.ToString(),
+			"",
+		)
+		if err != nil {
+			return err
+		}
+		cleanupJobs = append(cleanupJobs, queuedCleanupJobs...)
 
-	pendingCleanupJobs, err := r.markJobsCanceledWithStatusAndTriggerExcept(
-		ctx,
-		workflow,
-		userID,
-		jobsmodel.JobStatusPending.ToString(),
-		"",
-	)
-	if err != nil {
-		return err
-	}
-	cleanupJobs = append(cleanupJobs, pendingCleanupJobs...)
+		if err := r.cleanupCanceledJobContainers(ctx, workflow, cleanupJobs); err != nil {
+			return err
+		}
 
-	queuedCleanupJobs, err := r.markJobsCanceledWithStatusAndTriggerExcept(
-		ctx,
-		workflow,
-		userID,
-		jobsmodel.JobStatusQueued.ToString(),
-		"",
-	)
-	if err != nil {
-		return err
-	}
-	cleanupJobs = append(cleanupJobs, queuedCleanupJobs...)
+		// Retry container cleanup after active jobs have been moved to CANCELED so
+		// one stale cleanup failure cannot leave other active jobs runnable.
+		if err := r.cleanupJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusCanceled.ToString()); err != nil {
+			return err
+		}
 
-	if err := r.cleanupCanceledJobContainers(ctx, workflow, cleanupJobs); err != nil {
-		return err
-	}
+		if err := ctx.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
+		r.sendWorkflowTerminatedNotification(ctx, userID, workflow, workflowEvent)
 
-	// Retry container cleanup after active jobs have been moved to CANCELED so
-	// one stale cleanup failure cannot leave other active jobs runnable.
-	if err := r.cleanupJobsWithStatus(ctx, workflow, userID, jobsmodel.JobStatusCanceled.ToString()); err != nil {
-		return err
-	}
-
-	r.sendWorkflowTerminatedNotification(parentCtx, userID, workflow, workflowEvent)
-
-	return nil
+		return nil
+	})
 }

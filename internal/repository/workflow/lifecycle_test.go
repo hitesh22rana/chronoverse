@@ -645,3 +645,7 @@ func TestCleanupJobsWithStatusFailuresAndEmptyResult(t *testing.T) {
 		})
 	}
 }
+
+func (*lifecycleLock) ExtendDistributedLockWithToken(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}

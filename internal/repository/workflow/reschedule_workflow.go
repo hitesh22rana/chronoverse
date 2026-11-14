@@ -44,26 +44,22 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	}
 
 	lockKey := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, workflowsmodel.ActionReschedule.ToString(), workflowID)
-	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)
-	if err != nil || !isLockAcquired {
-		return distributedLockError(parentCtx)
-	}
-	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
+	return r.withLifecycleLock(ctx, lockKey, rescheduleWorkflowExpirationTimeout, func(ctx context.Context) error {
+		_, err := r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
+			WorkflowId:         workflowID,
+			UserId:             userID,
+			ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
+			Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
+			IdempotencyKey:     idempotency.AutomaticScheduleEventKey(workflowEvent.EventKey),
+			WorkflowGeneration: workflowEvent.Generation,
+		})
+		if status.Code(err) == codes.FailedPrecondition {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 
-	_, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
-		WorkflowId:         workflowID,
-		UserId:             userID,
-		ScheduledAt:        time.Now().Add(time.Minute * time.Duration(workflow.GetInterval())).Format(time.RFC3339Nano),
-		Trigger:            jobsmodel.JobTriggerAutomatic.ToString(),
-		IdempotencyKey:     idempotency.AutomaticScheduleEventKey(workflowEvent.EventKey),
-		WorkflowGeneration: workflowEvent.Generation,
-	})
-	if status.Code(err) == codes.FailedPrecondition {
 		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	return nil
+	})
 }

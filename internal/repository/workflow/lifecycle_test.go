@@ -4,6 +4,7 @@ package workflow
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -31,13 +32,16 @@ type lifecycleLock struct {
 	released []string
 }
 
-func (s *lifecycleLock) AcquireDistributedLock(_ context.Context, key string, ttl time.Duration) (bool, error) {
+func (s *lifecycleLock) AcquireDistributedLockWithToken(_ context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
 	s.keys = append(s.keys, key)
 	s.ttls = append(s.ttls, ttl)
-	return s.acquired, s.err
+	return "owner-token", s.acquired, s.err
 }
 
-func (s *lifecycleLock) ReleaseDistributedLock(_ context.Context, key string) error {
+func (s *lifecycleLock) ReleaseDistributedLockWithToken(_ context.Context, key, token string) error {
+	if token != "owner-token" {
+		return fmt.Errorf("release used another owner token: %q", token)
+	}
 	s.released = append(s.released, key)
 	return nil
 }

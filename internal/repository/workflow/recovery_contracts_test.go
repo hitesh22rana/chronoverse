@@ -94,22 +94,24 @@ func TestCanceledLogPublicationPreservesAttemptIdentityAndRetention(t *testing.T
 
 func TestCanceledLogReplayHandlesChannelFailuresAndDeadline(t *testing.T) {
 	for _, tc := range []struct {
-		name                    string
-		openErr, streamErr      error
-		timeout, publishFailure bool
-		want                    codes.Code
+		name                                  string
+		openErr, streamErr                    error
+		timeout, publishFailure, cancelParent bool
+		want                                  codes.Code
 	}{
 		{name: "missing container", openErr: status.Error(codes.NotFound, "gone")},
 		{name: "open failure", openErr: status.Error(codes.Unavailable, "runtime unavailable"), want: codes.Unavailable},
 		{name: "stream missing", streamErr: status.Error(codes.NotFound, "gone")},
 		{name: "stream failure", streamErr: status.Error(codes.DataLoss, "truncated"), want: codes.DataLoss},
 		{name: "deadline", timeout: true, want: codes.DeadlineExceeded},
+		{name: "caller cancellation", cancelParent: true, want: codes.Canceled},
 		{name: "publication failure", publishFailure: true, want: codes.Unavailable},
 		{name: "closed channels"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				parent := t.Context()
+				parent, cancel := context.WithCancel(t.Context())
+				defer cancel()
 				producer := &recoveryProducer{}
 				if tc.publishFailure {
 					producer.err = errors.New("broker unavailable")
@@ -125,6 +127,10 @@ func TestCanceledLogReplayHandlesChannelFailuresAndDeadline(t *testing.T) {
 					}
 					logs := make(chan *jobsmodel.JobLog, 1)
 					errs := make(chan error, 1)
+					if tc.cancelParent {
+						cancel()
+						return logs, errs, nil
+					}
 					if tc.timeout {
 						return logs, errs, nil
 					}

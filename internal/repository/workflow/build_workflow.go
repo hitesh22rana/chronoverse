@@ -497,7 +497,7 @@ func (r *Repository) buildContainerWorkflow(
 	})
 
 	if err := ctx.Err(); err != nil {
-		return err
+		return status.FromContextError(err).Err()
 	}
 
 	// Since, build process can take time to execute and can led to authorization issues

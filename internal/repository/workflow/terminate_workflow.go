@@ -168,7 +168,7 @@ func (r *Repository) cleanupCanceledJobContainers(
 
 func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) error {
 	if err := parentCtx.Err(); err != nil {
-		return err
+		return status.FromContextError(err).Err()
 	}
 	if !shouldCleanupJobContainer(workflow, job) {
 		return nil
@@ -182,7 +182,7 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		return err
 	}
 	if err := parentCtx.Err(); err != nil {
-		return err
+		return status.FromContextError(err).Err()
 	}
 	if err := r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
 		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
@@ -194,7 +194,7 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 	}
 
 	if err := parentCtx.Err(); err != nil {
-		return err
+		return status.FromContextError(err).Err()
 	}
 	return csvc.Remove(parentCtx, job.GetContainerId())
 }
@@ -236,8 +236,8 @@ func (r *Repository) replayCanceledJobContainerLogs(
 			}
 			return err
 		case <-ctx.Done():
-			// Parent cancellation is detached; the only active cancel is this timeout.
-			return status.Error(codes.DeadlineExceeded, ctx.Err().Error())
+			// Preserve caller cancellation separately from the replay deadline.
+			return status.FromContextError(ctx.Err()).Err()
 		}
 	}
 
@@ -549,7 +549,7 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 		}
 
 		if err := ctx.Err(); err != nil {
-			return err
+			return status.FromContextError(err).Err()
 		}
 		r.sendWorkflowTerminatedNotification(ctx, userID, workflow, workflowEvent)
 

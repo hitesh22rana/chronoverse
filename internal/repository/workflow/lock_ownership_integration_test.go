@@ -3,7 +3,6 @@ package workflow
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -12,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
@@ -105,7 +106,7 @@ func TestIntegrationCanceledWorkflowReleasesOwnedLock(t *testing.T) {
 		cancel()
 		return nil, ctx.Err()
 	}}
-	if err := repo.rescheduleWorkflow(ctx, event); !errors.Is(err, context.Canceled) {
+	if err := repo.rescheduleWorkflow(ctx, event); status.Code(err) != codes.Canceled {
 		t.Fatalf("canceled reschedule = %v", err)
 	}
 	key := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, event.Action.ToString(), workflow.Id)

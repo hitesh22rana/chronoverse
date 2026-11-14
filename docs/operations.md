@@ -478,15 +478,24 @@ Lower intervals increase scheduling responsiveness and database load.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL` controls Redis polling while
   waiting for a held image pull lock.
 
-Workflow and execution image-pull locks renew every `max(TTL/3, 1s)`. Each
-extension has an I/O deadline of `min(TTL/3, 5s)`; a renewal failure cancels the
-build context. Cleanup joins renewal before releasing the original ownership
-token with a detached five-second deadline. Release remains best effort and
-preserves the build result.
+Workflow and execution image-pull locks renew every `TTL/3`, including while
+rechecking image availability after acquisition. A zero TTL selects the default
+`10m`; explicit TTLs must be at least `3ms` and are rounded down to whole
+milliseconds to match Redis expiry precision. Invalid worker TTL settings fail
+startup.
 
-Use the default `10m` TTL unless a shorter lease has been validated under Redis
-latency and worker scheduling delays. TTLs at or below one second can expire
-before the first renewal because the renewal interval is floored at one second.
+Expiry is tracked conservatively from acquisition and renewal request start.
+Each extension deadline is the earliest of `now + TTL/3`, `now + 5s`, and the
+tracked expiry minus `TTL/3`. If that safe window is exhausted, protected work
+is canceled with a renewal-budget error. A store error remains distinct from
+`renewed=false` ownership loss. Choose TTLs with enough margin for Redis latency
+and worker scheduling delays; the minimum is a precision limit, not a recommended
+production lease.
+
+Cleanup cancels and joins renewal; an in-flight extension remains subject to its
+I/O deadline. Release then uses a separate detached five-second deadline and
+remains best effort, preserving the build result. An independent build failure
+is retained if renewal fails concurrently.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are
@@ -529,7 +538,9 @@ adding capacity. These per-workload limits
 are applied only when execution-worker creates Docker job containers. Execution
 image pulls use the same runtime-node-scoped lock model as workflow-worker
 digest resolution: workers sharing one runtime daemon serialize the same image
-pull, while different runtime nodes may pull independently.
+pull, while different runtime nodes may pull independently. See
+[Workflow Workers](#workflow-workers) for the shared image-pull TTL, renewal and
+cleanup budgets.
 
 Retry contract: `SYSTEM_RETRY_LIMIT=3` with `SYSTEM_RETRY_BACKOFF=30s`
 (`30s, 60s, 120s`, capped at `240s`) applies only to infrastructure codes

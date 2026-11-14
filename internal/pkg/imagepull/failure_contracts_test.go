@@ -108,7 +108,7 @@ func TestEnsureDefaultConfigPreservesBuildErrorDespiteReleaseFailure(t *testing.
 				return errors.New("release connection closed")
 			},
 		}
-		if err := Ensure(t.Context(), client, locks, "image", Config{TTL: -1, WaitTimeout: -1, RetryInterval: -1}); !errors.Is(err, buildFailure) {
+		if err := Ensure(t.Context(), client, locks, "image", Config{WaitTimeout: -1, RetryInterval: -1}); !errors.Is(err, buildFailure) {
 			t.Fatalf("Ensure() = %v, want build failure", err)
 		}
 		if releaseCtx == nil || releaseCtx.Err() != context.Canceled {
@@ -141,7 +141,7 @@ func TestEnsureRenewalFailureCancelsAndJoinsBuildBeforeReleasingOwnership(t *tes
 					extend: func(ctx context.Context, gotKey, token string, ttl time.Duration) (bool, error) {
 						extensions++
 						assertLockOwnership(ctx, t, gotKey, token, key)
-						if ttl != time.Millisecond {
+						if ttl != 3*time.Second {
 							t.Errorf("invalid renewal ownership/context/TTL")
 						}
 						if renewal == "error" {
@@ -159,14 +159,14 @@ func TestEnsureRenewalFailureCancelsAndJoinsBuildBeforeReleasingOwnership(t *tes
 					},
 				}
 				start := time.Now()
-				err := Ensure(t.Context(), client, locks, "image", Config{TTL: time.Millisecond, LockScope: "runtime-id"})
+				err := Ensure(t.Context(), client, locks, "image", Config{TTL: 3 * time.Second, LockScope: "runtime-id"})
 				if renewal == "error" && !errors.Is(err, failure) {
 					t.Fatalf("Ensure() = %v, want renewal failure", err)
 				}
 				if renewal == "lost" && status.Code(err) != codes.ResourceExhausted {
 					t.Fatalf("Ensure() = %v, want ownership loss", err)
 				}
-				if elapsed := time.Since(start); elapsed != minLockRenewInterval {
+				if elapsed := time.Since(start); elapsed != time.Second {
 					t.Errorf("renewal elapsed=%v, want minimum interval", elapsed)
 				}
 				if extensions != 1 || released != 1 || !buildStopped {

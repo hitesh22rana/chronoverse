@@ -9,6 +9,8 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 )
 
 // ExecutionWorker holds the execution worker configuration.
@@ -75,6 +77,9 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 // validate rejects workload container limits that the Docker runtime would
 // silently ignore or misinterpret.
 func (c *ExecutionWorkerConfig) validate() error {
+	if err := (&imagepull.Config{TTL: c.ImagePullLockTTL}).Validate(); err != nil {
+		return fmt.Errorf("invalid EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL: %w", err)
+	}
 	memoryBytes, err := units.RAMInBytes(c.WorkloadMemory)
 	if err != nil {
 		return fmt.Errorf("invalid EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY: %w", err)

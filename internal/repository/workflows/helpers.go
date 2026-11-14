@@ -147,11 +147,8 @@ func workflowRequestHashSet(
 		}
 	}
 
-	// PostgreSQL alias position 1 (Go index 0) is a persistence contract with
-	// migration 11's down migration: it must always contain the legacy hash
-	// built from canonical UUID text because the restored legacy operation also
-	// uses canonical text. Keep it even when it equals the primary
-	// canonical-payload hash.
+	// Keep the canonical-UUID legacy hash first, even when it equals the primary
+	// canonical-payload hash, so raw UUID spellings never displace it.
 	compatibleHashes := []string{legacyHash}
 	var rawLegacyHash string
 	if identityChanged {

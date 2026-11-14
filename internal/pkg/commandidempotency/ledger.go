@@ -129,8 +129,8 @@ type Reservation struct {
 	Response   json.RawMessage
 }
 
-// LegacyIdentity is one exact operation/hash pair understood by the workflow
-// idempotency implementation restored by migration 11's down migration.
+// LegacyIdentity records an exact legacy operation/hash pair for an accepted
+// workflow command.
 type LegacyIdentity struct {
 	Operation   string
 	RequestHash string

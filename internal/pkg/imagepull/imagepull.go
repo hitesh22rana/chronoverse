@@ -29,6 +29,8 @@ type Client interface {
 }
 
 // LockStore coordinates image pulls between workers sharing a Docker daemon.
+// Extension and release implementations must honor context deadlines so renewal
+// shutdown and cleanup can complete within their I/O budgets.
 type LockStore interface {
 	AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error)
 	ExtendDistributedLockWithToken(ctx context.Context, key, token string, expiration time.Duration) (bool, error)

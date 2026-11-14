@@ -1143,7 +1143,7 @@ EOF
     fi
     if [ -z "$NODE_POD_CIDRS" ]; then
       if ! NODE_POD_CIDRS="$(kubectl_cmd get nodes -o jsonpath='{.items[*].spec.podCIDR}' 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/ $//')"; then
-        warn "could not query node pod CIDRs (legacy field)"
+        warn "could not query node pod CIDR (spec.podCIDR)"
         NODE_POD_CIDRS=""
       fi
     fi

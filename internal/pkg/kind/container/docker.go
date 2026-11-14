@@ -592,7 +592,7 @@ func (w *DockerWorkflow) hostConfig() *container.HostConfig {
 	// Workload isolation (VULN-004a): dedicated network, no capabilities, no
 	// privilege escalation, read-only rootfs with a writable /tmp.
 	networkMode := DefaultWorkloadNetwork
-	if w != nil && w.workloadNetwork != "" {
+	if w.workloadNetwork != "" {
 		networkMode = w.workloadNetwork
 	}
 
@@ -607,10 +607,6 @@ func (w *DockerWorkflow) hostConfig() *container.HostConfig {
 		},
 		IpcMode: container.IPCModePrivate,
 	}
-	if w == nil {
-		return hostConfig
-	}
-
 	resources := container.Resources{}
 	if w.resourceLimits.MemoryBytes > 0 {
 		resources.Memory = w.resourceLimits.MemoryBytes

@@ -217,48 +217,6 @@ func TestAutomaticScheduleHashExcludesServerGeneratedTime(t *testing.T) {
 	}
 }
 
-// TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant pins the identity an
-// automatic occurrence spends. The instant arrives already normalized to UTC by parseTime, so
-// this function only has to format it: one instant is one identity, the next is another, and an
-// identity the caller named is never rewritten.
-func TestNormalizeScheduleJobIdempotencyKeyDerivesOneIdentityPerInstant(t *testing.T) {
-	t.Parallel()
-
-	const workflowID = "22222222-2222-4222-8222-222222222222"
-	instant := time.Date(2026, time.October, 7, 10, 30, 0, 123456000, time.UTC)
-
-	utcKey, utcProvided := normalizeScheduleJobIdempotencyKey(
-		workflowID, instant, jobsmodel.JobTriggerAutomatic.ToString(), "",
-	)
-	if utcProvided {
-		t.Fatal("derived identity reported itself as caller-provided")
-	}
-	if want := idempotency.JobDispatchEventKey(workflowID + ":2026-10-07T10:30:00.123456Z"); utcKey != want {
-		t.Fatalf("derived identity = %q, want the UTC instant key %q", utcKey, want)
-	}
-
-	// One instant later is a different occurrence, and an identity the caller supplied is
-	// returned unchanged for either trigger.
-	laterKey, _ := normalizeScheduleJobIdempotencyKey(
-		workflowID, instant.Add(time.Nanosecond), jobsmodel.JobTriggerAutomatic.ToString(), "",
-	)
-	if laterKey == utcKey {
-		t.Fatalf("derived identity %q is shared with the next instant", laterKey)
-	}
-	for trigger, wantProvided := range map[string]bool{
-		jobsmodel.JobTriggerAutomatic.ToString(): true,
-		jobsmodel.JobTriggerManual.ToString():    false,
-	} {
-		got, provided := normalizeScheduleJobIdempotencyKey(workflowID, instant, trigger, "caller-key")
-		if got != "caller-key" {
-			t.Fatalf("%s trigger rewrote the caller's identity to %q", trigger, got)
-		}
-		if provided != wantProvided {
-			t.Fatalf("%s trigger reported caller-provided = %t, want %t", trigger, provided, wantProvided)
-		}
-	}
-}
-
 func TestMapBeginTxErrorClassifiesTheCallersThatWentAway(t *testing.T) {
 	t.Parallel()
 
@@ -320,7 +278,6 @@ func TestManualScheduleInsertDoesNotPermanentlyDeduplicateJobRow(t *testing.T) {
 		jobsmodel.JobTriggerManual.ToString(),
 		"command-key",
 		0,
-		false,
 	)
 	if err != nil {
 		t.Fatalf("scheduleJobInsertStatement() error = %v", err)
@@ -339,7 +296,6 @@ func TestAutomaticScheduleInsertPersistsGenerationForConflictValidation(t *testi
 		jobsmodel.JobTriggerAutomatic.ToString(),
 		"workflow:workflow-1:BUILD:3:automatic-job",
 		3,
-		true,
 	)
 	if err != nil {
 		t.Fatalf("scheduleJobInsertStatement() error = %v", err)

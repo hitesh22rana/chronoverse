@@ -108,7 +108,7 @@ func TestEnsureDefaultConfigPreservesBuildErrorDespiteReleaseFailure(t *testing.
 				return errors.New("release connection closed")
 			},
 		}
-		if err := Ensure(t.Context(), client, locks, "image", Config{WaitTimeout: -1, RetryInterval: -1}); !errors.Is(err, buildFailure) {
+		if err := Ensure(t.Context(), client, locks, "image", Config{}); !errors.Is(err, buildFailure) {
 			t.Fatalf("Ensure() = %v, want build failure", err)
 		}
 		if releaseCtx == nil || releaseCtx.Err() != context.Canceled {
@@ -167,7 +167,7 @@ func TestEnsureRenewalFailureCancelsAndJoinsBuildBeforeReleasingOwnership(t *tes
 					t.Fatalf("Ensure() = %v, want ownership loss", err)
 				}
 				if elapsed := time.Since(start); elapsed != time.Second {
-					t.Errorf("renewal elapsed=%v, want minimum interval", elapsed)
+					t.Errorf("renewal elapsed=%v, want TTL/3 interval", elapsed)
 				}
 				if extensions != 1 || released != 1 || !buildStopped {
 					t.Fatalf("extensions=%d releases=%d buildStopped=%v", extensions, released, buildStopped)

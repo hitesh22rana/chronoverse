@@ -77,8 +77,8 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 // validate rejects workload container limits that the Docker runtime would
 // silently ignore or misinterpret.
 func (c *ExecutionWorkerConfig) validate() error {
-	if err := (&imagepull.Config{TTL: c.ImagePullLockTTL}).Validate(); err != nil {
-		return fmt.Errorf("invalid EXECUTION_WORKER_IMAGE_PULL_LOCK_TTL: %w", err)
+	if err := (&imagepull.Config{TTL: c.ImagePullLockTTL, WaitTimeout: c.ImagePullLockWaitTimeout, RetryInterval: c.ImagePullLockRetryInterval}).Validate(); err != nil {
+		return fmt.Errorf("invalid EXECUTION_WORKER_IMAGE_PULL_LOCK_%w", err)
 	}
 	memoryBytes, err := units.RAMInBytes(c.WorkloadMemory)
 	if err != nil {

@@ -117,7 +117,7 @@ func TestEnsurePreservesIndependentWorkErrorDuringRenewalFailure(t *testing.T) {
 	renewErr := errors.New("Redis unavailable")
 	workErr := errors.New("registry denied image")
 	for _, failure := range []error{
-		nil, context.Canceled, fmt.Errorf("build: %w", context.DeadlineExceeded),
+		context.Canceled, fmt.Errorf("build: %w", context.DeadlineExceeded),
 		status.Error(codes.Canceled, "canceled"), status.Error(codes.DeadlineExceeded, "expired"), workErr,
 	} {
 		t.Run(fmt.Sprintf("%v", failure), func(t *testing.T) {
@@ -157,6 +157,68 @@ func TestEnsureExhaustsLeaseAfterDelayedRenewalResponse(t *testing.T) {
 		err := Ensure(t.Context(), client, locks, "image", Config{TTL: 3 * time.Second})
 		if status.Code(err) != codes.Unavailable || calls != 1 {
 			t.Fatalf("exhausted renewal = %v; calls=%d", err, calls)
+		}
+	})
+}
+
+func TestEnsureRejectsNegativeWaitAndRetryBeforeExternalCalls(t *testing.T) {
+	for _, cfg := range []Config{{WaitTimeout: -time.Second}, {RetryInterval: -time.Second}} {
+		if err := Ensure(t.Context(), nil, nil, "image", cfg); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("negative duration accepted: %v", err)
+		}
+	}
+}
+
+func TestEnsureCallerCancellationWinsOverConcurrentRenewalFailure(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				parent, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				renewErr := errors.New("Redis renewal failed")
+				client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(ctx context.Context, _ string) error {
+					<-ctx.Done()
+					if !deadline {
+						cancel()
+					}
+					<-parent.Done()
+					return ctx.Err()
+				}}
+				locks := contractLocks{
+					acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+					extend:  func(context.Context, string, string, time.Duration) (bool, error) { return false, renewErr },
+					release: func(context.Context, string, string) error { return nil },
+				}
+				err := Ensure(parent, client, locks, "image", Config{TTL: 3 * time.Second})
+				want := codes.Canceled
+				if deadline {
+					want = codes.DeadlineExceeded
+				}
+				if status.Code(err) != want {
+					t.Fatalf("caller cancellation relabeled: got %v, want %s", err, want)
+				}
+			})
+		})
+	}
+}
+
+func TestEnsureSuccessfulBuildChecksRenewalFailureDuringCleanup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		renewErr := errors.New("Redis renewal failed")
+		succeeded := false
+		client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(ctx context.Context, _ string) error {
+			<-ctx.Done()
+			succeeded = true
+			return nil // Build succeeded despite cancellation; cleanup must inspect the joined renewal result.
+		}}
+		locks := contractLocks{
+			acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+			extend:  func(context.Context, string, string, time.Duration) (bool, error) { return false, renewErr },
+			release: func(context.Context, string, string) error { return nil },
+		}
+		err := Ensure(t.Context(), client, locks, "image", Config{TTL: 3 * time.Second})
+		if !succeeded || !errors.Is(err, renewErr) {
+			t.Fatalf("completed build ignored joined renewal failure: success=%v err=%v", succeeded, err)
 		}
 	})
 }

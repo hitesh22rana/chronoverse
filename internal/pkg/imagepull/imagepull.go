@@ -46,11 +46,17 @@ type Config struct {
 	LockScope     string
 }
 
-// Validate checks explicitly configured lease durations before any work starts.
-// A zero TTL selects the default; Redis expiry resolution is one millisecond.
+// Validate checks explicitly configured coordination durations.
+// Zero selects defaults; Redis TTL resolution is one millisecond.
 func (c Config) Validate() error {
 	if c.TTL != 0 && c.TTL < minLockTTL {
-		return status.Error(codes.InvalidArgument, "image pull lock TTL must be zero or at least 3ms")
+		return errors.New("TTL must be zero or at least 3ms")
+	}
+	if c.WaitTimeout < 0 {
+		return errors.New("WAIT_TIMEOUT must be non-negative")
+	}
+	if c.RetryInterval < 0 {
+		return errors.New("RETRY_INTERVAL must be non-negative")
 	}
 	return nil
 }
@@ -58,7 +64,7 @@ func (c Config) Validate() error {
 // Ensure makes imageName available on client, serializing cold pulls per runtime scope.
 func Ensure(ctx context.Context, client Client, locks LockStore, imageName string, cfg Config) error {
 	if err := cfg.Validate(); err != nil {
-		return err
+		return status.Errorf(codes.InvalidArgument, "invalid image-pull configuration: %v", err)
 	}
 	cfg = normalizeConfig(cfg)
 
@@ -96,10 +102,10 @@ func normalizeConfig(cfg Config) Config {
 		cfg.TTL = defaultLockTTL
 	}
 	cfg.TTL = cfg.TTL.Truncate(time.Millisecond)
-	if cfg.WaitTimeout <= 0 {
+	if cfg.WaitTimeout == 0 {
 		cfg.WaitTimeout = defaultLockWaitTimeout
 	}
-	if cfg.RetryInterval <= 0 {
+	if cfg.RetryInterval == 0 {
 		cfg.RetryInterval = defaultLockRetryInterval
 	}
 	return cfg
@@ -118,49 +124,44 @@ func buildWithLock(ctx context.Context, client Client, locks LockStore, imageNam
 	}
 	buildCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stopRenewal, renewalErrCh := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL, expiresAt)
+	stopRenewal := startLockRenewal(buildCtx, locks, lockKey, token, cfg.TTL, expiresAt, cancel)
 	defer func() {
 		if renewErr := stopRenewal(); renewErr != nil {
-			err = imagePullResult(err, renewErr)
+			err = imagePullResult(ctx, err, renewErr)
 		}
 	}()
-	buildErrCh := make(chan error, 1)
-	go func() {
-		exists, err := client.ImageExists(buildCtx, imageName)
-		if err != nil || exists {
-			buildErrCh <- err
-			return
-		}
-		if err := buildCtx.Err(); err != nil {
-			buildErrCh <- err
-			return
-		}
-		buildErrCh <- client.Build(buildCtx, imageName)
-	}()
-	select {
-	case err := <-buildErrCh:
+	exists, err := client.ImageExists(buildCtx, imageName)
+	if err != nil || exists {
 		return err
-	case renewErr := <-renewalErrCh:
-		cancel()
-		return imagePullResult(<-buildErrCh, renewErr)
 	}
+	if err := buildCtx.Err(); err != nil {
+		return err
+	}
+	return client.Build(buildCtx, imageName)
 }
 
-func imagePullResult(workErr, renewErr error) error {
+func imagePullResult(caller context.Context, workErr, renewErr error) error {
 	if workErr == nil || errors.Is(workErr, context.Canceled) || errors.Is(workErr, context.DeadlineExceeded) || status.Code(workErr) == codes.Canceled || status.Code(workErr) == codes.DeadlineExceeded {
+		if err := caller.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
 		return renewErr
 	}
 	return workErr
 }
 
-func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration, expiresAt time.Time) (stop func() error, errs <-chan error) {
+func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration, expiresAt time.Time, cancelWork context.CancelFunc) func() error {
 	renewCtx, cancel := context.WithCancel(ctx)
-	errCh := make(chan error, 1)
 	done := make(chan struct{})
 	var renewalErr error
 
 	go func() {
-		defer close(done)
+		defer func() {
+			if renewalErr != nil {
+				cancelWork()
+			}
+			close(done)
+		}()
 		interval := ttl / 3
 		timer := time.NewTimer(time.Until(expiresAt.Add(-ttl + interval)))
 		defer timer.Stop()
@@ -177,7 +178,6 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 				}
 				if !deadline.After(started) {
 					renewalErr = status.Error(codes.Unavailable, "image pull lock renewal budget exhausted")
-					errCh <- renewalErr
 					return
 				}
 				callCtx, stop := context.WithDeadline(renewCtx, deadline)
@@ -188,12 +188,10 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 				}
 				if err != nil {
 					renewalErr = err
-					errCh <- renewalErr
 					return
 				}
 				if !renewed {
 					renewalErr = status.Error(codes.ResourceExhausted, "image pull lock ownership was lost")
-					errCh <- renewalErr
 					return
 				}
 				// Request start is a conservative lower bound for Redis expiry.
@@ -203,7 +201,7 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 		}
 	}()
 
-	return func() error { cancel(); <-done; return renewalErr }, errCh
+	return func() error { cancel(); <-done; return renewalErr }
 }
 
 func waitForLock(ctx context.Context, interval time.Duration) error {

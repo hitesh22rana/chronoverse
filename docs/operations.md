@@ -470,8 +470,8 @@ Lower intervals increase scheduling responsiveness and database load.
 
 ### Workflow Workers
 
-- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL` controls how long a worker owns an image
-  pull lease remains valid after acquisition or renewal.
+- `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL` controls how long an image-pull
+  lease remains valid after acquisition or renewal.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT` controls how long another
   worker waits for the same runtime node and image before retrying the Kafka
   record.
@@ -481,8 +481,9 @@ Lower intervals increase scheduling responsiveness and database load.
 Workflow and execution image-pull locks renew every `TTL/3`, including while
 rechecking image availability after acquisition. A zero TTL selects the default
 `10m`; explicit TTLs must be at least `3ms` and are rounded down to whole
-milliseconds to match Redis expiry precision. Invalid worker TTL settings fail
-startup.
+milliseconds to match Redis expiry precision. Zero wait timeout and retry
+interval select their defaults. Negative values for any of these three durations
+fail startup.
 
 Expiry is tracked conservatively from acquisition and renewal request start.
 Each extension deadline is the earliest of `now + TTL/3`, `now + 5s`, and the
@@ -494,8 +495,11 @@ production lease.
 
 Cleanup cancels and joins renewal; an in-flight extension remains subject to its
 I/O deadline. Release then uses a separate detached five-second deadline and
-remains best effort, preserving the build result. An independent build failure
-is retained if renewal fails concurrently.
+remains best effort. Release errors preserve the build result; a renewal failure
+can turn apparent build success into a retryable coordination error. A retry can
+reuse the cached image. Independent build failures are retained, caller-driven
+cancellation keeps the caller's error, and renewal-driven cancellation reports
+the renewal failure.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are

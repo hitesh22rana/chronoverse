@@ -40,8 +40,8 @@ func InitWorkflowWorkerConfig() (*WorkflowWorker, error) {
 	if err := envconfig.Process(envPrefix, &cfg); err != nil {
 		return nil, err
 	}
-	if err := (&imagepull.Config{TTL: cfg.ImagePullLockTTL}).Validate(); err != nil {
-		return nil, fmt.Errorf("invalid WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL: %w", err)
+	if err := (&imagepull.Config{TTL: cfg.ImagePullLockTTL, WaitTimeout: cfg.ImagePullLockWaitTimeout, RetryInterval: cfg.ImagePullLockRetryInterval}).Validate(); err != nil {
+		return nil, fmt.Errorf("invalid WORKFLOW_WORKER_IMAGE_PULL_LOCK_%w", err)
 	}
 	return &cfg, nil
 }

@@ -104,10 +104,7 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		return distributedLockError(parentCtx)
 	}
 
-	defer func() {
-		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
-		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
-	}()
+	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
 
 	// This handles the condition where the worklow is updated, since the interval might be changed
 	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {

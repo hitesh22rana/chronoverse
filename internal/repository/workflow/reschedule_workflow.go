@@ -48,10 +48,7 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	if err != nil || !isLockAcquired {
 		return distributedLockError(parentCtx)
 	}
-	defer func() {
-		//nolint:errcheck // Lock may have expired.
-		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
-	}()
+	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
 
 	_, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{
 		WorkflowId:         workflowID,

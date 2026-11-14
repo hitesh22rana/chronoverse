@@ -471,12 +471,22 @@ Lower intervals increase scheduling responsiveness and database load.
 ### Workflow Workers
 
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_TTL` controls how long a worker owns an image
-  pull lock before renewal.
+  pull lease remains valid after acquisition or renewal.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_WAIT_TIMEOUT` controls how long another
   worker waits for the same runtime node and image before retrying the Kafka
   record.
 - `WORKFLOW_WORKER_IMAGE_PULL_LOCK_RETRY_INTERVAL` controls Redis polling while
   waiting for a held image pull lock.
+
+Workflow and execution image-pull locks renew every `max(TTL/3, 1s)`. Each
+extension has an I/O deadline of `min(TTL/3, 5s)`; a renewal failure cancels the
+build context. Cleanup joins renewal before releasing the original ownership
+token with a detached five-second deadline. Release remains best effort and
+preserves the build result.
+
+Use the default `10m` TTL unless a shorter lease has been validated under Redis
+latency and worker scheduling delays. TTLs at or below one second can expire
+before the first renewal because the renewal interval is floored at one second.
 
 Increase the TTL and wait timeout for large images or slow registries. Reduce
 the retry interval only when Redis can support the extra polling. Locks are

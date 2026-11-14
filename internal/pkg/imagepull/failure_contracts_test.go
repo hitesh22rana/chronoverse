@@ -80,6 +80,7 @@ func TestEnsureDefaultConfigPreservesBuildErrorDespiteReleaseFailure(t *testing.
 		start := time.Now()
 		key := lockKey("tcp://runtime:2375", "image")
 		buildCalls, releases := 0, 0
+		var releaseCtx context.Context
 		client := contractClient{
 			inspect: func(context.Context, string) (bool, error) { return false, nil },
 			build: func(_ context.Context, image string) error {
@@ -99,6 +100,7 @@ func TestEnsureDefaultConfigPreservesBuildErrorDespiteReleaseFailure(t *testing.
 				return "owner", true, nil
 			},
 			release: func(ctx context.Context, gotKey, token string) error {
+				releaseCtx = ctx
 				releases++
 				if ctx.Err() != nil || gotKey != key || token != "owner" {
 					t.Errorf("invalid release context or ownership")
@@ -108,6 +110,9 @@ func TestEnsureDefaultConfigPreservesBuildErrorDespiteReleaseFailure(t *testing.
 		}
 		if err := Ensure(t.Context(), client, locks, "image", Config{TTL: -1, WaitTimeout: -1, RetryInterval: -1}); !errors.Is(err, buildFailure) {
 			t.Fatalf("Ensure() = %v, want build failure", err)
+		}
+		if releaseCtx == nil || releaseCtx.Err() != context.Canceled {
+			t.Error("cleanup context was not canceled after release failure")
 		}
 		if buildCalls != 1 || releases != 1 {
 			t.Fatalf("builds=%d releases=%d, want1 each", buildCalls, releases)
@@ -252,4 +257,101 @@ func assertLockOwnership(ctx context.Context, t *testing.T, key, token, wantKey 
 	if ctx.Err() != nil || key != wantKey || token != "owner" {
 		t.Errorf("invalid lock ownership: key=%q token=%q context=%v", key, token, ctx.Err())
 	}
+}
+
+func TestEnsureBoundsReleaseAfterBuildAndCancellation(t *testing.T) {
+	for _, outcome := range []string{"success", "failure", "canceled"} {
+		t.Run(outcome, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var buildErr error
+				if outcome == "failure" {
+					buildErr = errors.New("image unavailable")
+				}
+				if outcome == "canceled" {
+					buildErr = context.Canceled
+				}
+				client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(context.Context, string) error {
+					if outcome == "canceled" {
+						cancel()
+					}
+					return buildErr
+				}}
+				start := time.Now()
+				locks := contractLocks{
+					acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+					release: func(releaseCtx context.Context, key, token string) error {
+						deadline, ok := releaseCtx.Deadline()
+						if !ok {
+							t.Error("image-pull release has no deadline")
+							return errors.New("no cleanup budget")
+						}
+						if deadline.Sub(start) != 5*time.Second || releaseCtx.Err() != nil || token != "owner" || key != lockKey("tcp://runtime:2375", "image") {
+							t.Errorf("invalid cleanup budget/context/identity: %v, %v, %s, %s", deadline, releaseCtx.Err(), key, token)
+						}
+						<-releaseCtx.Done()
+						return releaseCtx.Err()
+					},
+				}
+				err := Ensure(ctx, client, locks, "image", Config{})
+				if !errors.Is(err, buildErr) {
+					t.Fatalf("cleanup changed build result: got %v, want %v", err, buildErr)
+				}
+				if time.Since(start) != 5*time.Second {
+					t.Fatalf("stalled cleanup duration = %s", time.Since(start))
+				}
+			})
+		})
+	}
+}
+
+func TestEnsureJoinsCanceledRenewalBeforeRelease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, stopped := make(chan struct{}), make(chan struct{})
+		client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(context.Context, string) error { <-entered; return nil }}
+		locks := contractLocks{
+			acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+			extend: func(ctx context.Context, _, _ string, _ time.Duration) (bool, error) {
+				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 5*time.Second {
+					t.Error("renewal socket I/O has no bounded deadline")
+				}
+				close(entered)
+				<-ctx.Done()
+				time.Sleep(time.Second) // Model an in-flight request unwinding after cancellation.
+				close(stopped)
+				return false, ctx.Err()
+			},
+			release: func(context.Context, string, string) error {
+				select {
+				case <-stopped:
+				default:
+					t.Error("lock released before renewal stopped")
+				}
+				return nil
+			},
+		}
+		if err := Ensure(t.Context(), client, locks, "image", Config{TTL: 3 * time.Second}); err != nil {
+			t.Fatalf("completed build = %v", err)
+		}
+	})
+}
+
+func TestEnsureBoundsStalledRenewalAndCancelsBuild(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(ctx context.Context, _ string) error { <-ctx.Done(); return ctx.Err() }}
+		locks := contractLocks{
+			acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+			extend: func(ctx context.Context, _, _ string, _ time.Duration) (bool, error) {
+				<-ctx.Done()
+				return false, ctx.Err()
+			},
+			release: func(context.Context, string, string) error { return nil },
+		}
+		start := time.Now()
+		err := Ensure(t.Context(), client, locks, "image", Config{TTL: 30 * time.Second})
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 15*time.Second {
+			t.Fatalf("stalled renewal = %v after %s", err, time.Since(start))
+		}
+	})
 }

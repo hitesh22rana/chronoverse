@@ -13,10 +13,12 @@ import (
 )
 
 const (
-	defaultLockTTL           = 10 * time.Minute
-	defaultLockWaitTimeout   = 10 * time.Minute
-	defaultLockRetryInterval = 500 * time.Millisecond
-	minLockRenewInterval     = time.Second
+	defaultLockTTL            = 10 * time.Minute
+	defaultLockWaitTimeout    = 10 * time.Minute
+	defaultLockRetryInterval  = 500 * time.Millisecond
+	minLockRenewInterval      = time.Second
+	defaultLockReleaseTimeout = 5 * time.Second
+	defaultLockRenewTimeout   = 5 * time.Second
 )
 
 // Client can inspect and pull images from a single Docker daemon.
@@ -27,6 +29,8 @@ type Client interface {
 }
 
 // LockStore coordinates image pulls between workers sharing a Docker daemon.
+// Extension and release implementations must honor context deadlines so renewal
+// shutdown and cleanup can complete within their I/O budgets.
 type LockStore interface {
 	AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error)
 	ExtendDistributedLockWithToken(ctx context.Context, key, token string, expiration time.Duration) (bool, error)
@@ -87,10 +91,12 @@ func normalizeConfig(cfg Config) Config {
 }
 
 func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config) error {
-	defer func(ctx context.Context) {
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultLockReleaseTimeout)
+		defer cancel()
 		//nolint:errcheck // A lost or expired lock should not mask the build result.
-		_ = locks.ReleaseDistributedLockWithToken(ctx, lockKey, token)
-	}(context.WithoutCancel(ctx))
+		_ = locks.ReleaseDistributedLockWithToken(releaseCtx, lockKey, token)
+	}()
 
 	exists, err := client.ImageExists(ctx, imageName)
 	if err != nil || exists {
@@ -122,13 +128,11 @@ func buildWithLock(ctx context.Context, client Client, locks LockStore, imageNam
 func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration) (stop func(), errs <-chan error) {
 	renewCtx, cancel := context.WithCancel(ctx)
 	errCh := make(chan error, 1)
-	interval := ttl / 3
-	if interval < minLockRenewInterval {
-		interval = minLockRenewInterval
-	}
+	done := make(chan struct{})
 
 	go func() {
-		ticker := time.NewTicker(interval)
+		defer close(done)
+		ticker := time.NewTicker(max(ttl/3, minLockRenewInterval))
 		defer ticker.Stop()
 
 		for {
@@ -136,7 +140,9 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 			case <-renewCtx.Done():
 				return
 			case <-ticker.C:
-				renewed, err := locks.ExtendDistributedLockWithToken(renewCtx, lockKey, token, ttl)
+				callCtx, stop := context.WithTimeout(renewCtx, min(ttl/3, defaultLockRenewTimeout))
+				renewed, err := locks.ExtendDistributedLockWithToken(callCtx, lockKey, token, ttl)
+				stop()
 				if err != nil {
 					errCh <- err
 					return
@@ -149,7 +155,7 @@ func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token strin
 		}
 	}()
 
-	return cancel, errCh
+	return func() { cancel(); <-done }, errCh
 }
 
 func waitForLock(ctx context.Context, interval time.Duration) error {

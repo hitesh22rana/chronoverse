@@ -139,7 +139,7 @@ func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workf
 }
 
 func isStaleWorkflowEvent(workflow *workflowspb.GetWorkflowByIDResponse, workflowEvent *workflowsmodel.WorkflowEvent) bool {
-	return workflowEvent.Generation != 0 && workflow.GetGeneration() != workflowEvent.Generation
+	return workflow.GetGeneration() != workflowEvent.Generation
 }
 
 // Run starts the workflow event execution loop.

@@ -144,6 +144,10 @@ func (r *Repository) ScheduleJob(
 		return "", err
 	}
 
+	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && workflowGeneration < 1 {
+		return "", status.Error(codes.InvalidArgument, "workflow generation is required for automatic jobs")
+	}
+
 	scheduledAtTime, err := parseTime(scheduledAt)
 	if err != nil {
 		err = status.Errorf(codes.InvalidArgument, "invalid scheduled_at time format: %v", err)
@@ -336,7 +340,7 @@ func scheduleJobInsertStatement(
             RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, postgres.TableWorkflows), args, nil
 	case automaticIdempotencyKeyProvided:
-		guard := automaticScheduleGuardSQL(workflowGeneration)
+		guard := automaticScheduleGuardSQL()
 		return fmt.Sprintf(`
             INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
             SELECT $1, $2, $3, $4, $5, $6
@@ -347,7 +351,7 @@ func scheduleJobInsertStatement(
             RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, guard), args, nil
 	case trigger == jobsmodel.JobTriggerAutomatic.ToString():
-		guard := automaticScheduleGuardSQL(workflowGeneration)
+		guard := automaticScheduleGuardSQL()
 		return fmt.Sprintf(`
             INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
             SELECT $1, $2, $3, $4, $5, $6
@@ -362,11 +366,7 @@ func scheduleJobInsertStatement(
 	}
 }
 
-func automaticScheduleGuardSQL(workflowGeneration int64) string {
-	if workflowGeneration <= 0 {
-		return ""
-	}
-
+func automaticScheduleGuardSQL() string {
 	return fmt.Sprintf(`
             FROM %s AS w
             WHERE w.id = $1

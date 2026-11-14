@@ -51,10 +51,10 @@ func TestIsStaleWorkflowEvent(t *testing.T) {
 			expectedStale: true,
 		},
 		{
-			name:          "legacy event",
+			name:          "missing generation",
 			current:       3,
 			event:         0,
-			expectedStale: false,
+			expectedStale: true,
 		},
 	}
 

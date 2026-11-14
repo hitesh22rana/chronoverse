@@ -72,10 +72,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "error: missing required fields in request",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "",
-				UserId:      "user1",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "",
+				UserId:             "user1",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			want:  want{},
@@ -84,10 +85,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "error: invalid scheduled_at time",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "workflow_id",
-				UserId:      "user1",
-				ScheduledAt: "invalid_time",
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "workflow_id",
+				UserId:             "user1",
+				ScheduledAt:        "invalid_time",
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			want:  want{},
@@ -96,10 +98,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "error: workflow not found",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "invalid_workflow_id",
-				UserId:      "user1",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "invalid_workflow_id",
+				UserId:             "user1",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -118,10 +121,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "error: workflow not owned by user",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "workflow_id",
-				UserId:      "invalid_user_id",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "workflow_id",
+				UserId:             "invalid_user_id",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(
@@ -135,6 +139,12 @@ func TestScheduleJob(t *testing.T) {
 				).Return("", status.Error(codes.NotFound, "workflow not found or not owned by user"))
 			},
 			want:  want{},
+			isErr: true,
+		},
+		{
+			name:  "error: automatic trigger missing workflow generation",
+			req:   &jobspb.ScheduleJobRequest{WorkflowId: "workflow_id", UserId: "user1", ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano), Trigger: "AUTOMATIC", IdempotencyKey: "event"},
+			mock:  func(_ *jobspb.ScheduleJobRequest) {},
 			isErr: true,
 		},
 		{
@@ -152,10 +162,11 @@ func TestScheduleJob(t *testing.T) {
 		{
 			name: "error: internal server error",
 			req: &jobspb.ScheduleJobRequest{
-				WorkflowId:  "workflow_id",
-				UserId:      "user1",
-				ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-				Trigger:     "AUTOMATIC",
+				WorkflowId:         "workflow_id",
+				UserId:             "user1",
+				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+				Trigger:            "AUTOMATIC",
+				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
 				repo.EXPECT().ScheduleJob(

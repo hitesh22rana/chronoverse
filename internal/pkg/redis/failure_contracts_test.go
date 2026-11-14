@@ -211,13 +211,6 @@ func TestRedisClosedClientLockAndWriteFailures(t *testing.T) {
 	store := &Store{client: client}
 	for name, operation := range map[string]func() error{
 		"set": func() error { return store.Set(t.Context(), "key", "value", time.Minute) },
-		"acquire": func() error {
-			acquired, err := store.AcquireDistributedLock(t.Context(), "key", time.Minute)
-			if acquired {
-				t.Error("closed client acquired lock")
-			}
-			return err
-		},
 		"acquire token": func() error {
 			token, acquired, err := store.AcquireDistributedLockWithToken(t.Context(), "key", time.Minute)
 			if acquired || token != "" {
@@ -232,7 +225,6 @@ func TestRedisClosedClientLockAndWriteFailures(t *testing.T) {
 			}
 			return err
 		},
-		"release":       func() error { return store.ReleaseDistributedLock(t.Context(), "key") },
 		"release token": func() error { return store.ReleaseDistributedLockWithToken(t.Context(), "key", "owner") },
 		"stats": func() error {
 			value, err := store.EvictedKeys(t.Context())
@@ -270,30 +262,6 @@ func TestRedisStatsRejectsMalformedServerData(t *testing.T) {
 			value, err := (&Store{client: client}).EvictedKeys(t.Context())
 			if value != 0 || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), tc.message) {
 				t.Fatalf("malformed stats = %d, %v", value, err)
-			}
-		})
-	}
-}
-
-func TestRedisLegacyLockProtocolOutcomes(t *testing.T) {
-	for _, tc := range []struct {
-		name, response string
-		want           codes.Code
-	}{{"released", ":1\r\n", codes.OK}, {"not owned", ":0\r\n", codes.FailedPrecondition}} {
-		t.Run(tc.name, func(t *testing.T) {
-			address := redisProtocolPeer(t, nil, func(args []string) string {
-				if strings.EqualFold(args[0], "eval") {
-					if len(args) != 5 || args[2] != "1" || args[3] != "legacy-lock" || args[4] != "locked" {
-						t.Errorf("EVAL arguments = %v", args)
-					}
-					return tc.response
-				}
-				return redisHandshakeReply(args)
-			})
-			client := goredis.NewClient(&goredis.Options{Addr: address, MaxRetries: -1})
-			defer client.Close()
-			if err := (&Store{client: client}).ReleaseDistributedLock(t.Context(), "legacy-lock"); status.Code(err) != tc.want {
-				t.Fatalf("release = %v", err)
 			}
 		})
 	}

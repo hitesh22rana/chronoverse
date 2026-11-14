@@ -975,11 +975,11 @@ func (s *testContainerSvc) Terminate(_ context.Context, containerID string) erro
 
 type testWorkflowLockStore struct{}
 
-func (*testWorkflowLockStore) AcquireDistributedLock(context.Context, string, time.Duration) (bool, error) {
-	return true, nil
+func (*testWorkflowLockStore) AcquireDistributedLockWithToken(context.Context, string, time.Duration) (token string, acquired bool, err error) {
+	return "owner-token", true, nil
 }
 
-func (*testWorkflowLockStore) ReleaseDistributedLock(context.Context, string) error {
+func (*testWorkflowLockStore) ReleaseDistributedLockWithToken(context.Context, string, string) error {
 	return nil
 }
 

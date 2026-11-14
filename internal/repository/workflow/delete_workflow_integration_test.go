@@ -137,14 +137,14 @@ func deleteWorkflowMeiliLogCount(
 func deleteWorkflowAssertLockFree(ctx context.Context, t *testing.T, lock workflowLockStore, key string) {
 	t.Helper()
 
-	acquired, err := lock.AcquireDistributedLock(ctx, key, time.Minute)
+	token, acquired, err := lock.AcquireDistributedLockWithToken(ctx, key, time.Minute)
 	if err != nil {
 		t.Fatalf("probe lock %q: %v", key, err)
 	}
 	if !acquired {
 		t.Fatalf("lock %q is still held after the delete event", key)
 	}
-	if releaseErr := lock.ReleaseDistributedLock(ctx, key); releaseErr != nil {
+	if releaseErr := lock.ReleaseDistributedLockWithToken(ctx, key, token); releaseErr != nil {
 		t.Fatalf("release probe lock %q: %v", key, releaseErr)
 	}
 }
@@ -230,7 +230,7 @@ func TestIntegrationDeleteWorkflowActionLockContentionPreservesLogs(t *testing.T
 	deleteWorkflowSeedMeiliLog(ctx, t, repo.ms, "contention-doc", ownerID, workflowID, jobID)
 
 	lockKey := "workflow:DELETE:" + workflowID
-	acquired, err := repo.rdb.AcquireDistributedLock(ctx, lockKey, time.Minute)
+	token, acquired, err := repo.rdb.AcquireDistributedLockWithToken(ctx, lockKey, time.Minute)
 	if err != nil || !acquired {
 		t.Fatalf("pre-acquire lock %q: acquired=%v error=%v", lockKey, acquired, err)
 	}
@@ -253,7 +253,7 @@ func TestIntegrationDeleteWorkflowActionLockContentionPreservesLogs(t *testing.T
 		t.Fatalf("meilisearch logs after rejected delete = %d, want 1", got)
 	}
 
-	if releaseErr := repo.rdb.ReleaseDistributedLock(ctx, lockKey); releaseErr != nil {
+	if releaseErr := repo.rdb.ReleaseDistributedLockWithToken(ctx, lockKey, token); releaseErr != nil {
 		t.Fatalf("release contention lock: %v", releaseErr)
 	}
 	if err := repo.runTargetWorkflow(ctx, deleteEvent); err != nil {

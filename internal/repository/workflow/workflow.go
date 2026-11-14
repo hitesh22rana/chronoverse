@@ -72,8 +72,8 @@ type kafkaProducer interface {
 }
 
 type workflowLockStore interface {
-	AcquireDistributedLock(ctx context.Context, key string, expiration time.Duration) (bool, error)
-	ReleaseDistributedLock(ctx context.Context, key string) error
+	AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (string, bool, error)
+	ReleaseDistributedLockWithToken(ctx context.Context, key, token string) error
 }
 
 // Repository provides workflow repository.

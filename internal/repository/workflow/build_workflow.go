@@ -99,14 +99,14 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		workflowsmodel.ActionBuild.ToString(),
 		workflowID,
 	)
-	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, buildWorkflowDefaultExpirationTimeout)
+	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, buildWorkflowDefaultExpirationTimeout)
 	if err != nil || !isLockAcquired {
 		return distributedLockError(parentCtx)
 	}
 
 	defer func() {
 		//nolint:errcheck // Ignore the error as we don't want to block the job execution, since, the lock might have been auto-released due to expiration
-		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
 	}()
 
 	// This handles the condition where the worklow is updated, since the interval might be changed

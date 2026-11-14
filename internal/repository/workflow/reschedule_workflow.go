@@ -44,13 +44,13 @@ func (r *Repository) rescheduleWorkflow(parentCtx context.Context, workflowEvent
 	}
 
 	lockKey := fmt.Sprintf("%s:%s:%s", lockKeyPrefix, workflowsmodel.ActionReschedule.ToString(), workflowID)
-	isLockAcquired, err := r.rdb.AcquireDistributedLock(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)
+	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, rescheduleWorkflowExpirationTimeout)
 	if err != nil || !isLockAcquired {
 		return distributedLockError(parentCtx)
 	}
 	defer func() {
 		//nolint:errcheck // Lock may have expired.
-		_ = r.rdb.ReleaseDistributedLock(parentCtx, lockKey)
+		_ = r.rdb.ReleaseDistributedLockWithToken(parentCtx, lockKey, lockToken)
 	}()
 
 	_, err = r.svc.Jobs.ScheduleJob(ctx, &jobspb.ScheduleJobRequest{

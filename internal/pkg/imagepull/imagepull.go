@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	defaultLockTTL           = 10 * time.Minute
-	defaultLockWaitTimeout   = 10 * time.Minute
-	defaultLockRetryInterval = 500 * time.Millisecond
-	minLockRenewInterval     = time.Second
+	defaultLockTTL            = 10 * time.Minute
+	defaultLockWaitTimeout    = 10 * time.Minute
+	defaultLockRetryInterval  = 500 * time.Millisecond
+	minLockRenewInterval      = time.Second
+	defaultLockReleaseTimeout = 5 * time.Second
 )
 
 // Client can inspect and pull images from a single Docker daemon.
@@ -87,10 +88,12 @@ func normalizeConfig(cfg Config) Config {
 }
 
 func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config) error {
-	defer func(ctx context.Context) {
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultLockReleaseTimeout)
+		defer cancel()
 		//nolint:errcheck // A lost or expired lock should not mask the build result.
-		_ = locks.ReleaseDistributedLockWithToken(ctx, lockKey, token)
-	}(context.WithoutCancel(ctx))
+		_ = locks.ReleaseDistributedLockWithToken(releaseCtx, lockKey, token)
+	}()
 
 	exists, err := client.ImageExists(ctx, imageName)
 	if err != nil || exists {

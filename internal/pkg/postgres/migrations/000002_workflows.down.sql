@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS workflow_terminal_effects;
+DROP TABLE IF EXISTS workflows;
+DROP FUNCTION IF EXISTS update_workflows_updated_at;
+DROP TYPE IF EXISTS WORKFLOW_BUILD_STATUS;

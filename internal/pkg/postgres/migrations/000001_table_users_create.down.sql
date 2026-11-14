@@ -1,7 +1,0 @@
-DROP TRIGGER IF EXISTS trigger_update_users ON users;
-
-DROP FUNCTION IF EXISTS update_users_updated_at;
-
-DROP TABLE IF EXISTS users;
-
-DROP TYPE IF EXISTS NOTIFICATION_PREFERENCE;

@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS workflows (
     max_consecutive_job_failures_allowed INTEGER DEFAULT 3 NOT NULL CHECK (max_consecutive_job_failures_allowed > 0),
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
+    log_retention BOOLEAN NOT NULL DEFAULT TRUE,
+    generation BIGINT NOT NULL DEFAULT 1,
+    build_hash TEXT DEFAULT NULL,
+    resolved_image_ref TEXT DEFAULT NULL,
+    resolved_image_digest TEXT DEFAULT NULL,
     terminated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL
 );
 
@@ -33,3 +38,16 @@ CREATE TRIGGER trigger_update_workflows
 BEFORE UPDATE ON workflows
 FOR EACH ROW
 EXECUTE FUNCTION update_workflows_updated_at();
+
+CREATE TABLE workflow_terminal_effects (
+    job_id UUID PRIMARY KEY,
+    workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    effect TEXT NOT NULL CHECK (effect IN ('COMPLETED', 'FAILED')),
+    threshold_reached BOOLEAN DEFAULT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (clock_timestamp() AT TIME ZONE 'utc') NOT NULL,
+    CHECK (
+        (effect = 'FAILED' AND threshold_reached IS NOT NULL)
+        OR (effect = 'COMPLETED' AND threshold_reached IS NULL)
+    )
+);

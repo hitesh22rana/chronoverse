@@ -1,10 +1,10 @@
--- Table to store logs for job executions
 CREATE TABLE IF NOT EXISTS job_logs (
     -- IDs and metadata
+    event_id String NOT NULL COMMENT 'Deterministic log event ID used for dedupe',
     user_id UUID NOT NULL COMMENT 'ID of the user who owns the workflow',
     workflow_id UUID NOT NULL COMMENT 'ID of the parent workflow definition',
     job_id UUID NOT NULL COMMENT 'ID of the specific job execution',
-    
+
     -- Log data
     timestamp DateTime64(3, 'UTC') NOT NULL COMMENT 'When the log entry was created (UTC).',
     message String NOT NULL COMMENT 'Log message, compressed with ZSTD.' CODEC(ZSTD(3)),
@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS job_logs (
     INDEX idx_job_logs_user (user_id) TYPE minmax GRANULARITY 1,
     INDEX idx_job_logs_workflow (workflow_id) TYPE minmax GRANULARITY 1,
     INDEX idx_job_logs_stream (stream) TYPE tokenbf_v1(512, 2, 0) GRANULARITY 1
-) 
-ENGINE = MergeTree()
+)
+ENGINE = ReplacingMergeTree()
 PARTITION BY toDate(timestamp)
-ORDER BY (user_id, workflow_id, job_id, stream, timestamp, sequence_num)
+ORDER BY (user_id, workflow_id, job_id, sequence_num, stream, event_id)
 SETTINGS index_granularity = 8192;

@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_notifications_user_unread_kind_created_desc;

@@ -155,6 +155,10 @@ func (s *Service) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobReques
 		return "", err
 	}
 
+	if req.GetTrigger() == jobsmodel.JobTriggerAutomatic.ToString() && req.GetWorkflowGeneration() < 1 {
+		return "", status.Error(codes.InvalidArgument, "workflow generation is required for automatic jobs")
+	}
+
 	res, err := s.repo.ScheduleJob(
 		ctx,
 		req.GetWorkflowId(),

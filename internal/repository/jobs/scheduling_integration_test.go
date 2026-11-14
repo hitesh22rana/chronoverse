@@ -941,166 +941,18 @@ func TestIntegrationScheduleJobAutomaticIdentityConflictPreservesOriginalJob(t *
 	}
 }
 
-func TestIntegrationScheduleJobAutomaticWithoutGenerationRecordsGenerationZero(t *testing.T) {
+func TestIntegrationScheduleJobRequiresAutomaticGeneration(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
-
 	fixture := seedScheduleFixture(ctx, t, pg)
-	scheduledAt := occurrenceInstant(time.Hour)
-	occurrenceKey := scheduleFixtureKey(fixture.WorkflowID, scheduledAt)
-
-	// Generation-zero scheduling is tracked separately in PR #274.
-	jobID, err := repo.ScheduleJob(
-		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
-		jobsmodel.JobTriggerAutomatic.ToString(), scheduleFixtureKey(fixture.WorkflowID, scheduledAt), 0,
-	)
-	if err != nil {
-		t.Fatalf("ScheduleJob: %v", err)
-	}
-
-	job := readScheduledJob(ctx, t, pg, jobID)
-	if !job.WorkflowGeneration.Valid || job.WorkflowGeneration.Int64 != 0 {
-		t.Fatalf("generation-zero automatic job workflow_generation = %v, want 0", job.WorkflowGeneration)
-	}
-	assertNullString(t, "job idempotency_key", job.IdempotencyKey, occurrenceKey)
-
-	command, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
-	if !ok {
-		t.Fatal("generation-zero occurrence identity has no ledger row, want a completed reservation")
-	}
-	assertNullString(t, "command resource_id", command.ResourceID, jobID)
-
-	// The ledger binds the input it accepted, so re-offering the occurrence generation-aware is a conflict.
-	if _, err = repo.ScheduleJob(
-		ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
-		jobsmodel.JobTriggerAutomatic.ToString(), scheduleFixtureKey(fixture.WorkflowID, scheduledAt), 1,
-	); status.Code(err) != codes.AlreadyExists {
-		t.Fatalf("conflicting generation-zero occurrence code = %v, want %v (err: %v)", status.Code(err), codes.AlreadyExists, err)
-	}
-	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 1 {
-		t.Fatalf("workflow has %d jobs, want the single generation-zero occurrence", count)
-	}
-	afterCommand, ok := readCommandByScope(ctx, t, pg, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation, occurrenceKey)
-	if !ok {
-		t.Fatalf("conflict removed the ledger row of the generation-zero occurrence %q", occurrenceKey)
-	}
-	assertSameLedgerRow(t, afterCommand, command)
-}
-
-// TestIntegrationScheduleJobAutomaticWithoutGenerationSkipsTheWorkflowGuard records the
-// other side of the generation-0 path, which the generation-zero identity test above cannot
-// show because its workflow is healthy. automaticScheduleGuardSQL emits no workflow clause
-// below generation 1, so an automatic command carrying no generation reaches the insert
-// with no ownership, termination or build-status clause at all, and every workflow state
-// the generation-1 table refuses is admitted here. Only a workflow that does not exist is
-// still refused, by the foreign key rather than the guard, and that arrives as Internal
-// because mapScheduleInsertError maps a missing-workflow NoRows to FailedPrecondition only
-// for generation > 0. These are recorded as found so that closing the generation-0 path is
-// a deliberate change.
-func TestIntegrationScheduleJobAutomaticWithoutGenerationSkipsTheWorkflowGuard(t *testing.T) {
-	ctx := context.Background()
-	pg := testkit.Postgres(t)
-	repo := newTestRepository(t)
-
-	tests := []struct {
-		name string
-		// prepare leaves the fixture workflow in the state this case reports.
-		prepare func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture
-		// admitted is whether the generation-0 command nonetheless creates the job.
-		admitted bool
-	}{
-		{
-			name: "workflow is terminated",
-			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
-				t.Helper()
-
-				fixture := seedScheduleFixture(ctx, t, pg)
-				tag, err := pg.Exec(ctx, `UPDATE workflows SET terminated_at = now() AT TIME ZONE 'utc' WHERE id = $1`, fixture.WorkflowID)
-				if err != nil || tag.RowsAffected() != 1 {
-					t.Fatalf("terminate fixture workflow: %v", err)
-				}
-				return fixture
-			},
-			admitted: true,
-		},
-		{
-			name: "workflow belongs to another user",
-			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
-				t.Helper()
-
-				fixture := seedScheduleFixture(ctx, t, pg)
-				tag, err := pg.Exec(ctx, `UPDATE workflows SET user_id = $2 WHERE id = $1`, fixture.WorkflowID, seedScheduleUser(ctx, t, pg))
-				if err != nil || tag.RowsAffected() != 1 {
-					t.Fatalf("transfer fixture workflow: %v", err)
-				}
-				return fixture
-			},
-			admitted: true,
-		},
-		{
-			// The one state still refused, but by the foreign key rather than by the guard.
-			name: "workflow does not exist",
-			prepare: func(ctx context.Context, t *testing.T, pg *postgres.Postgres) scheduleCommandFixture {
-				t.Helper()
-
-				fixture := seedScheduleFixture(ctx, t, pg)
-				if _, err := pg.Exec(ctx, `DELETE FROM workflows WHERE id = $1`, fixture.WorkflowID); err != nil {
-					t.Fatalf("delete fixture workflow: %v", err)
-				}
-				return fixture
-			},
-			admitted: false,
-		},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			fixture := testCase.prepare(ctx, t, pg)
-			scheduledAt := occurrenceInstant(time.Hour)
-
-			// With the guard emitted, every state in the table is a precondition failure.
-			refusedJobID, refusedErr := repo.ScheduleJob(
-				ctx, fixture.WorkflowID, fixture.UserID, scheduledAt.Format(time.RFC3339Nano),
-				jobsmodel.JobTriggerAutomatic.ToString(), scheduleFixtureKey(fixture.WorkflowID, scheduledAt), 1,
-			)
-			if code := status.Code(refusedErr); code != codes.FailedPrecondition {
-				t.Fatalf("guarded generation-1 ScheduleJob code = %v, want %v (err: %v)", code, codes.FailedPrecondition, refusedErr)
-			}
-			if refusedJobID != "" {
-				t.Fatalf("refused generation-1 ScheduleJob returned job %q, want an empty id", refusedJobID)
-			}
-			assertNoScheduleCommandEffect(ctx, t, pg, fixture, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation)
-
-			// Repeating it without the generation drops the guard, so the same state is
-			// prepared again on a second isolated workflow.
-			unguarded := testCase.prepare(ctx, t, pg)
-			jobID, err := repo.ScheduleJob(
-				ctx, unguarded.WorkflowID, unguarded.UserID, scheduledAt.Format(time.RFC3339Nano),
-				jobsmodel.JobTriggerAutomatic.ToString(), scheduleFixtureKey(unguarded.WorkflowID, scheduledAt), 0,
-			)
-			if testCase.admitted {
-				if err != nil {
-					t.Fatalf("unguarded generation-0 ScheduleJob: %v", err)
-				}
-				// The row names the caller's user even when that is not the workflow's owner.
-				job := readScheduledJob(ctx, t, pg, jobID)
-				assertScheduledJobOwnership(
-					t, job, unguarded, jobsmodel.JobTriggerAutomatic.ToString(), scheduledAt,
-					scheduleFixtureKey(unguarded.WorkflowID, scheduledAt),
-				)
-				if !job.WorkflowGeneration.Valid || job.WorkflowGeneration.Int64 != 0 {
-					t.Fatalf("unguarded job workflow_generation = %v, want 0", job.WorkflowGeneration)
-				}
-				return
-			}
-			if code := status.Code(err); code != codes.Internal {
-				t.Fatalf("unguarded generation-0 ScheduleJob code = %v, want %v (err: %v)", code, codes.Internal, err)
-			}
-			if jobID != "" {
-				t.Fatalf("unguarded generation-0 ScheduleJob returned job %q, want an empty id", jobID)
-			}
-			assertNoScheduleCommandEffect(ctx, t, pg, unguarded, automaticScope(unguarded.WorkflowID), unguarded.AutomaticOperation)
-		})
+	for _, generation := range []int64{0, -1} {
+		id, err := repo.ScheduleJob(ctx, fixture.WorkflowID, fixture.UserID,
+			occurrenceInstant(time.Hour).Format(time.RFC3339Nano), "AUTOMATIC", "missing-generation", generation)
+		if id != "" || status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("generation %d: id=%q err=%v", generation, id, err)
+		}
+		assertNoScheduleCommandEffect(ctx, t, pg, fixture, automaticScope(fixture.WorkflowID), fixture.AutomaticOperation)
 	}
 }
 

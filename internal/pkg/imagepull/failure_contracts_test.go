@@ -305,3 +305,53 @@ func TestEnsureBoundsReleaseAfterBuildAndCancellation(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureJoinsCanceledRenewalBeforeRelease(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered, stopped := make(chan struct{}), make(chan struct{})
+		client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(context.Context, string) error { <-entered; return nil }}
+		locks := contractLocks{
+			acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+			extend: func(ctx context.Context, _, _ string, _ time.Duration) (bool, error) {
+				if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 5*time.Second {
+					t.Error("renewal socket I/O has no bounded deadline")
+				}
+				close(entered)
+				<-ctx.Done()
+				time.Sleep(time.Second) // Model an in-flight request unwinding after cancellation.
+				close(stopped)
+				return false, ctx.Err()
+			},
+			release: func(context.Context, string, string) error {
+				select {
+				case <-stopped:
+				default:
+					t.Error("lock released before renewal stopped")
+				}
+				return nil
+			},
+		}
+		if err := Ensure(t.Context(), client, locks, "image", Config{TTL: 3 * time.Second}); err != nil {
+			t.Fatalf("completed build = %v", err)
+		}
+	})
+}
+
+func TestEnsureBoundsStalledRenewalAndCancelsBuild(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client := contractClient{inspect: func(context.Context, string) (bool, error) { return false, nil }, build: func(ctx context.Context, _ string) error { <-ctx.Done(); return ctx.Err() }}
+		locks := contractLocks{
+			acquire: func(context.Context, string, time.Duration) (string, bool, error) { return "owner", true, nil },
+			extend: func(ctx context.Context, _, _ string, _ time.Duration) (bool, error) {
+				<-ctx.Done()
+				return false, ctx.Err()
+			},
+			release: func(context.Context, string, string) error { return nil },
+		}
+		start := time.Now()
+		err := Ensure(t.Context(), client, locks, "image", Config{TTL: 30 * time.Second})
+		if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 15*time.Second {
+			t.Fatalf("stalled renewal = %v after %s", err, time.Since(start))
+		}
+	})
+}

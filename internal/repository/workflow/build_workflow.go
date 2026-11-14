@@ -99,31 +99,26 @@ func (r *Repository) buildWorkflow(parentCtx context.Context, workflowEvent *wor
 		workflowsmodel.ActionBuild.ToString(),
 		workflowID,
 	)
-	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, buildWorkflowDefaultExpirationTimeout)
-	if err != nil || !isLockAcquired {
-		return distributedLockError(parentCtx)
-	}
+	return r.withLifecycleLock(ctx, lockKey, buildWorkflowDefaultExpirationTimeout, func(ctx context.Context) error {
+		// This handles the condition where the worklow is updated, since the interval might be changed
+		if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
+			return err
+		}
 
-	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
+		if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
+			return err
+		}
 
-	// This handles the condition where the worklow is updated, since the interval might be changed
-	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusQueued.ToString()); err != nil {
-		return err
-	}
+		if err := r.publishWorkflowBuildAnalytics(ctx, workflowID, workflow); err != nil {
+			return err
+		}
 
-	if err := r.cancelJobsWithStatus(ctx, workflow, workflow.GetUserId(), jobsmodel.JobStatusPending.ToString()); err != nil {
-		return err
-	}
+		if !isBuildStepRequired(workflow.GetKind()) {
+			return r.completeSkippedWorkflowBuild(ctx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
+		}
 
-	if err := r.publishWorkflowBuildAnalytics(ctx, workflowID, workflow); err != nil {
-		return err
-	}
-
-	if !isBuildStepRequired(workflow.GetKind()) {
-		return r.completeSkippedWorkflowBuild(ctx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
-	}
-
-	return r.buildContainerWorkflow(ctx, parentCtx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
+		return r.buildContainerWorkflow(ctx, parentCtx, notificationCtx, workflow, workflowEvent, scheduleIdempotencyKey, occurrenceKey)
+	})
 }
 
 // isBuildStepRequired checks if the build step is required for the given kind.
@@ -500,6 +495,10 @@ func (r *Repository) buildContainerWorkflow(
 		resolvedImageRef, resolvedImageDigest, err = csvc.ResolveImageDigest(ctx, details.Image)
 		return err
 	})
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Since, build process can take time to execute and can led to authorization issues
 	// So, we need to re-issue the authorization token

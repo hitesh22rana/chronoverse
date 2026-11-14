@@ -31,14 +31,9 @@ func (r *Repository) deleteWorkflow(parentCtx context.Context, workflowID, userI
 		workflowsmodel.ActionDelete.ToString(),
 		workflowID,
 	)
-	lockToken, isLockAcquired, err := r.rdb.AcquireDistributedLockWithToken(parentCtx, lockKey, deleteWorkflowExpirationTimeout)
-	if err != nil || !isLockAcquired {
-		return distributedLockError(parentCtx)
-	}
-
-	defer r.releaseLifecycleLock(parentCtx, lockKey, lockToken)
-
-	return r.deleteWorkflowLogs(parentCtx, workflowID, userID)
+	return r.withLifecycleLock(parentCtx, lockKey, deleteWorkflowExpirationTimeout, func(ctx context.Context) error {
+		return r.deleteWorkflowLogs(ctx, workflowID, userID)
+	})
 }
 
 // deleteWorkflowLogs deletes all logs associated with the workflow.

@@ -182,6 +182,9 @@ expected operating conditions.
 - **Build hashes** avoid unnecessary rebuild work when workflow execution inputs
   have not changed. Resolved image references and digests are derived workflow
   metadata and are not part of the user-authored build hash.
+- **Workflow lifecycle locks** use ownership tokens and renew while protected work
+  runs. Renewal failure cancels the operation so a later delivery can resume it;
+  cancellation cannot undo an external request that has already been accepted.
 - **Image pull locks** prevent replicated workers that share a runtime daemon
   from cold-pulling the same image concurrently. Locks are scoped by runtime
   node and image, with Docker host fallback when runtime scope is omitted.

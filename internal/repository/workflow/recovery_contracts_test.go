@@ -92,7 +92,7 @@ func TestCanceledLogPublicationPreservesAttemptIdentityAndRetention(t *testing.T
 	})
 }
 
-func TestCanceledLogReplayHandlesChannelFailuresAndDetachedDeadline(t *testing.T) {
+func TestCanceledLogReplayHandlesChannelFailuresAndDeadline(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string
 		openErr, streamErr      error
@@ -109,8 +109,7 @@ func TestCanceledLogReplayHandlesChannelFailuresAndDetachedDeadline(t *testing.T
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				parent, cancel := context.WithCancel(t.Context())
-				cancel()
+				parent := t.Context()
 				producer := &recoveryProducer{}
 				if tc.publishFailure {
 					producer.err = errors.New("broker unavailable")
@@ -479,8 +478,7 @@ func (c *recoveryCleanupContainer) Remove(ctx context.Context, id string) error 
 }
 
 func TestCleanupRemovesContainerAfterReplayFailure(t *testing.T) {
-	parent, cancel := context.WithCancel(t.Context())
-	cancel()
+	parent := t.Context()
 	workflow := buildContractWorkflow()
 	workflow.Kind = "CONTAINER"
 	container := &recoveryCleanupContainer{}

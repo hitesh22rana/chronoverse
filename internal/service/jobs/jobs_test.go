@@ -51,6 +51,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "user1",
 				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
@@ -76,6 +77,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "user1",
 				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
@@ -89,6 +91,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "user1",
 				ScheduledAt:        "invalid_time",
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock:  func(_ *jobspb.ScheduleJobRequest) {},
@@ -102,6 +105,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "user1",
 				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
@@ -125,6 +129,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "invalid_user_id",
 				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {
@@ -148,6 +153,12 @@ func TestScheduleJob(t *testing.T) {
 			isErr: true,
 		},
 		{
+			name:  "error: automatic trigger missing idempotency key",
+			req:   &jobspb.ScheduleJobRequest{WorkflowId: "workflow_id", UserId: "user1", ScheduledAt: time.Now().Add(time.Minute).Format(time.RFC3339Nano), Trigger: "AUTOMATIC", WorkflowGeneration: 3},
+			mock:  func(_ *jobspb.ScheduleJobRequest) {},
+			isErr: true,
+		},
+		{
 			name: "error: manual trigger missing idempotency key",
 			req: &jobspb.ScheduleJobRequest{
 				WorkflowId:  "workflow_id",
@@ -166,6 +177,7 @@ func TestScheduleJob(t *testing.T) {
 				UserId:             "user1",
 				ScheduledAt:        time.Now().Add(time.Minute).Format(time.RFC3339Nano),
 				Trigger:            "AUTOMATIC",
+				IdempotencyKey:     "event-key",
 				WorkflowGeneration: 3,
 			},
 			mock: func(req *jobspb.ScheduleJobRequest) {

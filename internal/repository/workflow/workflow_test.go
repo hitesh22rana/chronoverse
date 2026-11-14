@@ -488,7 +488,7 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 	}
 }
 
-func TestCleanupCanceledJobContainerSkipsLegacyContainerWithoutRuntimeEndpoint(t *testing.T) {
+func TestCleanupCanceledJobContainerRejectsContainerWithoutRuntimeEndpoint(t *testing.T) {
 	t.Parallel()
 
 	called := false
@@ -512,8 +512,8 @@ func TestCleanupCanceledJobContainerSkipsLegacyContainerWithoutRuntimeEndpoint(t
 			ContainerId: "container-1",
 		},
 	)
-	if err != nil {
-		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
+	if status.Code(err) != codes.Unavailable {
+		t.Fatalf("cleanupCanceledJobContainer() error = %v, want Unavailable", err)
 	}
 	if called {
 		t.Fatal("container service factory called for job without runtime endpoint")

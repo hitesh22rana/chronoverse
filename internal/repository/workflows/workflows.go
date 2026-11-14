@@ -172,11 +172,9 @@ func (r *Repository) replayCreatedWorkflow(
 		return nil, status.Errorf(codes.Internal, "failed to commit idempotency replay: %v", err)
 	}
 
-	res := &workflowsmodel.GetWorkflowResponse{ID: reservation.ResourceID}
-	if len(reservation.Response) > 0 {
-		if err := json.Unmarshal(reservation.Response, res); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
-		}
+	res := &workflowsmodel.GetWorkflowResponse{}
+	if err := json.Unmarshal(reservation.Response, res); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
 	}
 	res.IdempotencyReplay = true
 	return res, nil

@@ -2,22 +2,10 @@ import type { DownloadLogsFormat, JobLog, JobLogsResponse } from "@/features/log
 
 export type JobLogWire = {
     event_id?: string
-    eventId?: string
     timestamp?: string
     message?: string
-    sequence_num?: number | string
-    sequenceNum?: number | string
+    sequence_num?: number
     stream?: string
-}
-
-const logKey = (log: JobLog): string =>
-    log.event_id ?? `${log.sequence_num}:${log.stream}:${log.timestamp}:${log.message}`
-
-const sequenceNumFromEventID = (eventID?: string): number | undefined => {
-    if (!eventID) return undefined
-
-    const sequenceNum = Number(eventID.split(":").at(-1))
-    return Number.isFinite(sequenceNum) ? sequenceNum : undefined
 }
 
 const compareLogsDesc = (a: JobLog, b: JobLog): number => {
@@ -27,7 +15,7 @@ const compareLogsDesc = (a: JobLog, b: JobLog): number => {
     const streamOrder = a.stream.localeCompare(b.stream)
     if (streamOrder !== 0) return streamOrder
 
-    const eventOrder = (a.event_id || logKey(a)).localeCompare(b.event_id || logKey(b))
+    const eventOrder = a.event_id.localeCompare(b.event_id)
     if (eventOrder !== 0) return eventOrder
 
     return b.timestamp.localeCompare(a.timestamp)
@@ -39,7 +27,7 @@ const uniqueLogsByKey = (logs: JobLog[]): JobLog[] => {
     const uniqueLogs = new Map<string, JobLog>()
 
     for (const log of logs) {
-        const key = logKey(log)
+        const key = log.event_id
         const existingLog = uniqueLogs.get(key)
         if (!existingLog || compareLogsDesc(log, existingLog) < 0) {
             uniqueLogs.set(key, log)
@@ -50,17 +38,21 @@ const uniqueLogsByKey = (logs: JobLog[]): JobLog[] => {
 }
 
 export const normalizeJobLog = (log: JobLogWire, highlightToken?: string): JobLog => {
-    const eventID = log.event_id || log.eventId
-    const sequenceNum = Number(
-        log.sequence_num ?? log.sequenceNum ?? sequenceNumFromEventID(eventID) ?? 0,
-    )
+    if (typeof log.event_id !== "string" || log.event_id.length === 0) {
+        throw new Error("Log event identity is required")
+    }
+    // Protobuf omits a zero uint32 sequence from JSON.
+    const sequenceNum = log.sequence_num ?? 0
+    if (!Number.isInteger(sequenceNum) || sequenceNum < 0 || sequenceNum > 0xffffffff) {
+        throw new Error("Log sequence number must be a uint32")
+    }
 
     return {
-        event_id: eventID,
+        event_id: log.event_id,
         highlightToken,
         timestamp: log.timestamp || "",
         message: log.message || "",
-        sequence_num: Number.isFinite(sequenceNum) ? sequenceNum : 0,
+        sequence_num: sequenceNum,
         stream: log.stream === "stderr" ? "stderr" : "stdout",
     }
 }

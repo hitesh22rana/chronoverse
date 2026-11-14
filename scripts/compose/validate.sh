@@ -231,7 +231,7 @@ validate_auth_bundle() {
       exit 1
     fi
     if grep -q 'cp -f /certs/issuers/server/auth.ed /certs/auth.ed' "$root_dir/$f"; then
-      echo "$f still contains legacy auth alias (should be per-issuer only)" >&2
+      echo "$f must not copy the server private key to a shared auth path" >&2
       exit 1
     fi
   done

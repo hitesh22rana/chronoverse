@@ -10,7 +10,7 @@ message ScheduleJobRequest {
   string user_id             = 2; // ID of the user
   string scheduled_at        = 3; // Time the job is scheduled to run
   string trigger             = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
-  string idempotency_key     = 5; // Optional idempotency key for scheduling
+  string idempotency_key     = 5; // Required idempotency key for scheduling
   int64  workflow_generation = 6; // Optional workflow generation guard for automatic scheduling
 }
 

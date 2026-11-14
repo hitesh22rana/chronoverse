@@ -171,7 +171,7 @@ func (r *Repository) parseRecord(ctx context.Context, record *kgo.Record) *queue
 		return nil
 	}
 	if logEntry.EventKey == "" {
-		logger.Warn("job log event key is required", zap.String("topic", record.Topic), zap.Int64("offset", record.Offset))
+		logger.Warn("job log event key is required", zap.String("topic", record.Topic), zap.Int32("partition", record.Partition), zap.Int64("offset", record.Offset))
 		return nil
 	}
 	span.SetAttributes(

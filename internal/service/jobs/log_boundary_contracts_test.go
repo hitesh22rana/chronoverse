@@ -82,7 +82,7 @@ func TestJobLogBoundaryValidationStopsBeforeRepository(t *testing.T) {
 	t.Parallel()
 	svc := New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
 	for _, trigger := range []string{"INVALID", "manual"} {
-		id, err := svc.ScheduleJob(t.Context(), &jobspb.ScheduleJobRequest{WorkflowId: "workflow", UserId: "user", ScheduledAt: "2026-11-06T01:02:03Z", Trigger: trigger})
+		id, err := svc.ScheduleJob(t.Context(), &jobspb.ScheduleJobRequest{WorkflowId: "workflow", UserId: "user", ScheduledAt: "2026-11-06T01:02:03Z", Trigger: trigger, IdempotencyKey: "event"})
 		require.Empty(t, id)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 		require.Contains(t, err.Error(), "invalid trigger")
@@ -90,7 +90,7 @@ func TestJobLogBoundaryValidationStopsBeforeRepository(t *testing.T) {
 	id, err := svc.ScheduleJob(t.Context(), &jobspb.ScheduleJobRequest{WorkflowId: "workflow", UserId: "user", ScheduledAt: "2026-11-06T01:02:03Z", Trigger: "MANUAL"})
 	require.Empty(t, id)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
-	require.Contains(t, err.Error(), "idempotency key is required")
+	require.Contains(t, err.Error(), "IdempotencyKey")
 	for _, state := range []string{"COMPLETED", "CANCELED", "FAILED"} {
 		require.True(t, isTerminalJobStatus(state))
 	}

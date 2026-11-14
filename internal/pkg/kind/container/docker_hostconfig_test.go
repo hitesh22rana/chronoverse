@@ -37,21 +37,11 @@ func TestHostConfigWorkloadIsolation(t *testing.T) {
 	}
 }
 
-func TestHostConfigDefaultsAndNilReceiver(t *testing.T) {
+func TestHostConfigDefaults(t *testing.T) {
 	// Zero-value workflow still pins the default workload network.
 	hc := (&DockerWorkflow{}).hostConfig()
 	if string(hc.NetworkMode) != DefaultWorkloadNetwork {
 		t.Errorf("NetworkMode = %q, want default %q", hc.NetworkMode, DefaultWorkloadNetwork)
-	}
-
-	// Nil receiver must keep producing hardened defaults (legacy guard).
-	var nilWorkflow *DockerWorkflow
-	hc = nilWorkflow.hostConfig()
-	if string(hc.NetworkMode) != DefaultWorkloadNetwork {
-		t.Errorf("nil receiver NetworkMode = %q, want %q", hc.NetworkMode, DefaultWorkloadNetwork)
-	}
-	if len(hc.CapDrop) != 1 || hc.CapDrop[0] != "ALL" || !hc.ReadonlyRootfs {
-		t.Errorf("nil receiver lost isolation defaults: %+v", hc)
 	}
 }
 

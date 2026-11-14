@@ -29,7 +29,8 @@ func newTestAuth(t *testing.T) (*Auth, ed25519.PrivateKey, ed25519.PublicKey) {
 	}
 	return &Auth{
 		issuer:     testIssuer,
-		publicKey:  publicKey,
+		kid:        "test-key",
+		bundle:     map[string]*bundleEntry{"test-key": {Iss: testIssuer, PublicKey: publicKey}},
 		privateKey: privateKey,
 		tp:         otel.Tracer("auth-test"),
 	}, privateKey, publicKey
@@ -38,6 +39,7 @@ func newTestAuth(t *testing.T) (*Auth, ed25519.PrivateKey, ed25519.PublicKey) {
 func signToken(t *testing.T, privateKey ed25519.PrivateKey, claims jwt.MapClaims) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = "test-key"
 	signed, err := token.SignedString(privateKey)
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
@@ -127,6 +129,7 @@ func TestValidateTokenRejectsWrongIssuer(t *testing.T) {
 func TestValidateTokenAcceptsTrustedCrossServiceIssuer(t *testing.T) {
 	authService, privateKey, _ := newTestAuth(t)
 	authService.issuer = "jobs-service"
+	authService.bundle["test-key"].Iss = "workflow-worker"
 
 	now := time.Now()
 	token := signToken(t, privateKey, jwt.MapClaims{

@@ -275,7 +275,7 @@ func seedDurableClaim(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 		userID,
 		lastScheduledAt.Format(time.RFC3339Nano),
 		jobsmodel.JobTriggerAutomatic.ToString(),
-		"",
+		"schedule:"+tag,
 		generation,
 	)
 	if err != nil {

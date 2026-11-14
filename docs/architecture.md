@@ -121,9 +121,9 @@ workers are deployed together on the user's Kubernetes infrastructure.
   which both paths that accept one from a caller or a peer service go through.
   `jobs.scheduled_at` and `jobs.next_attempt_at` are timestamps without time zone, so an
   offset spelling would otherwise be kept as its own wall clock and compared against
-  `now() AT TIME ZONE 'utc'` the offset's distance away from the instant it denotes. An
-  automatic occurrence reported without an event key derives its identity from that same
-  UTC instant, so one occurrence reported in two spellings replays as one job. Values that
+  `now() AT TIME ZONE 'utc'` the offset's distance away from the instant it denotes. Automatic
+  scheduling requires a producer-supplied event identity; retries reuse that key
+  independently of timestamp spelling. Values that
   round-trip a timestamp this service already wrote, such as a pagination cursor, parse
   their own text and rely on it having come back from the database in UTC. A time
   expression inside SQL carries its own `AT TIME ZONE 'utc'` instead; a bare `NOW()`

@@ -255,7 +255,6 @@ type IAuth interface {
 type Auth struct {
 	issuer     string
 	privateKey crypto.PrivateKey
-	publicKey  crypto.PublicKey
 	kid        string
 	bundle     map[string]*bundleEntry
 	bundlePath string
@@ -322,7 +321,6 @@ func newWithPaths(issuer, privateKeyPath, publicKeyPath string) (*Auth, error) {
 	return &Auth{
 		issuer:     issuer,
 		privateKey: privateKey,
-		publicKey:  edPub,
 		kid:        kid,
 		bundle:     bundle,
 		bundlePath: bundlePath,
@@ -375,11 +373,7 @@ func (a *Auth) IssueToken(ctx context.Context, subject string, audiences ...stri
 		jwtSubjectClaim:   subject,
 		jwtRoleClaim:      role,
 	})
-	if a.kid != "" {
-		_token.Header["kid"] = a.kid
-		// Ensure alg is EdDSA per RFC; jwt library sets it via SigningMethod
-		_token.Header["alg"] = jwt.SigningMethodEdDSA.Alg()
-	}
+	_token.Header["kid"] = a.kid
 
 	signed, err := _token.SignedString(a.privateKey)
 	if err != nil {
@@ -458,20 +452,17 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 			if _, ok := token.Method.(*jwt.SigningMethodEd25519); !ok {
 				return nil, status.Error(codes.Unauthenticated, "invalid signing method")
 			}
-			if a.bundle != nil {
-				if khStr, ok := token.Header["kid"].(string); ok {
-					kidFromHeader = khStr
-				}
-				if kidFromHeader == "" {
-					return nil, status.Error(codes.Unauthenticated, "missing kid")
-				}
-				entry, ok := a.bundle[kidFromHeader]
-				if !ok {
-					return nil, status.Error(codes.Unauthenticated, "untrusted kid")
-				}
-				return entry.PublicKey, nil
+			if khStr, ok := token.Header["kid"].(string); ok {
+				kidFromHeader = khStr
 			}
-			return a.publicKey, nil
+			if kidFromHeader == "" {
+				return nil, status.Error(codes.Unauthenticated, "missing kid")
+			}
+			entry, ok := a.bundle[kidFromHeader]
+			if !ok {
+				return nil, status.Error(codes.Unauthenticated, "untrusted kid")
+			}
+			return entry.PublicKey, nil
 		},
 		jwt.WithLeeway(clockSkewLeeway),
 		jwt.WithAudience(expectedAudience),
@@ -485,10 +476,8 @@ func (a *Auth) ValidateToken(ctx context.Context, expectedAudience string) (outC
 	if issuerErr != nil || !TrustedIssuer(issuer) {
 		return ctx, nil, status.Error(codes.Unauthenticated, "token has untrusted issuer")
 	}
-	if kidFromHeader != "" {
-		if entry, found := a.bundle[kidFromHeader]; found && entry.Iss != issuer {
-			return ctx, nil, status.Error(codes.Unauthenticated, "kid issuer mismatch")
-		}
+	if entry := a.bundle[kidFromHeader]; entry.Iss != issuer {
+		return ctx, nil, status.Error(codes.Unauthenticated, "kid issuer mismatch")
 	}
 	roleVal, ok := claims[jwtRoleClaim].(string)
 	if !ok || roleVal == "" {

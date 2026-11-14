@@ -1,5 +1,5 @@
 export type JobLog = {
-    event_id?: string
+    event_id: string
     highlightToken?: string
     timestamp: string
     message: string

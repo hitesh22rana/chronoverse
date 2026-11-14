@@ -47,10 +47,10 @@ func TestKidRotationBundle(t *testing.T) {
 		newKid: {Iss: issuer, PublicKey: newPub, PubPath: "new"},
 	}
 	// Old issuer instance (still active) and new issuer instance.
-	oldAuth := &Auth{issuer: issuer, privateKey: oldPriv, publicKey: oldPub, kid: oldKid, bundle: bundleBoth, tp: otel.Tracer("test")}
-	newAuth := &Auth{issuer: issuer, privateKey: newPriv, publicKey: newPub, kid: newKid, bundle: bundleBoth, tp: otel.Tracer("test")}
+	oldAuth := &Auth{issuer: issuer, privateKey: oldPriv, kid: oldKid, bundle: bundleBoth, tp: otel.Tracer("test")}
+	newAuth := &Auth{issuer: issuer, privateKey: newPriv, kid: newKid, bundle: bundleBoth, tp: otel.Tracer("test")}
 	// Verifier (e.g., users-service) trusts the same bundle.
-	verifierBoth := &Auth{issuer: audience, publicKey: oldPub, kid: oldKid, bundle: bundleBoth, tp: otel.Tracer("test")}
+	verifierBoth := &Auth{issuer: audience, kid: oldKid, bundle: bundleBoth, tp: otel.Tracer("test")}
 
 	// Issue with old key, verify with bundle containing both -> ok.
 	ctx := WithRole(context.Background(), RoleAdmin.String())
@@ -85,7 +85,7 @@ func TestKidRotationBundle(t *testing.T) {
 	bundleNewOnly := map[string]*bundleEntry{
 		newKid: {Iss: issuer, PublicKey: newPub, PubPath: "new"},
 	}
-	verifierNewOnly := &Auth{issuer: audience, publicKey: newPub, kid: newKid, bundle: bundleNewOnly, tp: otel.Tracer("test")}
+	verifierNewOnly := &Auth{issuer: audience, kid: newKid, bundle: bundleNewOnly, tp: otel.Tracer("test")}
 
 	// Old token must now be rejected (untrusted kid).
 	if _, _, verifyErr3 := verifierNewOnly.ValidateToken(WithAuthorizationToken(context.Background(), oldToken), audience); verifyErr3 == nil {

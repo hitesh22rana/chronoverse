@@ -152,12 +152,6 @@ func (r *Repository) ScheduleJob(
 	// parseTime normalizes to UTC, which is what jobs.scheduled_at needs: it is
 	// TIMESTAMP WITHOUT TIME ZONE, so an offset spelling would otherwise be kept as its own
 	// wall clock and dispatched the offset's distance from the instant it denotes.
-	idempotencyKey, automaticIdempotencyKeyProvided := normalizeScheduleJobIdempotencyKey(
-		workflowID,
-		scheduledAtTime,
-		trigger,
-		idempotencyKey,
-	)
 	idempotencyKey, err = commandidempotency.NormalizeKey(idempotencyKey)
 	if err != nil {
 		return "", err
@@ -207,7 +201,6 @@ func (r *Repository) ScheduleJob(
 		trigger,
 		idempotencyKey,
 		workflowGeneration,
-		automaticIdempotencyKeyProvided,
 	)
 	if err != nil {
 		return "", err
@@ -283,28 +276,6 @@ func scheduleJobHashFields(workflowID, userID, trigger string, workflowGeneratio
 	return fields
 }
 
-// normalizeScheduleJobIdempotencyKey returns the identity a command spends, reporting
-// whether the caller named it. An automatic occurrence with no key is identified by its
-// instant, which parseTime has already normalized to UTC so that two spellings of one
-// instant derive one identity and one redelivered occurrence replays instead of reserving
-// a second job. An identity the caller supplied is returned unchanged: it is not an
-// instant this function may rewrite.
-func normalizeScheduleJobIdempotencyKey(
-	workflowID string,
-	scheduledAt time.Time,
-	trigger,
-	idempotencyKey string,
-) (string, bool) {
-	automaticIdempotencyKeyProvided := trigger == jobsmodel.JobTriggerAutomatic.ToString() && idempotencyKey != ""
-	if trigger == jobsmodel.JobTriggerAutomatic.ToString() && !automaticIdempotencyKeyProvided {
-		idempotencyKey = idempotency.JobDispatchEventKey(
-			fmt.Sprintf("%s:%s", workflowID, scheduledAt.Format(time.RFC3339Nano)),
-		)
-	}
-
-	return idempotencyKey, automaticIdempotencyKeyProvided
-}
-
 func scheduleJobInsertStatement(
 	workflowID,
 	userID string,
@@ -312,7 +283,6 @@ func scheduleJobInsertStatement(
 	trigger,
 	idempotencyKey string,
 	workflowGeneration int64,
-	automaticIdempotencyKeyProvided bool,
 ) (query string, args []any, err error) {
 	args = []any{workflowID, userID, scheduledAt, trigger, idempotencyKey}
 	if trigger == jobsmodel.JobTriggerAutomatic.ToString() {
@@ -335,7 +305,7 @@ func scheduleJobInsertStatement(
             FOR SHARE
             RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, postgres.TableWorkflows), args, nil
-	case automaticIdempotencyKeyProvided:
+	case trigger == jobsmodel.JobTriggerAutomatic.ToString():
 		guard := automaticScheduleGuardSQL(workflowGeneration)
 		return fmt.Sprintf(`
             INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
@@ -344,17 +314,6 @@ func scheduleJobInsertStatement(
             ON CONFLICT (workflow_id, idempotency_key)
             WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL
             DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
-        `, postgres.TableJobs, guard), args, nil
-	case trigger == jobsmodel.JobTriggerAutomatic.ToString():
-		guard := automaticScheduleGuardSQL(workflowGeneration)
-		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
-            SELECT $1, $2, $3, $4, $5, $6
-            %s
-            ON CONFLICT (workflow_id, scheduled_at, trigger)
-            WHERE trigger = 'AUTOMATIC'
-            DO UPDATE SET workflow_id = EXCLUDED.workflow_id
             RETURNING id, workflow_id, user_id, trigger, workflow_generation;
         `, postgres.TableJobs, guard), args, nil
 	default:

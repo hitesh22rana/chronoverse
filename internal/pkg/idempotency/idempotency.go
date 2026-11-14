@@ -69,20 +69,13 @@ func WorkflowBuildHash(kind, payload string) (string, error) {
 // WorkflowEventKey returns the deterministic idempotency key for a workflow event.
 func WorkflowEventKey(workflowID, action string, generation int64) string {
 	workflowID = CanonicalUUIDText(workflowID)
-	if generation > 0 {
-		return fmt.Sprintf("workflow:%s:%s:%d", workflowID, action, generation)
-	}
-	return fmt.Sprintf("workflow:%s:%s", workflowID, action)
+	return fmt.Sprintf("workflow:%s:%s:%d", workflowID, action, generation)
 }
 
 // JobDispatchEventKey returns the deterministic idempotency key for dispatching a job.
-func JobDispatchEventKey(jobID string, dispatchAttempt ...int32) string {
+func JobDispatchEventKey(jobID string, dispatchAttempt int32) string {
 	jobID = CanonicalUUIDText(jobID)
-	if len(dispatchAttempt) > 0 && dispatchAttempt[0] > 0 {
-		return fmt.Sprintf("job:%s:dispatch:%d", jobID, dispatchAttempt[0])
-	}
-
-	return fmt.Sprintf("job:%s:dispatch", jobID)
+	return fmt.Sprintf("job:%s:dispatch:%d", jobID, dispatchAttempt)
 }
 
 // CanonicalUUIDText returns the canonical lowercase hyphenated UUID spelling,
@@ -97,10 +90,6 @@ func CanonicalUUIDText(raw string) string {
 
 // AutomaticScheduleEventKey returns the deterministic idempotency key for scheduling a workflow event's automatic job.
 func AutomaticScheduleEventKey(workflowEventKey string) string {
-	if workflowEventKey == "" {
-		return "workflow:unknown-event:automatic-job"
-	}
-
 	return fmt.Sprintf("%s:automatic-job", workflowEventKey)
 }
 
@@ -123,29 +112,15 @@ func WorkflowAnalyticsEventKey(workflowID string) string {
 }
 
 // LogEventKey returns the deterministic event key for a single job log line.
-func LogEventKey(jobID, stream string, sequenceNum uint32, attempts ...int32) string {
+func LogEventKey(jobID, stream string, sequenceNum uint32, attempt int32) string {
 	jobID = CanonicalUUIDText(jobID)
-	if len(attempts) > 0 && attempts[0] > 1 {
-		return fmt.Sprintf("log:%s:attempt:%d:%s:%d", jobID, attempts[0], stream, sequenceNum)
-	}
-
-	return fmt.Sprintf("log:%s:%s:%d", jobID, stream, sequenceNum)
+	return fmt.Sprintf("log:%s:attempt:%d:%s:%d", jobID, attempt, stream, sequenceNum)
 }
 
 // NotificationEventKey returns the deterministic idempotency key for a notification.
 func NotificationEventKey(entity, entityID, eventType string) string {
 	entityID = CanonicalUUIDText(entityID)
 	return fmt.Sprintf("notification:%s:%s:%s", entity, entityID, eventType)
-}
-
-// NotificationOccurrenceEventKey returns the deterministic idempotency key for a notification occurrence.
-func NotificationOccurrenceEventKey(entity, entityID, eventType, occurrenceKey string) string {
-	entityID = CanonicalUUIDText(entityID)
-	if occurrenceKey == "" {
-		return NotificationEventKey(entity, entityID, eventType)
-	}
-
-	return fmt.Sprintf("notification:%s:%s:%s:%s", entity, entityID, eventType, occurrenceKey)
 }
 
 // JobNotificationEventKey returns the deterministic idempotency key for a job notification.
@@ -155,5 +130,6 @@ func JobNotificationEventKey(jobID, eventType string) string {
 
 // WorkflowNotificationEventKey returns the deterministic idempotency key for a workflow notification.
 func WorkflowNotificationEventKey(workflowID, eventType, occurrenceKey string) string {
-	return NotificationOccurrenceEventKey("WORKFLOW", workflowID, eventType, occurrenceKey)
+	workflowID = CanonicalUUIDText(workflowID)
+	return fmt.Sprintf("notification:WORKFLOW:%s:%s:%s", workflowID, eventType, occurrenceKey)
 }

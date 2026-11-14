@@ -23,6 +23,7 @@ func TestConsumerDiagnosticsExcludeRecordContents(t *testing.T) {
 		name, value string
 		code        codes.Code
 	}{
+		{name: "missing event identity", value: `{"Message":"private-payload"}`, code: codes.OK},
 		{name: "malformed event", value: `{"SequenceNum":123456789012345678901234567890,"Message":"private-payload"}`, code: codes.OK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

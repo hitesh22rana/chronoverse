@@ -16,10 +16,10 @@ import (
 // stubFirewallBins fakes apk/iptables/iptables-legacy/ip6tables on PATH, each
 // with a private per-chain rule store (backend views are separate, and insert
 // positions are per-chain like the real binary). withV6Chain controls
-// ip6tables chain visibility (IPv4-only host when false); legacyBackend
+// ip6tables chain visibility (IPv4-only host when false); xtablesBackend
 // selects which v4 backend holds DOCKER-USER. No ip6tables-legacy stub ever
 // exists, mirroring reality.
-func stubFirewallBins(t *testing.T, withV6Chain, legacyBackend bool) (stateDir, logFile, readyFile string) {
+func stubFirewallBins(t *testing.T, withV6Chain, xtablesBackend bool) (stateDir, logFile, readyFile string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -76,9 +76,9 @@ esac
 		}
 	}
 	writeStub("apk", false)
-	writeStub("iptables", legacyBackend)
-	writeStub("iptables-legacy", !legacyBackend)
-	writeStub("ip6tables", !withV6Chain || legacyBackend)
+	writeStub("iptables", xtablesBackend)
+	writeStub("iptables-legacy", !xtablesBackend)
+	writeStub("ip6tables", !withV6Chain || xtablesBackend)
 
 	t.Setenv("FAKE_LOG", logFile)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -172,14 +172,14 @@ func TestFirewallScriptLinksV6ChainWhenPresent(t *testing.T) {
 	}
 }
 
-// On legacy-backend hosts the nft view never sees DOCKER-USER: every rule
+// On xtables-backend hosts the nft view never sees DOCKER-USER: every rule
 // must go through iptables-legacy, never plain iptables.
-func TestFirewallScriptUsesLegacyBackend(t *testing.T) {
+func TestFirewallScriptUsesXtablesBackend(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
 	_, logFile, readyFile := stubFirewallBins(t, false, true)
 
 	if err := runFirewallScript(t, readyFile); err != nil {
-		t.Fatalf("script on legacy host error = %v", err)
+		t.Fatalf("script on xtables host error = %v", err)
 	}
 	if _, err := os.Stat(readyFile); err != nil {
 		t.Fatalf("ready marker not touched: %v", err)
@@ -190,12 +190,12 @@ func TestFirewallScriptUsesLegacyBackend(t *testing.T) {
 	}
 	for _, line := range strings.Split(string(log), "\n") {
 		if strings.HasPrefix(line, "iptables ") && (strings.Contains(line, " -A ") || strings.Contains(line, " -I ")) {
-			t.Errorf("nft binary must not install rules on a legacy host: %q", line)
+			t.Errorf("nft binary must not install rules on a xtables host: %q", line)
 		}
 	}
 	for _, want := range []string{"iptables-legacy -I INPUT", "iptables-legacy -I DOCKER-USER"} {
 		if !strings.Contains(string(log), want) {
-			t.Errorf("legacy jump %q not linked; log:\n%s", want, log)
+			t.Errorf("xtables jump %q not linked; log:\n%s", want, log)
 		}
 	}
 }
@@ -223,17 +223,17 @@ func TestFirewallProbeFailsWithoutRules(t *testing.T) {
 	}
 }
 
-// On legacy-backend hosts the probe must succeed via iptables-legacy (the nft
+// On xtables-backend hosts the probe must succeed via iptables-legacy (the nft
 // view genuinely misses, thanks to per-binary stub state).
-func TestFirewallProbePassesOnLegacyBackend(t *testing.T) {
+func TestFirewallProbePassesOnXtablesBackend(t *testing.T) {
 	// No t.Parallel: stub binaries are installed via process environment.
 	_, _, readyFile := stubFirewallBins(t, false, true)
 
 	if err := runFirewallScript(t, readyFile); err != nil {
-		t.Fatalf("apply on legacy host error = %v", err)
+		t.Fatalf("apply on xtables host error = %v", err)
 	}
 	if err := runProbeScript(t); err != nil {
-		t.Fatalf("probe on legacy host error = %v", err)
+		t.Fatalf("probe on xtables host error = %v", err)
 	}
 }
 

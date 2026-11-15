@@ -260,11 +260,8 @@ func (r *Repository) releaseOrFailRecoveredSystem(
 	claim *jobspb.ClaimJobResponse,
 	cause error,
 ) error {
-	if int(claim.GetAttempts()) < r.cfg.SystemRetryLimit {
-		return r.releaseClaimForSystemRetry(ctx, claim, cause)
-	}
-
-	return r.failClaimedJob(ctx, claim, nil, cause, "")
+	// Recovery established an infrastructure failure; preserve its original diagnostic code.
+	return r.releaseClaimForSystemRetry(ctx, claim, terminalreason.Wrap(terminalreason.SystemError, cause))
 }
 
 func (r *Repository) recoveryBatchSize() int32 {

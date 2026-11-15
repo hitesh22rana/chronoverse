@@ -95,6 +95,43 @@ func leaseRPCContracts() []leaseRPCContract {
 	nodes := &jobspb.ListReadyRuntimeNodesResponse{Nodes: []*jobspb.GetReadyRuntimeNodeResponse{node}}
 	return []leaseRPCContract{
 		{
+			method:   "BeginContainerCleanupAttempt",
+			request:  &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2, Token: "owner", ErrorCode: "Unavailable"},
+			response: &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().BeginContainerCleanupAttempt(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+						check(ctx, req)
+						return &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3}, failure
+					})
+			},
+		},
+		{
+			method:   "FailContainerCleanupAttempt",
+			request:  &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2, Token: "owner", ErrorCode: "Unavailable"},
+			response: &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().FailContainerCleanupAttempt(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+						check(ctx, req)
+						return &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3}, failure
+					})
+			},
+		},
+		{
+			method:   "RedriveContainerCleanup",
+			request:  &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2, Token: "owner", ErrorCode: "Unavailable"},
+			response: &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().RedriveContainerCleanup(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+						check(ctx, req)
+						return &jobspb.ContainerCleanupAttemptResponse{State: "QUARANTINED", Generation: 2, Attempts: 3}, failure
+					})
+			},
+		},
+
+		{
 			method:   "GetContainerCleanupReceipt",
 			request:  &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "not-yet-cleaned"},
 			response: &jobspb.GetContainerCleanupReceiptResponse{Completed: false},

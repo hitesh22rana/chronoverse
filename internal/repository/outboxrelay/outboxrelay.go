@@ -59,6 +59,9 @@ func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 
 // PublishTopic claims pending events for a topic and publishes them to Kafka.
 func (r *Repository) PublishTopic(ctx context.Context, topic string, logger *zap.Logger) (int, error) {
+	if err := r.requeueUnfinishedCleanup(ctx, topic); err != nil {
+		return 0, err
+	}
 	events, err := r.claim(ctx, topic)
 	if err != nil {
 		return 0, err

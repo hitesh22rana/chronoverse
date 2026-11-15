@@ -188,6 +188,7 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		return err
 	}
 	receiptRequest := &jobspb.ContainerCleanupReceiptRequest{JobId: job.GetId(), ContainerId: job.GetContainerId()}
+	// Recheck after admission: an in-flight receipt write may have raced the attempt grant.
 	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(authCtx, receiptRequest)
 	if err != nil {
 		return err

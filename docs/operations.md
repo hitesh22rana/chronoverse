@@ -527,9 +527,9 @@ to remain present, and repeated events target the original container ID.
 Workflow workers stop the container, replay retained logs and remove it. Each
 attempt has a three-minute deadline, including the existing two-minute replay
 budget. Replay failures preserve the container for retry. Failed attempts remain
-uncommitted and use the workflow runner's retry backoff; a restart resumes from
-Kafka. Removal in progress remains retryable; an already absent container is a
-successful cleanup. Executor inline removal is best effort with a detached
+uncommitted until completion or durable quarantine; a restart resumes from
+Kafka with the persisted execution budget. Removal in progress remains retryable;
+an already absent container is a successful cleanup. Executor inline removal is best effort with a detached
 ten-second deadline; the durable event remains responsible for recovery if that
 attempt fails or the executor exits after settlement.
 
@@ -550,9 +550,15 @@ accepted terminal settlement retains its separate detached ten-second budget.
 
 Published cleanup events are retained until a matching receipt exists, even
 past the normal published-event retention window. This preserves unfinished
-cleanup snapshots if Kafka retention expires; automatic redrive remains a
-separate recovery policy. Other published event types retain their usual
-retention behavior.
+cleanup snapshots if Kafka retention expires. On its normal publication cycle,
+the relay requeues unfinished published cleanup older than five minutes when no
+attempt lease or retry delay is active. This preserves the execution generation
+and attempt count; it does not grant another failure budget. Completed and
+quarantined cleanup is excluded. Republishing does not consult consumer lag;
+backlogs older than this window can generate duplicate deliveries. Attempt
+admission and receipts make duplicate deliveries safe, but Kafka backlog and
+relay throughput still need monitoring. Other published event types retain their
+usual retention behavior.
 
 Receipts survive job/workflow deletion and published-outbox pruning. Enqueueing
 cleanup consults receipts, and a previously queued delivery also checks them,
@@ -562,9 +568,62 @@ Safe receipt garbage collection requires proving that source references and
 possible redeliveries are gone. A crash after removal but before receipt commit
 can still require another Docker confirmation; this is not exactly-once cleanup.
 
-Cleanup events use workflow-key ordering, so an unavailable runtime can delay
-later events for that workflow. Monitor outbox failures and DEAD events using
-the existing relay recovery procedure. Recovery depends on the original runtime
+#### Cleanup quarantine and redrive
+
+Cleanup events use workflow-key ordering. Before contacting Docker, a worker
+acquires a token-bound execution attempt in the retained outbox row. Each
+cleanup generation permits three failed or abandoned attempts. The four-minute
+attempt lease covers the three-minute cleanup deadline plus reporting time;
+a worker crash or lost acquisition response consumes that attempt once its
+lease expires. Concurrent deliveries wait for the active lease. Failed attempts
+wait 30 seconds, then 60 seconds, before another acquisition. Caller cancellation
+is reported with a detached five-second deadline and returns the attempt without
+spending the failure budget. If reporting is unavailable, the Kafka record stays
+retryable and the lease eventually expires. Repeated successfully reported
+caller cancellations can therefore retry indefinitely without quarantine; the
+three-attempt bound applies to failures and abandoned attempts, not interruptions.
+
+After exhaustion, the worker persists `QUARANTINED` before acknowledging the
+record, allowing later workflow events to proceed. Quarantine does not mean the
+container was removed: the snapshot remains retained until a completion receipt
+exists. Workers log quarantines with workflow, job, container, generation and
+attempt count. Inspect outstanding work with read-only SQL:
+
+```sql
+SELECT kafka_key AS workflow_id, payload->>'JobID' AS job_id,
+       payload->'ContainerCleanup'->>'ContainerID' AS container_id,
+       cleanup_state, cleanup_generation, cleanup_attempts,
+       cleanup_error_code, cleanup_failed_at, cleanup_lease_until,
+       cleanup_next_attempt_at, status AS publication_status
+FROM outbox_events
+WHERE cleanup_state IS NOT NULL AND cleanup_state <> 'COMPLETED'
+ORDER BY cleanup_failed_at NULLS LAST, created_at;
+```
+
+Repair the runtime/configuration issue, then call the internal jobs-service RPC
+with an admin token for the jobs-service audience and the observed generation:
+
+```sh
+grpcurl -H "authorization: Bearer $JOBS_ADMIN_TOKEN" \
+  -d '{"job_id":"<job UUID>","container_id":"<container ID>","generation":"1"}' \
+  "$JOBS_SERVICE_ADDRESS" jobs.JobsService/RedriveContainerCleanup
+```
+
+Use the deployment's TLS credentials when connecting. Redrive increments the
+cleanup generation, resets its execution/publication budgets and requeues the
+original snapshot. This is an explicit administrative override for unfinished
+work, not only quarantined cleanup: it also accepts `READY`, `RETRY` (overriding
+backoff), and `PROCESSING` with an expired lease. It refuses a live execution
+lease. Repeating a request with the old generation returns `STALE` without
+resetting the new budget; late Kafka
+deliveries and reports from that generation also do no work. A completion receipt
+returns `COMPLETED` without requeueing, even after outbox pruning. The RPC cannot
+change the original runtime routing. Execution quarantine is separate from
+publication `DEAD`: the same explicit redrive can requeue a retained cleanup
+whose publication failed, while unrelated DEAD events retain the relay's
+existing recovery procedure. Monitor both states.
+
+Recovery depends on the original runtime
 being reachable and on container identity having been durably attached; unknown
 containers from an interrupted create/attach operation require separate runtime
 reconciliation. These deadlines depend on Docker honoring request contexts.

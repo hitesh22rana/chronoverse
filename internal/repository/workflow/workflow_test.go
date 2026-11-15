@@ -782,6 +782,8 @@ func (testAuth) ValidateToken(context.Context, string) (context.Context, *jwt.To
 }
 
 type testJobsClient struct {
+	beginCleanup    func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
+	failCleanup     func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
 	cleanupReceipts sync.Map
 	getReceipt      func(context.Context, *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error)
 	recordReceipt   func(context.Context, *jobspb.ContainerCleanupReceiptRequest) error
@@ -1016,4 +1018,22 @@ func (c *testJobsClient) RecordContainerCleanupReceipt(ctx context.Context, req 
 	}
 	c.cleanupReceipts.Store(req.GetJobId()+":"+req.GetContainerId(), true)
 	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
+}
+
+func (c *testJobsClient) BeginContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest, _ ...grpc.CallOption) (*jobspb.ContainerCleanupAttemptResponse, error) {
+	if c.beginCleanup != nil {
+		return c.beginCleanup(ctx, req)
+	}
+	return &jobspb.ContainerCleanupAttemptResponse{State: "PROCESSING", Token: "owner", Generation: req.Generation, Attempts: 1}, nil
+}
+
+func (c *testJobsClient) FailContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest, _ ...grpc.CallOption) (*jobspb.ContainerCleanupAttemptResponse, error) {
+	if c.failCleanup != nil {
+		return c.failCleanup(ctx, req)
+	}
+	state := "RETRY"
+	if _, completed := c.cleanupReceipts.Load(req.GetJobId() + ":" + req.GetContainerId()); completed {
+		state = "COMPLETED"
+	}
+	return &jobspb.ContainerCleanupAttemptResponse{State: state, Generation: req.Generation, Attempts: 1}, nil
 }

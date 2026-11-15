@@ -14,6 +14,15 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT (now() AT TIME ZONE 'utc') NOT NULL,
     published_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
+    cleanup_state TEXT CHECK (cleanup_state IN ('READY','PROCESSING','RETRY','QUARANTINED','COMPLETED')),
+    cleanup_generation BIGINT NOT NULL DEFAULT 1 CHECK (cleanup_generation > 0),
+    -- Must match cleanupMaxAttempts in internal/repository/jobs/cleanup_attempts.go.
+    cleanup_attempts INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_attempts BETWEEN 0 AND 3),
+    cleanup_token UUID,
+    cleanup_lease_until TIMESTAMP WITHOUT TIME ZONE,
+    cleanup_next_attempt_at TIMESTAMP WITHOUT TIME ZONE,
+    cleanup_error_code TEXT,
+    cleanup_failed_at TIMESTAMP WITHOUT TIME ZONE,
     UNIQUE (topic, event_key)
 );
 
@@ -32,6 +41,9 @@ WHERE status = 'PROCESSING';
 CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
 ON outbox_events (published_at)
 WHERE status = 'PUBLISHED';
+
+CREATE INDEX idx_outbox_cleanup_redrive ON outbox_events (topic,published_at,id)
+WHERE status='PUBLISHED' AND cleanup_state IN ('READY','RETRY','PROCESSING');
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_unpublished_key_order
 ON outbox_events (topic, kafka_key, created_at, id)
@@ -62,10 +74,10 @@ BEGIN
     ) THEN
         RETURN;
     END IF;
-    INSERT INTO outbox_events (topic, kafka_key, event_key, payload)
-    VALUES ('workflows', job.workflow_id::TEXT, cleanup_key, jsonb_build_object(
+    INSERT INTO outbox_events (topic, kafka_key, event_key, cleanup_state, payload)
+    VALUES ('workflows', job.workflow_id::TEXT, cleanup_key, 'READY', jsonb_build_object(
         'EventKey', cleanup_key, 'ID', job.workflow_id, 'UserID', job.user_id,
-        'JobID', job.id, 'Action', 'CONTAINER_CLEANUP',
+        'JobID', job.id, 'Action', 'CONTAINER_CLEANUP', 'CleanupGeneration', 1,
         'ContainerCleanup', jsonb_build_object(
             'ContainerID', job.container_id, 'RuntimeNodeID', job.runtime_node_id,
             'RuntimeEndpoint', job.runtime_endpoint, 'Attempts', job.attempts,

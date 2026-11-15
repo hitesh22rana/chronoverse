@@ -345,7 +345,28 @@ message ContainerCleanupReceiptRequest {
 message GetContainerCleanupReceiptResponse { bool completed = 1; }
 message RecordContainerCleanupReceiptResponse {}
 
+// Cleanup generations are independent of workflow generations.
+message ContainerCleanupAttemptRequest {
+  string job_id = 1;
+  string container_id = 2;
+  int64 generation = 3; // Expected cleanup generation, not the workflow generation.
+  string token = 4; // Failure reports only: the token granted by Begin.
+  string error_code = 5; // Failure reports only: non-OK gRPC status name.
+  bool interrupted = 6; // Caller cancellation returns the attempt without spending its budget.
+}
+message ContainerCleanupAttemptResponse {
+  string state = 1;
+  int64 generation = 2;
+  int32 attempts = 3;
+  string token = 4;
+}
+
+// JobsService handles jobs related operations.
 service JobsService {
+  // Internal-only cleanup execution authority and administrative redrive.
+  rpc BeginContainerCleanupAttempt(ContainerCleanupAttemptRequest) returns (ContainerCleanupAttemptResponse) {}
+  rpc FailContainerCleanupAttempt(ContainerCleanupAttemptRequest) returns (ContainerCleanupAttemptResponse) {}
+  rpc RedriveContainerCleanup(ContainerCleanupAttemptRequest) returns (ContainerCleanupAttemptResponse) {}
   // Internal-only receipts survive job deletion and outbox pruning.
   rpc GetContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (GetContainerCleanupReceiptResponse) {}
   rpc RecordContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (RecordContainerCleanupReceiptResponse) {}

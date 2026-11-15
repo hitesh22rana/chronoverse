@@ -21,16 +21,17 @@ func (a Action) ToString() string {
 
 // WorkflowEvent represents the event of the workflow.
 type WorkflowEvent struct {
-	EventKey         string
-	ID               string
-	UserID           string
-	Action           Action
-	Generation       int64
-	JobID            string
-	FailureKind      string
-	ErrorCode        string
-	ErrorMessage     string
-	ContainerCleanup *ContainerCleanup `json:",omitempty"`
+	EventKey          string
+	ID                string
+	UserID            string
+	Action            Action
+	Generation        int64
+	CleanupGeneration int64 `json:",omitempty"`
+	JobID             string
+	FailureKind       string
+	ErrorCode         string
+	ErrorMessage      string
+	ContainerCleanup  *ContainerCleanup `json:",omitempty"`
 }
 
 // ContainerCleanup retains runtime routing after a job or workflow is deleted.

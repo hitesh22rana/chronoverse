@@ -19,6 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	JobsService_BeginContainerCleanupAttempt_FullMethodName  = "/jobs.JobsService/BeginContainerCleanupAttempt"
+	JobsService_FailContainerCleanupAttempt_FullMethodName   = "/jobs.JobsService/FailContainerCleanupAttempt"
+	JobsService_RedriveContainerCleanup_FullMethodName       = "/jobs.JobsService/RedriveContainerCleanup"
 	JobsService_GetContainerCleanupReceipt_FullMethodName    = "/jobs.JobsService/GetContainerCleanupReceipt"
 	JobsService_RecordContainerCleanupReceipt_FullMethodName = "/jobs.JobsService/RecordContainerCleanupReceipt"
 	JobsService_ScheduleJob_FullMethodName                   = "/jobs.JobsService/ScheduleJob"
@@ -44,7 +47,13 @@ const (
 // JobsServiceClient is the client API for JobsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// JobsService handles jobs related operations.
 type JobsServiceClient interface {
+	// Internal-only cleanup execution authority and administrative redrive.
+	BeginContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error)
+	FailContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error)
+	RedriveContainerCleanup(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error)
 	// Internal-only receipts survive job deletion and outbox pruning.
 	GetContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*GetContainerCleanupReceiptResponse, error)
 	RecordContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*RecordContainerCleanupReceiptResponse, error)
@@ -104,6 +113,36 @@ type jobsServiceClient struct {
 
 func NewJobsServiceClient(cc grpc.ClientConnInterface) JobsServiceClient {
 	return &jobsServiceClient{cc}
+}
+
+func (c *jobsServiceClient) BeginContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerCleanupAttemptResponse)
+	err := c.cc.Invoke(ctx, JobsService_BeginContainerCleanupAttempt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) FailContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerCleanupAttemptResponse)
+	err := c.cc.Invoke(ctx, JobsService_FailContainerCleanupAttempt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) RedriveContainerCleanup(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerCleanupAttemptResponse)
+	err := c.cc.Invoke(ctx, JobsService_RedriveContainerCleanup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *jobsServiceClient) GetContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*GetContainerCleanupReceiptResponse, error) {
@@ -318,7 +357,13 @@ func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 // JobsServiceServer is the server API for JobsService service.
 // All implementations should embed UnimplementedJobsServiceServer
 // for forward compatibility.
+//
+// JobsService handles jobs related operations.
 type JobsServiceServer interface {
+	// Internal-only cleanup execution authority and administrative redrive.
+	BeginContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error)
+	FailContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error)
+	RedriveContainerCleanup(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error)
 	// Internal-only receipts survive job deletion and outbox pruning.
 	GetContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*GetContainerCleanupReceiptResponse, error)
 	RecordContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*RecordContainerCleanupReceiptResponse, error)
@@ -379,6 +424,15 @@ type JobsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedJobsServiceServer struct{}
 
+func (UnimplementedJobsServiceServer) BeginContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginContainerCleanupAttempt not implemented")
+}
+func (UnimplementedJobsServiceServer) FailContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FailContainerCleanupAttempt not implemented")
+}
+func (UnimplementedJobsServiceServer) RedriveContainerCleanup(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RedriveContainerCleanup not implemented")
+}
 func (UnimplementedJobsServiceServer) GetContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*GetContainerCleanupReceiptResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetContainerCleanupReceipt not implemented")
 }
@@ -457,6 +511,60 @@ func RegisterJobsServiceServer(s grpc.ServiceRegistrar, srv JobsServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&JobsService_ServiceDesc, srv)
+}
+
+func _JobsService_BeginContainerCleanupAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerCleanupAttemptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).BeginContainerCleanupAttempt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_BeginContainerCleanupAttempt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).BeginContainerCleanupAttempt(ctx, req.(*ContainerCleanupAttemptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_FailContainerCleanupAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerCleanupAttemptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).FailContainerCleanupAttempt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_FailContainerCleanupAttempt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).FailContainerCleanupAttempt(ctx, req.(*ContainerCleanupAttemptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_RedriveContainerCleanup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerCleanupAttemptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).RedriveContainerCleanup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_RedriveContainerCleanup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).RedriveContainerCleanup(ctx, req.(*ContainerCleanupAttemptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _JobsService_GetContainerCleanupReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -819,6 +927,18 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jobs.JobsService",
 	HandlerType: (*JobsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "BeginContainerCleanupAttempt",
+			Handler:    _JobsService_BeginContainerCleanupAttempt_Handler,
+		},
+		{
+			MethodName: "FailContainerCleanupAttempt",
+			Handler:    _JobsService_FailContainerCleanupAttempt_Handler,
+		},
+		{
+			MethodName: "RedriveContainerCleanup",
+			Handler:    _JobsService_RedriveContainerCleanup_Handler,
+		},
 		{
 			MethodName: "GetContainerCleanupReceipt",
 			Handler:    _JobsService_GetContainerCleanupReceipt_Handler,

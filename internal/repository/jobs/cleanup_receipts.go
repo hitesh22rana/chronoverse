@@ -11,6 +11,10 @@ func (r *Repository) GetContainerCleanupReceipt(ctx context.Context, jobID, cont
 
 // RecordContainerCleanupReceipt is called only after Docker confirms removal or absence.
 func (r *Repository) RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string) error {
-	_, err := r.pg.Exec(ctx, `INSERT INTO container_cleanup_receipts(job_id,container_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, jobID, containerID)
+	// The modifying CTE runs even without an outbox match; both writes commit atomically.
+	_, err := r.pg.Exec(ctx, `WITH receipt AS (
+ INSERT INTO container_cleanup_receipts(job_id,container_id) VALUES($1,$2) ON CONFLICT DO NOTHING
+) UPDATE outbox_events SET cleanup_state='COMPLETED',cleanup_token=NULL,cleanup_lease_until=NULL,cleanup_next_attempt_at=NULL
+ WHERE topic='workflows' AND event_key='job:'||$1::text||':container:'||$2::text||':cleanup' AND cleanup_state IS NOT NULL`, jobID, containerID)
 	return r.mapJobLeaseWriteError(err, "record container cleanup receipt")
 }

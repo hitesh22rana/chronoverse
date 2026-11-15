@@ -178,7 +178,7 @@ message ListWorkflowsResponse {
   string                             cursor    = 2; // Cursor for pagination
 }
 
-// WorkflowsService contains the service definition for the Workflow service.
+// WorkflowsService handles workflow related operations.
 service WorkflowsService {
     // CreateWorkflow a new workflow.
   rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {}

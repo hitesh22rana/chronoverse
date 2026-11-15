@@ -131,6 +131,21 @@ func (mr *MockRepositoryMockRecorder) FailJob(ctx, jobID, leaseToken, failureKin
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockRepository)(nil).FailJob), ctx, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode, commandID)
 }
 
+// GetContainerCleanupReceipt mocks base method.
+func (m *MockRepository) GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContainerCleanupReceipt", ctx, jobID, containerID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetContainerCleanupReceipt indicates an expected call of GetContainerCleanupReceipt.
+func (mr *MockRepositoryMockRecorder) GetContainerCleanupReceipt(ctx, jobID, containerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).GetContainerCleanupReceipt), ctx, jobID, containerID)
+}
+
 // GetJob mocks base method.
 func (m *MockRepository) GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobs.GetJobResponse, error) {
 	m.ctrl.T.Helper()
@@ -220,6 +235,20 @@ func (m *MockRepository) ListReadyRuntimeNodes(ctx context.Context) ([]*jobs.Run
 func (mr *MockRepositoryMockRecorder) ListReadyRuntimeNodes(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReadyRuntimeNodes", reflect.TypeOf((*MockRepository)(nil).ListReadyRuntimeNodes), ctx)
+}
+
+// RecordContainerCleanupReceipt mocks base method.
+func (m *MockRepository) RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordContainerCleanupReceipt", ctx, jobID, containerID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RecordContainerCleanupReceipt indicates an expected call of RecordContainerCleanupReceipt.
+func (mr *MockRepositoryMockRecorder) RecordContainerCleanupReceipt(ctx, jobID, containerID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).RecordContainerCleanupReceipt), ctx, jobID, containerID)
 }
 
 // RecoverExpiredJobLeases mocks base method.

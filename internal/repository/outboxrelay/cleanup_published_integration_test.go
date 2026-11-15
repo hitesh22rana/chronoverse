@@ -97,6 +97,12 @@ func TestIntegrationCleanupPublishedEventsRespectsRetentionAndBatch(t *testing.T
 	recent := now.Add(-time.Minute)
 	veryOld := now.Add(-5 * time.Hour)
 
+	seedOutboxRow(ctx, t, pg, topic, "malformed-cleanup", statusPublished, &veryOld)
+	if _, err := pg.Exec(ctx, `UPDATE outbox_events
+SET payload='{"Action":"CONTAINER_CLEANUP","JobID":"invalid","ContainerCleanup":{"ContainerID":"container"}}'
+WHERE topic=$1 AND event_key='malformed-cleanup'`, topic); err != nil {
+		t.Fatal(err)
+	}
 	seedOutboxRow(ctx, t, pg, topic, "old-3h", statusPublished, &old3h)
 	seedOutboxRow(ctx, t, pg, topic, "old-2h", statusPublished, &old2h)
 	seedOutboxRow(ctx, t, pg, topic, "old-90m", statusPublished, &old90m)
@@ -116,7 +122,7 @@ func TestIntegrationCleanupPublishedEventsRespectsRetentionAndBatch(t *testing.T
 		t.Fatalf("deleted %d rows with batch size 2, want 2 (oldest published first)", deleted)
 	}
 
-	want := []string{"dead-old-timestamp", "failed-old-timestamp", "old-90m", "pending", "processing", "recent"}
+	want := []string{"dead-old-timestamp", "failed-old-timestamp", "malformed-cleanup", "old-90m", "pending", "processing", "recent"}
 	if got := listOutboxKeys(ctx, t, pg, topic); !slices.Equal(got, want) {
 		t.Fatalf("remaining keys = %v, want %v", got, want)
 	}
@@ -129,7 +135,7 @@ func TestIntegrationCleanupPublishedEventsRespectsRetentionAndBatch(t *testing.T
 		t.Fatalf("second batch deleted %d rows, want 1 (old-90m)", deleted)
 	}
 
-	want = []string{"dead-old-timestamp", "failed-old-timestamp", "pending", "processing", "recent"}
+	want = []string{"dead-old-timestamp", "failed-old-timestamp", "malformed-cleanup", "pending", "processing", "recent"}
 	if got := listOutboxKeys(ctx, t, pg, topic); !slices.Equal(got, want) {
 		t.Fatalf("remaining keys after second batch = %v, want %v", got, want)
 	}

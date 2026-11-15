@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +54,34 @@ func leaseServiceCases() []func() *leaseServiceContract {
 		LeaseExpiresAt:   expires,
 	}
 	return []func() *leaseServiceContract{
+		func() *leaseServiceContract {
+			req := &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"}
+			return &leaseServiceContract{
+				name: "GetContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id"},
+				invalid: map[string]protoreflect.Value{"job_id": protoreflect.ValueOfString("bad-id"), "container_id": protoreflect.ValueOfString(strings.Repeat("x", 257))},
+				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
+					return svc.GetContainerCleanupReceipt(ctx, req)
+				},
+				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
+					repo.EXPECT().GetContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId).DoAndReturn(func(ctx context.Context, _, _ string) (bool, error) { check(ctx); return failure == nil, failure })
+					return true
+				},
+			}
+		},
+		func() *leaseServiceContract {
+			req := &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"}
+			return &leaseServiceContract{
+				name: "RecordContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id"},
+				invalid: map[string]protoreflect.Value{"job_id": protoreflect.ValueOfString("bad-id"), "container_id": protoreflect.ValueOfString(strings.Repeat("x", 257))},
+				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
+					return nil, svc.RecordContainerCleanupReceipt(ctx, req)
+				},
+				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
+					repo.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId).DoAndReturn(func(ctx context.Context, _, _ string) error { check(ctx); return failure })
+					return nil
+				},
+			}
+		},
 		func() *leaseServiceContract {
 			req := &jobspb.ClaimJobRequest{
 				Id:                   leaseContractJobID,
@@ -201,9 +230,10 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.AttachJobContainerRequest{Id: leaseContractJobID, LeaseToken: "lease", ContainerId: "container", RuntimeNodeId: "runtime", CommandId: "attach"}
+			req := &jobspb.AttachJobContainerRequest{Id: leaseContractJobID, LeaseToken: "lease", ContainerId: strings.Repeat("c", 256), RuntimeNodeId: "runtime", CommandId: "attach"}
 			return &leaseServiceContract{
 				name: "AttachJobContainer", request: req, required: []string{"id", "lease_token", "container_id", "runtime_node_id", "command_id"},
+				invalid: map[string]protoreflect.Value{"container_id": protoreflect.ValueOfString(strings.Repeat("c", 257))},
 				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
 					return nil, svc.AttachJobContainer(ctx, req)
 				},

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -71,7 +72,7 @@ func TestContainerEndpointRejectsMissingConfiguration(t *testing.T) {
 			t.Fatalf("endpoint %q=(%v,%v)", tc.endpoint, svc, err)
 		}
 	}
-	if err := repo.cleanupContainer(t.Context(), nil, "container"); status.Code(err) != codes.FailedPrecondition {
+	if err := repo.cleanupContainer(t.Context(), nil, "job", "container"); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("cleanup=%v", err)
 	}
 }
@@ -193,14 +194,88 @@ func (s stalledCleanupContainer) Remove(ctx context.Context, id string) error {
 	return ctx.Err()
 }
 
-func TestExecutorCleanupDetachesCancellationAndBoundsIO(t *testing.T) {
+func TestExecutorDetachedCleanupBoundsIO(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		started := time.Now()
-		err := (&Repository{}).cleanupContainer(ctx, stalledCleanupContainer{t: t}, "container")
+		err := (&Repository{auth: fakeAuth{}, svc: &Services{Jobs: &scriptedJobsClient{}}}).cleanupContainer(context.WithoutCancel(ctx), stalledCleanupContainer{t: t}, "job", "container")
 		if status.Code(err) != codes.DeadlineExceeded || time.Since(started) != 10*time.Second {
 			t.Fatalf("cleanup elapsed=%v err=%v", time.Since(started), err)
 		}
 	})
+}
+
+type receiptCleanupContainer struct {
+	ContainerSvc
+	remove func(context.Context, string) error
+}
+
+func (c receiptCleanupContainer) Remove(ctx context.Context, id string) error {
+	return c.remove(ctx, id)
+}
+
+func TestExecutorCleanupRecordsOnlyConfirmedRemoval(t *testing.T) {
+	for _, phase := range []string{"auth", "read", "completed", "remove", "write", "success"} {
+		t.Run(phase, func(t *testing.T) {
+			failure := status.Error(codes.Unavailable, "cleanup dependency unavailable")
+			jobs := &scriptedJobsClient{}
+			var credentials auth.IAuth = fakeAuth{}
+			if phase == "auth" {
+				credentials = failingTokenAuth{}
+			}
+			if phase == "read" {
+				jobs.getReceipt = func(context.Context, *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+					return nil, failure
+				}
+			}
+			if phase == "completed" {
+				jobs.cleanupReceipts.Store("job:container", true)
+			}
+			removes, writes := 0, 0
+			jobs.recordReceipt = func(context.Context, *jobspb.ContainerCleanupReceiptRequest) error {
+				writes++
+				if phase == "write" {
+					return failure
+				}
+				return nil
+			}
+			container := receiptCleanupContainer{remove: func(context.Context, string) error {
+				removes++
+				if phase == "remove" {
+					return failure
+				}
+				return nil
+			}}
+			repo := &Repository{auth: credentials, svc: &Services{Jobs: jobs}}
+			err := repo.cleanupContainer(t.Context(), container, "job", "container")
+			assertExecutorReceiptEffects(t, phase, removes, writes, err)
+		})
+	}
+}
+
+func assertExecutorReceiptEffects(t *testing.T, phase string, removes, writes int, err error) {
+	t.Helper()
+
+	if phase == "success" || phase == "completed" {
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else if err == nil {
+		t.Fatal("failed cleanup reported success")
+	}
+	switch phase {
+	case "auth", "read", "completed":
+		if removes != 0 || writes != 0 {
+			t.Fatal("cleanup reached Docker or wrote a false receipt")
+		}
+	case "remove":
+		if removes != 1 || writes != 0 {
+			t.Fatal("failed removal was recorded as complete")
+		}
+	default:
+		if removes != 1 || writes != 1 {
+			t.Fatalf("removes/writes=%d/%d", removes, writes)
+		}
+	}
 }

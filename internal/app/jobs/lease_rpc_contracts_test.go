@@ -95,6 +95,39 @@ func leaseRPCContracts() []leaseRPCContract {
 	nodes := &jobspb.ListReadyRuntimeNodesResponse{Nodes: []*jobspb.GetReadyRuntimeNodeResponse{node}}
 	return []leaseRPCContract{
 		{
+			method:   "GetContainerCleanupReceipt",
+			request:  &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "not-yet-cleaned"},
+			response: &jobspb.GetContainerCleanupReceiptResponse{Completed: false},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().GetContainerCleanupReceipt(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (bool, error) {
+					check(ctx, req)
+					return false, failure
+				})
+			},
+		},
+		{
+			method:   "GetContainerCleanupReceipt",
+			request:  &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"},
+			response: &jobspb.GetContainerCleanupReceiptResponse{Completed: true},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().GetContainerCleanupReceipt(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (bool, error) {
+					check(ctx, req)
+					return true, failure
+				})
+			},
+		},
+		{
+			method:   "RecordContainerCleanupReceipt",
+			request:  &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"},
+			response: &jobspb.RecordContainerCleanupReceiptResponse{},
+			expect: func(svc *jobsmock.MockService, check func(context.Context, proto.Message), failure error) {
+				svc.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) error {
+					check(ctx, req)
+					return failure
+				})
+			},
+		},
+		{
 			method: "ClaimJob",
 			request: &jobspb.ClaimJobRequest{
 				Id:                   leaseContractJobID,

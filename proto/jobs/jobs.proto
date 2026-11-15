@@ -337,7 +337,19 @@ message ListJobsResponse {
 }
 
 // JobsService handles job related operations.
+// ContainerCleanupReceiptRequest identifies one immutable job container.
+message ContainerCleanupReceiptRequest {
+  string job_id = 1;
+  string container_id = 2;
+}
+message GetContainerCleanupReceiptResponse { bool completed = 1; }
+message RecordContainerCleanupReceiptResponse {}
+
 service JobsService {
+  // Internal-only receipts survive job deletion and outbox pruning.
+  rpc GetContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (GetContainerCleanupReceiptResponse) {}
+  rpc RecordContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (RecordContainerCleanupReceiptResponse) {}
+
     // ScheduleJob schedules a job to run at a specific time.
   rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 

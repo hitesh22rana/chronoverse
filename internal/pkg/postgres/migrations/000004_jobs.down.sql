@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS container_cleanup_receipts;
 DROP TABLE IF EXISTS jobs;
 DROP FUNCTION IF EXISTS update_jobs_updated_at;
 DROP TYPE IF EXISTS JOB_TRIGGER;

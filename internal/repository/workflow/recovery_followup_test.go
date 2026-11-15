@@ -79,7 +79,7 @@ func TestCanceledContainerCleanupStopsAtRoutingAndTerminationFailure(t *testing.
 			failure := status.Error(codes.Unavailable, "runtime unavailable")
 			container := &failingCleanupContainer{terminateErr: failure}
 			factories := 0
-			repo := &Repository{svc: &Services{CsvcForEndpoint: func(node, endpoint string) (ContainerSvc, error) {
+			repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}, CsvcForEndpoint: func(node, endpoint string) (ContainerSvc, error) {
 				factories++
 				if node != "runtime-node" || endpoint != "tcp://runtime:2376" {
 					t.Errorf("runtime route=%s/%s", node, endpoint)
@@ -228,7 +228,7 @@ func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			factoryCalls := 0
-			repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+			repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}, CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				factoryCalls++
 				return nil, errors.New("cleanup must not select a runtime")
 			}}}

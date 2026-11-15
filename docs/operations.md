@@ -533,6 +533,35 @@ successful cleanup. Executor inline removal is best effort with a detached
 ten-second deadline; the durable event remains responsible for recovery if that
 attempt fails or the executor exits after settlement.
 
+Jobs-service stores a durable completion receipt for each exact job/container
+pair after Docker confirms removal or absence. Workflow cleanup and executor
+inline cleanup check receipts before contacting Docker and record completion
+after removal. A receipt read or write failure is a cleanup failure, not an
+acknowledgement. These internal RPCs require the jobs-service admin role. Attachment and receipt
+APIs, and both database columns, enforce the same 256-character container-ID
+limit.
+
+Expired-container recovery checks receipts before resolving a runtime. It
+records confirmed absence from inspection, and successful removal, before
+settling the recovered lease. Lease-owned recovery operations have a
+three-minute attempt deadline and preserve caller/lease cancellation; receipt
+I/O and the shared removal step have ten-second budgets. Cleanup following an
+accepted terminal settlement retains its separate detached ten-second budget.
+
+Published cleanup events are retained until a matching receipt exists, even
+past the normal published-event retention window. This preserves unfinished
+cleanup snapshots if Kafka retention expires; automatic redrive remains a
+separate recovery policy. Other published event types retain their usual
+retention behavior.
+
+Receipts survive job/workflow deletion and published-outbox pruning. Enqueueing
+cleanup consults receipts, and a previously queued delivery also checks them,
+so completed cleanup does not depend on its former runtime remaining available.
+Receipts have no automatic expiry; do not prune them with outbox retention.
+Safe receipt garbage collection requires proving that source references and
+possible redeliveries are gone. A crash after removal but before receipt commit
+can still require another Docker confirmation; this is not exactly-once cleanup.
+
 Cleanup events use workflow-key ordering, so an unavailable runtime can delay
 later events for that workflow. Monitor outbox failures and DEAD events using
 the existing relay recovery procedure. Recovery depends on the original runtime

@@ -30,6 +30,14 @@ Execution workers periodically request expired-lease recovery in bounded batches
 
 If execution ends without a confirmed terminal or release response, the worker retains its bounded handoff permit and reconciles the original claim against PostgreSQL. This reconciliation is read-only: it never extends the lease. A live exact authority remains suppressed, while an expired or changed authority releases the permit and leaves the job eligible for normal recovery.
 
+## Container cleanup completion
+
+Internal workers check a jobs-service completion receipt before contacting Docker and record it only after confirmed removal or absence. Receipts identify the exact job/container pair, survive workflow/job deletion and outbox pruning, and prevent repeated cleanup from depending on a retired runtime. Failed removal or receipt storage remains retryable. The receipt RPCs require the jobs-service admin role. Attachment and receipt APIs and storage share a 256-character container-ID limit.
+
+Expired-container recovery checks receipts before resolving the runtime and records confirmed absence or successful removal before lease settlement. Lease-owned recovery has a three-minute attempt deadline and preserves caller/lease cancellation; receipt I/O and removal use ten-second budgets. Cleanup after an accepted terminal settlement retains its detached ten-second budget.
+
+Receipts have no automatic expiry. Published cleanup events remain in the outbox until a matching receipt exists; ordinary published-event retention does not discard unfinished cleanup snapshots. Outbox publication alone is not evidence of removal, and outbox retention must not delete completion evidence. A crash after Docker removal but before receipt commit can still require another confirmation; cleanup is not an exactly-once external operation. Cleanup quarantine/redrive is a separate policy from completion evidence.
+
 ## Split-brain prevention
 
 After expiration and recovery, the old token is invalid. A delayed worker cannot report success for work that another worker now owns.

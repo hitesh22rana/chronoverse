@@ -41,6 +41,8 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
+	GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string) (bool, error)
+	RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string) error
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
 	CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID, processInstanceID, commandID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)
@@ -307,7 +309,7 @@ func (s *Service) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRe
 type AttachJobContainerRequest struct {
 	ID            string `validate:"required"`
 	LeaseToken    string `validate:"required"`
-	ContainerID   string `validate:"required"`
+	ContainerID   string `validate:"required,max=256"`
 	RuntimeNodeID string `validate:"required"`
 	CommandID     string `validate:"required"`
 }

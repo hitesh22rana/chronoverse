@@ -56,7 +56,10 @@ RETURNS VOID AS $$
 DECLARE
     cleanup_key TEXT := 'job:' || job.id || ':container:' || job.container_id || ':cleanup';
 BEGIN
-    IF COALESCE(job.container_id, '') = '' THEN
+    IF COALESCE(job.container_id, '') = '' OR EXISTS (
+        SELECT 1 FROM container_cleanup_receipts
+        WHERE job_id = job.id AND container_id = job.container_id
+    ) THEN
         RETURN;
     END IF;
     INSERT INTO outbox_events (topic, kafka_key, event_key, payload)

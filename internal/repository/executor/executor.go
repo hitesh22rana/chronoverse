@@ -558,7 +558,7 @@ func (r *Repository) failClaimedJob(
 	decision := classifyExecutionFailure(executeErr)
 	if decision.Retryable && int(claim.GetAttempts()) < r.cfg.SystemRetryLimit {
 		retryCtx := context.WithoutCancel(ctx)
-		if cleanupErr := r.cleanupContainer(retryCtx, csvc, containerID); cleanupErr != nil {
+		if cleanupErr := r.cleanupContainer(retryCtx, csvc, claim.GetId(), containerID); cleanupErr != nil {
 			loggerpkg.FromContext(ctx).Warn("failed to cleanup container before retry",
 				zap.String("job_id", claim.GetId()),
 				zap.String("container_id", containerID),
@@ -596,7 +596,7 @@ func (r *Repository) failClaimedJob(
 		zap.String("error_code", status.Code(executeErr).String()),
 	)
 
-	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, claim.GetId(), containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job failure",
 			zap.String("job_id", claim.GetId()),
 			zap.String("container_id", containerID),
@@ -627,7 +627,7 @@ func (r *Repository) completeClaimedJob(
 	}
 	r.handoffs.consume(claim.GetId(), claim.GetLeaseToken())
 
-	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, containerID); cleanupErr != nil {
+	if cleanupErr := r.cleanupContainer(context.WithoutCancel(ctx), csvc, claim.GetId(), containerID); cleanupErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to cleanup container after job completion",
 			zap.String("job_id", claim.GetId()),
 			zap.String("container_id", containerID),
@@ -638,7 +638,7 @@ func (r *Repository) completeClaimedJob(
 	return nil
 }
 
-func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, containerID string) error {
+func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, jobID, containerID string) error {
 	if containerID == "" {
 		return nil
 	}
@@ -646,9 +646,26 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, co
 		return status.Error(codes.FailedPrecondition, "container service is not configured")
 	}
 
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), containerCleanupTimeout)
+	// Callers choose detachment; recovery must retain lease cancellation.
+	cleanupCtx, cancel := context.WithTimeout(ctx, containerCleanupTimeout)
 	defer cancel()
-	return normalizeExecutionError(csvc.Remove(cleanupCtx, containerID))
+	authCtx, err := r.withAuthorization(cleanupCtx)
+	if err != nil {
+		return normalizeExecutionError(err)
+	}
+	request := &jobspb.ContainerCleanupReceiptRequest{JobId: jobID, ContainerId: containerID}
+	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(authCtx, request)
+	if err != nil {
+		return normalizeExecutionError(err)
+	}
+	if receipt.GetCompleted() {
+		return nil
+	}
+	if err = csvc.Remove(cleanupCtx, containerID); err != nil {
+		return normalizeExecutionError(err)
+	}
+	_, err = r.svc.Jobs.RecordContainerCleanupReceipt(authCtx, request)
+	return normalizeExecutionError(err)
 }
 
 type executionFailureDecision struct {

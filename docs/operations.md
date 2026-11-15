@@ -559,6 +559,15 @@ reconciliation. These deadlines depend on Docker honoring request contexts.
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_*` settings coordinate cold image pulls on
   the selected runtime node before Docker container creation.
 
+Each initial lease proof and periodic renewal has an RPC budget of the smaller
+of five seconds and one third of the configured gap between lease duration and
+renewal interval; an earlier caller deadline still applies. Renewal failure
+cancels the operation with its cause. Normal execution and expired-lease
+recovery both cancel and join their renewal supervisor before returning. A late
+renewal failure does not override an already accepted settlement. These bounds
+rely on the jobs client honoring contexts; process pauses and downstream fencing
+remain separate concerns.
+
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka
 partitions, and downstream services can support it. Measure queue delay before

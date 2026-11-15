@@ -161,7 +161,7 @@ func TestCanceledCleanupDoesNotStartAnotherContainerOperation(t *testing.T) {
 			defer cancel()
 			workflow := lifecycleWorkflow()
 			workflow.Kind = "CONTAINER"
-			repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
+			repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}, CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				return ownershipLossContainer{
 					ContainerSvc: recoveryContainer{logs: func(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
 						cancel()

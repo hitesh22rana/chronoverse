@@ -19,32 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	JobsService_ScheduleJob_FullMethodName             = "/jobs.JobsService/ScheduleJob"
-	JobsService_CancelJob_FullMethodName               = "/jobs.JobsService/CancelJob"
-	JobsService_ClaimJob_FullMethodName                = "/jobs.JobsService/ClaimJob"
-	JobsService_GetReadyRuntimeNode_FullMethodName     = "/jobs.JobsService/GetReadyRuntimeNode"
-	JobsService_ListReadyRuntimeNodes_FullMethodName   = "/jobs.JobsService/ListReadyRuntimeNodes"
-	JobsService_RenewJobLease_FullMethodName           = "/jobs.JobsService/RenewJobLease"
-	JobsService_AttachJobContainer_FullMethodName      = "/jobs.JobsService/AttachJobContainer"
-	JobsService_CompleteJob_FullMethodName             = "/jobs.JobsService/CompleteJob"
-	JobsService_FailJob_FullMethodName                 = "/jobs.JobsService/FailJob"
-	JobsService_CancelClaimedJob_FullMethodName        = "/jobs.JobsService/CancelClaimedJob"
-	JobsService_ReleaseJobForRetry_FullMethodName      = "/jobs.JobsService/ReleaseJobForRetry"
-	JobsService_RecoverExpiredJobLeases_FullMethodName = "/jobs.JobsService/RecoverExpiredJobLeases"
-	JobsService_GetJob_FullMethodName                  = "/jobs.JobsService/GetJob"
-	JobsService_GetJobByID_FullMethodName              = "/jobs.JobsService/GetJobByID"
-	JobsService_GetJobLogs_FullMethodName              = "/jobs.JobsService/GetJobLogs"
-	JobsService_StreamJobLogs_FullMethodName           = "/jobs.JobsService/StreamJobLogs"
-	JobsService_SearchJobLogs_FullMethodName           = "/jobs.JobsService/SearchJobLogs"
-	JobsService_ListJobs_FullMethodName                = "/jobs.JobsService/ListJobs"
+	JobsService_GetContainerCleanupReceipt_FullMethodName    = "/jobs.JobsService/GetContainerCleanupReceipt"
+	JobsService_RecordContainerCleanupReceipt_FullMethodName = "/jobs.JobsService/RecordContainerCleanupReceipt"
+	JobsService_ScheduleJob_FullMethodName                   = "/jobs.JobsService/ScheduleJob"
+	JobsService_CancelJob_FullMethodName                     = "/jobs.JobsService/CancelJob"
+	JobsService_ClaimJob_FullMethodName                      = "/jobs.JobsService/ClaimJob"
+	JobsService_GetReadyRuntimeNode_FullMethodName           = "/jobs.JobsService/GetReadyRuntimeNode"
+	JobsService_ListReadyRuntimeNodes_FullMethodName         = "/jobs.JobsService/ListReadyRuntimeNodes"
+	JobsService_RenewJobLease_FullMethodName                 = "/jobs.JobsService/RenewJobLease"
+	JobsService_AttachJobContainer_FullMethodName            = "/jobs.JobsService/AttachJobContainer"
+	JobsService_CompleteJob_FullMethodName                   = "/jobs.JobsService/CompleteJob"
+	JobsService_FailJob_FullMethodName                       = "/jobs.JobsService/FailJob"
+	JobsService_CancelClaimedJob_FullMethodName              = "/jobs.JobsService/CancelClaimedJob"
+	JobsService_ReleaseJobForRetry_FullMethodName            = "/jobs.JobsService/ReleaseJobForRetry"
+	JobsService_RecoverExpiredJobLeases_FullMethodName       = "/jobs.JobsService/RecoverExpiredJobLeases"
+	JobsService_GetJob_FullMethodName                        = "/jobs.JobsService/GetJob"
+	JobsService_GetJobByID_FullMethodName                    = "/jobs.JobsService/GetJobByID"
+	JobsService_GetJobLogs_FullMethodName                    = "/jobs.JobsService/GetJobLogs"
+	JobsService_StreamJobLogs_FullMethodName                 = "/jobs.JobsService/StreamJobLogs"
+	JobsService_SearchJobLogs_FullMethodName                 = "/jobs.JobsService/SearchJobLogs"
+	JobsService_ListJobs_FullMethodName                      = "/jobs.JobsService/ListJobs"
 )
 
 // JobsServiceClient is the client API for JobsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// JobsService handles job related operations.
 type JobsServiceClient interface {
+	// Internal-only receipts survive job deletion and outbox pruning.
+	GetContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*GetContainerCleanupReceiptResponse, error)
+	RecordContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*RecordContainerCleanupReceiptResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
 	// CancelJob applies a deterministic workflow-driven cancellation.
@@ -101,6 +104,26 @@ type jobsServiceClient struct {
 
 func NewJobsServiceClient(cc grpc.ClientConnInterface) JobsServiceClient {
 	return &jobsServiceClient{cc}
+}
+
+func (c *jobsServiceClient) GetContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*GetContainerCleanupReceiptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetContainerCleanupReceiptResponse)
+	err := c.cc.Invoke(ctx, JobsService_GetContainerCleanupReceipt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) RecordContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*RecordContainerCleanupReceiptResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordContainerCleanupReceiptResponse)
+	err := c.cc.Invoke(ctx, JobsService_RecordContainerCleanupReceipt_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *jobsServiceClient) ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error) {
@@ -295,9 +318,10 @@ func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 // JobsServiceServer is the server API for JobsService service.
 // All implementations should embed UnimplementedJobsServiceServer
 // for forward compatibility.
-//
-// JobsService handles job related operations.
 type JobsServiceServer interface {
+	// Internal-only receipts survive job deletion and outbox pruning.
+	GetContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*GetContainerCleanupReceiptResponse, error)
+	RecordContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*RecordContainerCleanupReceiptResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
 	// CancelJob applies a deterministic workflow-driven cancellation.
@@ -355,6 +379,12 @@ type JobsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedJobsServiceServer struct{}
 
+func (UnimplementedJobsServiceServer) GetContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*GetContainerCleanupReceiptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetContainerCleanupReceipt not implemented")
+}
+func (UnimplementedJobsServiceServer) RecordContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*RecordContainerCleanupReceiptResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RecordContainerCleanupReceipt not implemented")
+}
 func (UnimplementedJobsServiceServer) ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ScheduleJob not implemented")
 }
@@ -427,6 +457,42 @@ func RegisterJobsServiceServer(s grpc.ServiceRegistrar, srv JobsServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&JobsService_ServiceDesc, srv)
+}
+
+func _JobsService_GetContainerCleanupReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerCleanupReceiptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).GetContainerCleanupReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_GetContainerCleanupReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).GetContainerCleanupReceipt(ctx, req.(*ContainerCleanupReceiptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_RecordContainerCleanupReceipt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerCleanupReceiptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).RecordContainerCleanupReceipt(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_RecordContainerCleanupReceipt_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).RecordContainerCleanupReceipt(ctx, req.(*ContainerCleanupReceiptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _JobsService_ScheduleJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -753,6 +819,14 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jobs.JobsService",
 	HandlerType: (*JobsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetContainerCleanupReceipt",
+			Handler:    _JobsService_GetContainerCleanupReceipt_Handler,
+		},
+		{
+			MethodName: "RecordContainerCleanupReceipt",
+			Handler:    _JobsService_RecordContainerCleanupReceipt_Handler,
+		},
 		{
 			MethodName: "ScheduleJob",
 			Handler:    _JobsService_ScheduleJob_Handler,

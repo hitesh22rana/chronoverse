@@ -19,10 +19,21 @@ func (r *Repository) CleanupPublishedEvents(ctx context.Context, retention time.
 
 	query := fmt.Sprintf(`
 		WITH expired AS (
-			SELECT id
-			FROM %s
+			SELECT events.id
+			FROM %s events
 			WHERE status = 'PUBLISHED'
 				AND published_at < $1
+                AND (
+                    events.payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP'
+                    OR EXISTS (
+                        SELECT 1 FROM container_cleanup_receipts receipt
+                        WHERE receipt.job_id = CASE
+                            WHEN pg_input_is_valid(events.payload->>'JobID', 'uuid')
+                            THEN (events.payload->>'JobID')::uuid
+                        END
+                        AND receipt.container_id = events.payload->'ContainerCleanup'->>'ContainerID'
+                    )
+                )
 			ORDER BY published_at
 			LIMIT $2
 		)

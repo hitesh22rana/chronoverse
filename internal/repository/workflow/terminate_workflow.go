@@ -183,17 +183,29 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		return nil
 	}
 
+	authCtx, err := r.withAuthorization(parentCtx)
+	if err != nil {
+		return err
+	}
+	receiptRequest := &jobspb.ContainerCleanupReceiptRequest{JobId: job.GetId(), ContainerId: job.GetContainerId()}
+	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(authCtx, receiptRequest)
+	if err != nil {
+		return err
+	}
+	if receipt.GetCompleted() {
+		return nil
+	}
 	csvc, err := r.containerSvcForJob(job)
 	if err != nil {
 		return err
 	}
-	if err := csvc.Terminate(parentCtx, job.GetContainerId()); err != nil {
-		return err
+	if stopErr := csvc.Terminate(parentCtx, job.GetContainerId()); stopErr != nil {
+		return stopErr
 	}
-	if err := parentCtx.Err(); err != nil {
+	if err = parentCtx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
-	if err := r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
+	if err = r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
 		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
 			zap.String("workflow_id", workflow.GetId()),
 			zap.String("job_id", job.GetId()),
@@ -203,10 +215,14 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 		return err
 	}
 
-	if err := parentCtx.Err(); err != nil {
+	if err = parentCtx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
-	return csvc.Remove(parentCtx, job.GetContainerId())
+	if removeErr := csvc.Remove(parentCtx, job.GetContainerId()); removeErr != nil {
+		return removeErr
+	}
+	_, err = r.svc.Jobs.RecordContainerCleanupReceipt(authCtx, receiptRequest)
+	return err
 }
 
 func (r *Repository) replayCanceledJobContainerLogs(

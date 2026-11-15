@@ -178,6 +178,9 @@ func firstOp(commands []*recordedCommand, op jobCommand) (*recordedCommand, bool
 // describe the failure it exercises. Every hook receives the caller's context so
 // a test can observe the executor's cancellation directly.
 type scriptedJobsClient struct {
+	cleanupReceipts sync.Map
+	getReceipt      func(context.Context, *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error)
+	recordReceipt   func(context.Context, *jobspb.ContainerCleanupReceiptRequest) error
 	jobspb.JobsServiceClient
 
 	log *jobsCallLog
@@ -1511,4 +1514,24 @@ func TestRunClaimedWorkflowReleasesContainerClaimWithoutRuntimeService(t *testin
 		t.Fatalf("container executions = %d, want 0 without a container service", got)
 	}
 	assertNoOwnershipStealing(t, fixture.log)
+}
+
+func (c *scriptedJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+	if c.getReceipt != nil {
+		return c.getReceipt(ctx, req)
+	}
+	_, completed := c.cleanupReceipts.Load(req.GetJobId() + ":" + req.GetContainerId())
+	return &jobspb.GetContainerCleanupReceiptResponse{Completed: completed}, nil
+}
+
+func (c *scriptedJobsClient) RecordContainerCleanupReceipt(
+	ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption,
+) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
+	if c.recordReceipt != nil {
+		if err := c.recordReceipt(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	c.cleanupReceipts.Store(req.GetJobId()+":"+req.GetContainerId(), true)
+	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
 }

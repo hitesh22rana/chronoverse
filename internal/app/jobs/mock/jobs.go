@@ -129,6 +129,21 @@ func (mr *MockServiceMockRecorder) FailJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailJob", reflect.TypeOf((*MockService)(nil).FailJob), ctx, req)
 }
 
+// GetContainerCleanupReceipt mocks base method.
+func (m *MockService) GetContainerCleanupReceipt(ctx context.Context, req *jobs0.ContainerCleanupReceiptRequest) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContainerCleanupReceipt", ctx, req)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetContainerCleanupReceipt indicates an expected call of GetContainerCleanupReceipt.
+func (mr *MockServiceMockRecorder) GetContainerCleanupReceipt(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerCleanupReceipt", reflect.TypeOf((*MockService)(nil).GetContainerCleanupReceipt), ctx, req)
+}
+
 // GetJob mocks base method.
 func (m *MockService) GetJob(ctx context.Context, req *jobs0.GetJobRequest) (*jobs.GetJobResponse, error) {
 	m.ctrl.T.Helper()
@@ -217,6 +232,20 @@ func (m *MockService) ListReadyRuntimeNodes(ctx context.Context, req *jobs0.List
 func (mr *MockServiceMockRecorder) ListReadyRuntimeNodes(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReadyRuntimeNodes", reflect.TypeOf((*MockService)(nil).ListReadyRuntimeNodes), ctx, req)
+}
+
+// RecordContainerCleanupReceipt mocks base method.
+func (m *MockService) RecordContainerCleanupReceipt(ctx context.Context, req *jobs0.ContainerCleanupReceiptRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordContainerCleanupReceipt", ctx, req)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RecordContainerCleanupReceipt indicates an expected call of RecordContainerCleanupReceipt.
+func (mr *MockServiceMockRecorder) RecordContainerCleanupReceipt(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordContainerCleanupReceipt", reflect.TypeOf((*MockService)(nil).RecordContainerCleanupReceipt), ctx, req)
 }
 
 // RecoverExpiredJobLeases mocks base method.

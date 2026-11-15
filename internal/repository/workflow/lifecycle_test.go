@@ -377,7 +377,7 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 	want := []string{
 		"list-RUNNING", "cancel-job-RUNNING", "list-PENDING", "cancel-job-PENDING", "list-QUEUED", "cancel-job-QUEUED",
 		"terminate", "remove", "terminate", "remove", "terminate", "remove", "list-CANCELED", "terminate", "remove",
-		"list-RUNNING", "list-PENDING", "list-QUEUED", "list-CANCELED", "terminate", "remove",
+		"list-RUNNING", "list-PENDING", "list-QUEUED", "list-CANCELED",
 	}
 	assertEvents(t, events.items(), want)
 	// Each cleanup must act on the container the job reports, never on the job
@@ -386,7 +386,6 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		"terminate:container-RUNNING", "logs:container-RUNNING", "remove:container-RUNNING",
 		"terminate:container-PENDING", "logs:container-PENDING", "remove:container-PENDING",
 		"terminate:container-QUEUED", "logs:container-QUEUED", "remove:container-QUEUED",
-		"terminate:container-retry", "logs:container-retry", "remove:container-retry",
 		"terminate:container-retry", "logs:container-retry", "remove:container-retry",
 	})
 	if !reflect.DeepEqual(l.released, l.keys) || len(l.released) != 2 {

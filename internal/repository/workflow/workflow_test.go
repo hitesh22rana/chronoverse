@@ -453,7 +453,9 @@ func TestCleanupCanceledJobContainerRetainsContainerWhenLogPublishFails(t *testi
 
 	events := &orderedEvents{}
 	repo := &Repository{
+		auth: testAuth{},
 		svc: &Services{
+			Jobs: &testJobsClient{},
 			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				return &testContainerSvc{
 					events: events,
@@ -493,7 +495,9 @@ func TestCleanupCanceledJobContainerRejectsContainerWithoutRuntimeEndpoint(t *te
 
 	called := false
 	repo := &Repository{
+		auth: testAuth{},
 		svc: &Services{
+			Jobs: &testJobsClient{},
 			CsvcForEndpoint: func(string, string) (ContainerSvc, error) {
 				called = true
 				return &testContainerSvc{}, nil
@@ -778,6 +782,9 @@ func (testAuth) ValidateToken(context.Context, string) (context.Context, *jwt.To
 }
 
 type testJobsClient struct {
+	cleanupReceipts sync.Map
+	getReceipt      func(context.Context, *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error)
+	recordReceipt   func(context.Context, *jobspb.ContainerCleanupReceiptRequest) error
 	jobspb.JobsServiceClient
 	cancelJob             func(context.Context, *jobspb.CancelJobRequest) error
 	scheduleJob           func(context.Context, *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error)
@@ -991,4 +998,22 @@ func (testKafkaProducer) ProduceSync(context.Context, ...*kgo.Record) kgo.Produc
 
 func (*testWorkflowLockStore) ExtendDistributedLockWithToken(context.Context, string, string, time.Duration) (bool, error) {
 	return true, nil
+}
+
+func (c *testJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+	if c.getReceipt != nil {
+		return c.getReceipt(ctx, req)
+	}
+	_, completed := c.cleanupReceipts.Load(req.GetJobId() + ":" + req.GetContainerId())
+	return &jobspb.GetContainerCleanupReceiptResponse{Completed: completed}, nil
+}
+
+func (c *testJobsClient) RecordContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
+	if c.recordReceipt != nil {
+		if err := c.recordReceipt(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	c.cleanupReceipts.Store(req.GetJobId()+":"+req.GetContainerId(), true)
+	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
 }

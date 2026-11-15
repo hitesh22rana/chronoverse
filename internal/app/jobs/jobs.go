@@ -35,22 +35,26 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
-	"CancelJob":               true,
-	"ClaimJob":                true,
-	"GetReadyRuntimeNode":     true,
-	"ListReadyRuntimeNodes":   true,
-	"RenewJobLease":           true,
-	"AttachJobContainer":      true,
-	"CompleteJob":             true,
-	"FailJob":                 true,
-	"CancelClaimedJob":        true,
-	"ReleaseJobForRetry":      true,
-	"RecoverExpiredJobLeases": true,
-	"GetJobByID":              true,
+	"GetContainerCleanupReceipt":    true,
+	"RecordContainerCleanupReceipt": true,
+	"CancelJob":                     true,
+	"ClaimJob":                      true,
+	"GetReadyRuntimeNode":           true,
+	"ListReadyRuntimeNodes":         true,
+	"RenewJobLease":                 true,
+	"AttachJobContainer":            true,
+	"CompleteJob":                   true,
+	"FailJob":                       true,
+	"CancelClaimedJob":              true,
+	"ReleaseJobForRetry":            true,
+	"RecoverExpiredJobLeases":       true,
+	"GetJobByID":                    true,
 }
 
 // Service provides job related operations.
 type Service interface {
+	GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (bool, error)
+	RecordContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) error
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)
 	CancelJob(ctx context.Context, req *jobspb.CancelJobRequest) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (*jobspb.ClaimJobResponse, error)

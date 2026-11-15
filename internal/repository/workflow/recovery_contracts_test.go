@@ -492,7 +492,7 @@ func TestCleanupRetainsContainerForRetryAfterReplayFailure(t *testing.T) {
 		container.replayed++
 		return nil, nil, status.Error(codes.Unavailable, "log stream unavailable")
 	}
-	repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
+	repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}, CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
 	job := &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}
 	if err := repo.cleanupCanceledJobContainer(parent, workflow, job); status.Code(err) != codes.Unavailable || container.removed != 0 {
 		t.Fatalf("removed=%d error=%v", container.removed, err)

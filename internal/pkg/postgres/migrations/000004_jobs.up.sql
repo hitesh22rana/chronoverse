@@ -85,3 +85,11 @@ WHERE status = 'RUNNING' AND runtime_node_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_jobs_expired_leases_by_runtime
 ON jobs (runtime_node_id, lease_expires_at, id)
 WHERE status = 'RUNNING' AND lease_expires_at IS NOT NULL;
+
+-- Completion evidence survives job/workflow deletion and outbox retention.
+CREATE TABLE container_cleanup_receipts (
+    job_id UUID NOT NULL,
+    container_id VARCHAR(256) NOT NULL,
+    completed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'utc'),
+    PRIMARY KEY (job_id, container_id)
+);

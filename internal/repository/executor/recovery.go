@@ -159,7 +159,10 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	ctx context.Context,
 	job *jobspb.ExpiredJobLease,
 	claim *jobspb.ClaimJobResponse,
-) error {
+) (err error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	defer func() { err = normalizeExecutionError(err) }()
 	workflowForLogs := workflowFromExpiredLease(job)
 	if job.GetRuntimeUnavailable() {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "runtime node unavailable during lease recovery"))
@@ -170,6 +173,20 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	if job.GetRuntimeEndpoint() == "" {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "job lease expired without a runtime endpoint"))
 	}
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return err
+	}
+	request := &jobspb.ContainerCleanupReceiptRequest{JobId: claim.GetId(), ContainerId: job.GetContainerId()}
+	readCtx, stopRead := context.WithTimeout(authCtx, containerCleanupTimeout)
+	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(readCtx, request)
+	stopRead()
+	if err != nil {
+		return err
+	}
+	if receipt.GetCompleted() {
+		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "container was already cleaned before recovery settlement"))
+	}
 	csvc, err := r.containerSvcForEndpoint(job.GetRuntimeNodeId(), job.GetRuntimeEndpoint())
 	if err != nil {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, err)
@@ -178,32 +195,19 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	state, err := csvc.Inspect(ctx, job.GetContainerId())
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
+			writeCtx, stopWrite := context.WithTimeout(authCtx, containerCleanupTimeout)
+			_, receiptErr := r.svc.Jobs.RecordContainerCleanupReceipt(writeCtx, request)
+			stopWrite()
+			if receiptErr != nil {
+				return receiptErr
+			}
 			return r.releaseOrFailRecoveredSystem(ctx, claim, err)
 		}
 		return err
 	}
 
 	if state.Running {
-		if terminateErr := csvc.Terminate(ctx, job.GetContainerId()); terminateErr != nil {
-			loggerpkg.FromContext(ctx).Warn("failed to terminate expired leased container",
-				zap.String("job_id", job.GetId()),
-				zap.String("container_id", job.GetContainerId()),
-				zap.Error(terminateErr),
-			)
-			return terminateErr
-		}
-		if logErr := r.replayContainerLogs(ctx, csvc, claim, workflowForLogs, job.GetContainerId()); logErr != nil {
-			return logErr
-		}
-		if removeErr := csvc.Remove(ctx, job.GetContainerId()); removeErr != nil {
-			loggerpkg.FromContext(ctx).Warn("failed to remove expired leased container",
-				zap.String("job_id", job.GetId()),
-				zap.String("container_id", job.GetContainerId()),
-				zap.Error(removeErr),
-			)
-			return removeErr
-		}
-		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "job lease expired while container was still running"))
+		return r.recoverRunningContainer(ctx, csvc, job, claim)
 	}
 
 	if logErr := r.replayContainerLogs(ctx, csvc, claim, workflowForLogs, job.GetContainerId()); logErr != nil {
@@ -216,6 +220,29 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 
 	execErr := terminalreason.Wrap(terminalreason.NonZeroExit, status.Errorf(codes.Aborted, "container exited with non-zero code during lease recovery: %d", state.ExitCode))
 	return r.failClaimedJob(ctx, claim, csvc, execErr, job.GetContainerId())
+}
+
+func (r *Repository) recoverRunningContainer(ctx context.Context, csvc ContainerSvc, job *jobspb.ExpiredJobLease, claim *jobspb.ClaimJobResponse) error {
+	if terminateErr := csvc.Terminate(ctx, job.GetContainerId()); terminateErr != nil {
+		loggerpkg.FromContext(ctx).Warn("failed to terminate expired leased container",
+			zap.String("job_id", job.GetId()),
+			zap.String("container_id", job.GetContainerId()),
+			zap.Error(terminateErr),
+		)
+		return terminateErr
+	}
+	if logErr := r.replayContainerLogs(ctx, csvc, claim, workflowFromExpiredLease(job), job.GetContainerId()); logErr != nil {
+		return logErr
+	}
+	if removeErr := r.cleanupContainer(ctx, csvc, claim.GetId(), job.GetContainerId()); removeErr != nil {
+		loggerpkg.FromContext(ctx).Warn("failed to remove expired leased container",
+			zap.String("job_id", job.GetId()),
+			zap.String("container_id", job.GetContainerId()),
+			zap.Error(removeErr),
+		)
+		return removeErr
+	}
+	return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "job lease expired while container was still running"))
 }
 
 func (r *Repository) containerSvcForEndpoint(runtimeNodeID, endpoint string) (ContainerSvc, error) {

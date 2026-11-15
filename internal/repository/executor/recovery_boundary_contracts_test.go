@@ -194,12 +194,12 @@ func (s stalledCleanupContainer) Remove(ctx context.Context, id string) error {
 	return ctx.Err()
 }
 
-func TestExecutorCleanupDetachesCancellationAndBoundsIO(t *testing.T) {
+func TestExecutorDetachedCleanupBoundsIO(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		started := time.Now()
-		err := (&Repository{auth: fakeAuth{}, svc: &Services{Jobs: &scriptedJobsClient{}}}).cleanupContainer(ctx, stalledCleanupContainer{t: t}, "job", "container")
+		err := (&Repository{auth: fakeAuth{}, svc: &Services{Jobs: &scriptedJobsClient{}}}).cleanupContainer(context.WithoutCancel(ctx), stalledCleanupContainer{t: t}, "job", "container")
 		if status.Code(err) != codes.DeadlineExceeded || time.Since(started) != 10*time.Second {
 			t.Fatalf("cleanup elapsed=%v err=%v", time.Since(started), err)
 		}

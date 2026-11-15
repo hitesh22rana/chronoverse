@@ -646,7 +646,8 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, jo
 		return status.Error(codes.FailedPrecondition, "container service is not configured")
 	}
 
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), containerCleanupTimeout)
+	// Callers choose detachment; recovery must retain lease cancellation.
+	cleanupCtx, cancel := context.WithTimeout(ctx, containerCleanupTimeout)
 	defer cancel()
 	authCtx, err := r.withAuthorization(cleanupCtx)
 	if err != nil {

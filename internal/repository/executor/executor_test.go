@@ -570,7 +570,7 @@ func (c *claimErrorJobsClient) ClaimJob(context.Context, *jobspb.ClaimJobRequest
 }
 
 type renewingRecoveryJobsClient struct {
-	jobspb.JobsServiceClient
+	scriptedJobsClient
 
 	renewals        atomic.Int32
 	replayCloseOnce sync.Once
@@ -632,7 +632,7 @@ func (c *lateFailingRenewalJobsClient) RenewJobLease(context.Context, *jobspb.Re
 }
 
 type batchRecoveryJobsClient struct {
-	jobspb.JobsServiceClient
+	scriptedJobsClient
 
 	claimCalls         atomic.Int32
 	requestedBatchSize atomic.Int32

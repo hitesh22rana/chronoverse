@@ -537,7 +537,16 @@ Jobs-service stores a durable completion receipt for each exact job/container
 pair after Docker confirms removal or absence. Workflow cleanup and executor
 inline cleanup check receipts before contacting Docker and record completion
 after removal. A receipt read or write failure is a cleanup failure, not an
-acknowledgement. These internal RPCs require the jobs-service admin role.
+acknowledgement. These internal RPCs require the jobs-service admin role. Attachment and receipt
+APIs, and both database columns, enforce the same 256-character container-ID
+limit.
+
+Expired-container recovery checks receipts before resolving a runtime. It
+records confirmed absence from inspection, and successful removal, before
+settling the recovered lease. Lease-owned recovery operations have a
+three-minute attempt deadline and preserve caller/lease cancellation; receipt
+I/O and the shared removal step have ten-second budgets. Cleanup following an
+accepted terminal settlement retains its separate detached ten-second budget.
 
 Published cleanup events are retained until a matching receipt exists, even
 past the normal published-event retention window. This preserves unfinished

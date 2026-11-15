@@ -150,16 +150,33 @@ func (c *durableJobsClient) CompleteJob(
 	return &jobspb.CompleteJobResponse{}, nil
 }
 
-// AttachJobContainer is unreachable: every durable fixture seeds a HEARTBEAT
-// workflow and rejectingContainerSvc refuses any runtime, so no container is ever
-// attached. Panicking keeps a future container fixture from passing through a
-// seam these assertions cannot interpret.
+func (c *durableJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+	completed, err := c.repo.GetContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId())
+	if err != nil {
+		return nil, err
+	}
+	return &jobspb.GetContainerCleanupReceiptResponse{Completed: completed}, nil
+}
+
+func (c *durableJobsClient) RecordContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+	_ ...grpc.CallOption,
+) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
+	if err := c.repo.RecordContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId()); err != nil {
+		return nil, err
+	}
+	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
+}
+
+// AttachJobContainer is unreachable: claimed-run fixtures execute heartbeats,
+// while recovery fixtures attach through the repository before executor recovery.
 func (*durableJobsClient) AttachJobContainer(
 	context.Context,
 	*jobspb.AttachJobContainerRequest,
 	...grpc.CallOption,
 ) (*jobspb.AttachJobContainerResponse, error) {
-	panic("durable fixtures seed HEARTBEAT workflows and must never attach a container")
+	panic("durable executors must never create or attach a container")
 }
 
 // durableWorkflowsClient serves the executor's workflow read from the real
@@ -208,12 +225,8 @@ func (s *recordingHeartbeatSvc) Execute(ctx context.Context, _ time.Duration, _ 
 	return s.err
 }
 
-// rejectingContainerSvc fails the test if a fixture asks for container execution.
-// The durable fixtures are heartbeat workflows, so any container work is a bug in
-// the executor's routing rather than a value this suite can assert on. Panicking
-// rather than returning an error keeps a container-kind fixture from quietly
-// reading as the release-for-retry outcome an unrunnable workflow legitimately
-// produces.
+// rejectingContainerSvc guards heartbeat routing; recovery fixtures replace
+// this factory with a controlled runtime before invoking recovery.
 type rejectingContainerSvc struct {
 	factoryCalls atomic.Int32
 }

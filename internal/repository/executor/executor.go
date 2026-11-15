@@ -693,6 +693,9 @@ func classifyExecutionFailure(err error) executionFailureDecision {
 		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: terminalreason.ExecutionFailed.String()}
 	}
 	if reason, ok := terminalreason.FromError(err); ok {
+		if reason == terminalreason.SystemError {
+			return executionFailureDecision{Retryable: true, Kind: jobsmodel.FailureKindSystem.ToString(), ReasonCode: reason.String()}
+		}
 		return executionFailureDecision{Kind: jobsmodel.FailureKindUser.ToString(), ReasonCode: reason.String()}
 	}
 

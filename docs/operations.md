@@ -647,6 +647,13 @@ reconciliation. These deadlines depend on Docker honoring request contexts.
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_*` settings coordinate cold image pulls on
   the selected runtime node before Docker container creation.
 
+Expired-lease recovery treats missing containers, unavailable runtimes and
+runtime-client setup failures as infrastructure failures. They retain their
+original diagnostic code and settle as `SYSTEM` / `SYSTEM_ERROR` when the system
+retry limit is exhausted. An observed non-zero workload exit remains `USER` /
+`NON_ZERO_EXIT`; confirmed container absence is cleanup evidence, not a workload
+failure diagnosis.
+
 Lease duration must be a whole number of seconds between `1s` and
 `2147483647s`, matching the jobs RPC representation. Renewal interval must be
 positive and leave a positive renewal RPC budget below the lease duration.

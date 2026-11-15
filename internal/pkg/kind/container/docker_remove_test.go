@@ -9,11 +9,13 @@ import (
 
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 )
 
-func TestDockerWorkflowRemoveIgnoresRemovalInProgress(t *testing.T) {
+func TestDockerWorkflowRemoveRetriesRemovalInProgress(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,5 +38,5 @@ func TestDockerWorkflowRemoveIgnoresRemovalInProgress(t *testing.T) {
 		Client: cli,
 	}
 
-	require.NoError(t, workflow.Remove(context.Background(), "container-1"))
+	require.Equal(t, codes.Aborted, status.Code(workflow.Remove(context.Background(), "container-1")))
 }

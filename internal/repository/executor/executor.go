@@ -37,6 +37,7 @@ const (
 	authSubject               = "internal/executor"
 	retryBackoff              = time.Second
 	containerLogReplayTimeout = 2 * time.Minute
+	containerCleanupTimeout   = 10 * time.Second
 )
 
 // ContainerSvc represents the container service.
@@ -624,7 +625,9 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, co
 		return status.Error(codes.FailedPrecondition, "container service is not configured")
 	}
 
-	return csvc.Remove(ctx, containerID)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), containerCleanupTimeout)
+	defer cancel()
+	return normalizeExecutionError(csvc.Remove(cleanupCtx, containerID))
 }
 
 type executionFailureDecision struct {

@@ -548,8 +548,8 @@ cleanup budgets.
 
 Retry contract: `SYSTEM_RETRY_LIMIT=3` with `SYSTEM_RETRY_BACKOFF=30s`
 (`30s, 60s, 120s`, capped at `240s`) applies only to infrastructure codes
-(`Canceled`, `Internal`, `ResourceExhausted`, `Unavailable`,
-`DeadlineExceeded`), including transient Docker ping failures. Unexpected HTTP
+(`Aborted`, `Canceled`, `Internal`, `ResourceExhausted`, `Unavailable`,
+`DeadlineExceeded`), including transient Docker ping failures. Unexpected heartbeat endpoint HTTP
 statuses, including `429`, remain `USER` `UNEXPECTED_STATUS_CODE` terminal
 failures without retry: the probed endpoint throttling us is endpoint behavior,
 not platform infrastructure. After exhaustion the
@@ -560,6 +560,14 @@ the scheduler re-checks `terminated_at` at `UPDATE` time, so termination cannot
 leave orphan `PENDING` rows. Distinguish delays via logs: `queue_delay`
 (scheduled-to-claim), `execution_delay` (claim-to-finish), `retry_delay`
 (backoff), plus `failure_kind`/`terminal_reason`/`error_code`.
+
+Raw and wrapped Go context errors use the same cancellation/deadline codes as
+gRPC errors in retry decisions and persisted failure metadata. Explicit workload
+reasons, such as a time limit or non-zero exit, retain their `USER` classification
+even when the underlying transport code is retryable. Docker image-pull daemon
+failures, connection/stream interruptions and overload are infrastructure faults;
+invalid image requests, missing images and registry access denials retain the
+`IMAGE_PULL_FAILED` user reason.
 
 ### Outbox Relay
 

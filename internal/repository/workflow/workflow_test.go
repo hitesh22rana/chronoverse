@@ -448,7 +448,7 @@ func TestCancelJobsSkipsCleanupWhenJobAlreadyTerminal(t *testing.T) {
 	}
 }
 
-func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testing.T) {
+func TestCleanupCanceledJobContainerRetainsContainerWhenLogPublishFails(t *testing.T) {
 	t.Parallel()
 
 	events := &orderedEvents{}
@@ -479,12 +479,12 @@ func TestCleanupCanceledJobContainerRemovesContainerWhenLogReplayFails(t *testin
 			RuntimeEndpoint: "tcp://docker-proxy:2375",
 		},
 	)
-	if err != nil {
+	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("cleanupCanceledJobContainer() error = %v", err)
 	}
 
-	if got := events.items(); len(got) != 2 || got[0] != "terminate" || got[1] != "remove" {
-		t.Fatalf("cleanup events = %v, want terminate then remove", got)
+	if got := events.items(); len(got) != 1 || got[0] != "terminate" {
+		t.Fatalf("cleanup events = %v, want terminate without removal", got)
 	}
 }
 

@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	migratepkg "github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -112,6 +115,17 @@ func TestIntegrationDirtyMigrationRequiresRepairBeforeReplay(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, postgres.Migrate(dsn.String()))
 	require.NoError(t, postgres.Migrate(dsn.String()))
+	source, err := iofs.New(os.DirFS("."), "migrations")
+	require.NoError(t, err)
+	migrations, err := migratepkg.NewWithSourceInstance("iofs", source, dsn.String())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		sourceErr, dbErr := migrations.Close()
+		require.NoError(t, sourceErr)
+		require.NoError(t, dbErr)
+	})
+	require.NoError(t, migrations.Down())
+	require.NoError(t, migrations.Up())
 	var exists bool
 	require.NoError(t, fresh.QueryRow(t.Context(), "SELECT to_regclass('public.users') IS NOT NULL").Scan(&exists))
 	require.True(t, exists)

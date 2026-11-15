@@ -155,7 +155,7 @@ func TestContainerCleanupStopsAfterOwnershipLoss(t *testing.T) {
 }
 
 func TestCanceledCleanupDoesNotStartAnotherContainerOperation(t *testing.T) {
-	for _, stage := range []string{"before cleanup", "during replay"} {
+	for _, stage := range []string{"before cleanup", "during replay", "as replay completes"} {
 		t.Run(stage, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -165,6 +165,9 @@ func TestCanceledCleanupDoesNotStartAnotherContainerOperation(t *testing.T) {
 				return ownershipLossContainer{
 					ContainerSvc: recoveryContainer{logs: func(context.Context, string) (<-chan *jobsmodel.JobLog, <-chan error, error) {
 						cancel()
+						if stage == "as replay completes" {
+							return nil, nil, nil
+						}
 						return nil, nil, context.Canceled
 					}},
 					terminate: func(context.Context, string) error { return nil },

@@ -6,6 +6,7 @@ import (
 	"math"
 	"runtime"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -178,4 +179,32 @@ func TestRemovedHandoffOwnerCannotResolveReplacement(t *testing.T) {
 	if gate.size() != 1 || replacement.result != nil {
 		t.Fatal("late claiming failure changed active authority")
 	}
+}
+
+type stalledCleanupContainer struct {
+	ContainerSvc
+	t *testing.T
+}
+
+func (s stalledCleanupContainer) Remove(ctx context.Context, id string) error {
+	if ctx.Err() != nil || id != "container" {
+		s.t.Fatalf("cleanup did not detach cancellation: %q %v", id, ctx.Err())
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		s.t.Fatal("cleanup has no deadline")
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestExecutorCleanupDetachesCancellationAndBoundsIO(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		started := time.Now()
+		err := (&Repository{}).cleanupContainer(ctx, stalledCleanupContainer{t: t}, "container")
+		if status.Code(err) != codes.DeadlineExceeded || time.Since(started) != 10*time.Second {
+			t.Fatalf("cleanup elapsed=%v err=%v", time.Since(started), err)
+		}
+	})
 }

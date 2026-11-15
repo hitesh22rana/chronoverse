@@ -483,7 +483,7 @@ func (c *recoveryCleanupContainer) Remove(ctx context.Context, id string) error 
 	return nil
 }
 
-func TestCleanupRemovesContainerAfterReplayFailure(t *testing.T) {
+func TestCleanupRetainsContainerForRetryAfterReplayFailure(t *testing.T) {
 	parent := t.Context()
 	workflow := buildContractWorkflow()
 	workflow.Kind = "CONTAINER"
@@ -493,7 +493,8 @@ func TestCleanupRemovesContainerAfterReplayFailure(t *testing.T) {
 		return nil, nil, status.Error(codes.Unavailable, "log stream unavailable")
 	}
 	repo := &Repository{svc: &Services{CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
-	if err := repo.cleanupCanceledJobContainer(parent, workflow, &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}); err != nil || container.removed != 1 {
+	job := &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}
+	if err := repo.cleanupCanceledJobContainer(parent, workflow, job); status.Code(err) != codes.Unavailable || container.removed != 0 {
 		t.Fatalf("removed=%d error=%v", container.removed, err)
 	}
 }

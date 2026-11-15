@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 const (
 	terminateWorkflowExpirationTimeout = 5 * time.Minute
 	canceledJobLogReplayTimeout        = 2 * time.Minute
+	containerCleanupAttemptTimeout     = 3 * time.Minute
 )
 
 // cancelJobs marks the workflow jobs as canceled and returns the jobs that need container cleanup.
@@ -166,7 +168,14 @@ func (r *Repository) cleanupCanceledJobContainers(
 	return firstErr
 }
 
-func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) error {
+func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) (cleanupErr error) {
+	defer func() {
+		if errors.Is(cleanupErr, context.Canceled) || errors.Is(cleanupErr, context.DeadlineExceeded) {
+			cleanupErr = status.FromContextError(cleanupErr).Err()
+		}
+	}()
+	parentCtx, cancel := context.WithTimeout(parentCtx, containerCleanupAttemptTimeout)
+	defer cancel()
 	if err := parentCtx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
@@ -191,6 +200,7 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 			zap.String("container_id", job.GetContainerId()),
 			zap.Error(err),
 		)
+		return err
 	}
 
 	if err := parentCtx.Err(); err != nil {

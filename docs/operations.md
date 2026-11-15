@@ -516,6 +516,30 @@ or daemon is unavailable. If PostgreSQL is unavailable, runtime-agent exits and
 the existing runtime heartbeat TTL controls when the last `READY` row becomes
 ineligible.
 
+### Durable Container Cleanup
+
+Job terminal transitions and retry detachment atomically enqueue an immutable
+`CONTAINER_CLEANUP` outbox event containing the container ID, runtime routing,
+attempt and log-retention policy. Workflow deletion preserves these snapshots
+before cascading job deletion. Cleanup does not require the workflow or job row
+to remain present, and repeated events target the original container ID.
+
+Workflow workers stop the container, replay retained logs and remove it. Each
+attempt has a three-minute deadline, including the existing two-minute replay
+budget. Replay failures preserve the container for retry. Failed attempts remain
+uncommitted and use the workflow runner's retry backoff; a restart resumes from
+Kafka. Removal in progress remains retryable; an already absent container is a
+successful cleanup. Executor inline removal is best effort with a detached
+ten-second deadline; the durable event remains responsible for recovery if that
+attempt fails or the executor exits after settlement.
+
+Cleanup events use workflow-key ordering, so an unavailable runtime can delay
+later events for that workflow. Monitor outbox failures and DEAD events using
+the existing relay recovery procedure. Recovery depends on the original runtime
+being reachable and on container identity having been durably attached; unknown
+containers from an interrupted create/attach operation require separate runtime
+reconciliation. These deadlines depend on Docker honoring request contexts.
+
 ### Execution Workers
 
 - `EXECUTION_WORKER_CONCURRENCY` controls parallel job execution. `0` or unset

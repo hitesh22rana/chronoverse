@@ -123,6 +123,8 @@ func (r *Repository) runTargetWorkflow(ctx context.Context, workflowEntry *workf
 		return status.Error(codes.InvalidArgument, "workflow event key is required")
 	}
 	switch workflowEntry.Action {
+	case workflowsmodel.ActionContainerCleanup:
+		return r.cleanupContainerEvent(ctx, workflowEntry)
 	case workflowsmodel.ActionBuild:
 		return r.buildWorkflow(ctx, workflowEntry)
 	case workflowsmodel.ActionReschedule:

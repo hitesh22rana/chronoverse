@@ -114,13 +114,13 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const watchedKind = useWatch({ control: form.control, name: "kind" })
     const selectedKind = watchedKind
 
-    const changeStep = (next: number) => {
-        setStep(next)
-        requestAnimationFrame(() => {
-            const names = touchedFieldNames(form.formState.touchedFields)
-            if (names.length) void form.trigger(names as Parameters<typeof form.trigger>[0])
-        })
-    }
+    const { trigger, formState: { touchedFields } } = form
+
+    // Revalidate after the new step's resolver is installed, independently of animation frames.
+    useEffect(() => {
+        const names = touchedFieldNames(touchedFields)
+        if (names.length) void trigger(names as Parameters<typeof trigger>[0])
+    }, [step, touchedFields, trigger])
 
     const handleKindChange = (nextKind: KindType) => {
         form.setValue("kind", nextKind, { shouldDirty: true, shouldValidate: true })
@@ -130,7 +130,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const handleSubmit = (data: WorkflowFormValues) => {
         if (isCreating) return
         if (step < 2) {
-            changeStep(step + 1)
+            setStep(step + 1)
             return
         }
 
@@ -278,7 +278,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                                     Cancel
                                 </Button>
                             ) : (
-                                <Button type="button" variant="outline" className="w-full" onClick={() => changeStep(step - 1)} disabled={isCreating}>
+                                <Button type="button" variant="outline" className="w-full" onClick={() => setStep(step - 1)} disabled={isCreating}>
                                     <ArrowLeft data-icon="inline-start" /> Previous
                                 </Button>
                             )}

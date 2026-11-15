@@ -320,6 +320,8 @@ it("swaps the configuration and description when the kind changes", async () => 
 })
 
 it("re-checks a configuration field the user already visited when they come back", async () => {
+    // Animation frames may be deferred; field validation must follow the committed step.
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 0))
     const { user } = renderDialog()
     type(nameField(), "API heartbeat")
     await advanceToStep(user, 2)
@@ -331,8 +333,7 @@ it("re-checks a configuration field the user already visited when they come back
     await user.click(previousButton()!)
     await waitFor(() => expect(stepHeading().textContent).toBe("Basics"))
     // The basics step has no rule for the endpoint, so it drops the complaint.
-    // It is dropped by the requestAnimationFrame-scheduled re-check, so wait for
-    // it rather than for the heading, which flips synchronously.
+    // Wait for revalidation rather than the heading, which changes before it completes.
     await waitFor(() => expect(screen.queryByText("Invalid URL")).toBeNull())
 
     await user.click(nextButton())

@@ -31,13 +31,13 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 	authCtx, err := r.withAuthorization(attemptCtx)
 	if err != nil {
 		cancel()
-		return cleanupRetryError(parentCtx, err)
+		return cleanupRetryError(parentCtx, event, err)
 	}
 	request := &jobspb.ContainerCleanupAttemptRequest{JobId: event.JobID, ContainerId: snapshot.ContainerID, Generation: event.CleanupGeneration}
 	attempt, err := r.svc.Jobs.BeginContainerCleanupAttempt(authCtx, request)
 	cancel()
 	if err != nil {
-		return cleanupRetryError(parentCtx, err)
+		return cleanupRetryError(parentCtx, event, err)
 	}
 	switch attempt.GetState() {
 	case "COMPLETED", "STALE":
@@ -65,11 +65,11 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 	defer reportCancel()
 	reportAuth, reportErr := r.withAuthorization(reportCtx)
 	if reportErr != nil {
-		return cleanupRetryError(parentCtx, reportErr)
+		return cleanupRetryError(parentCtx, event, reportErr)
 	}
 	disposition, reportErr := r.svc.Jobs.FailContainerCleanupAttempt(reportAuth, request)
 	if reportErr != nil {
-		return cleanupRetryError(parentCtx, reportErr)
+		return cleanupRetryError(parentCtx, event, reportErr)
 	}
 	switch disposition.GetState() {
 	case "COMPLETED", "STALE":
@@ -78,21 +78,21 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 		logCleanupQuarantine(parentCtx, event, disposition)
 		return nil
 	default:
-		return cleanupRetryError(parentCtx, err)
+		return cleanupRetryError(parentCtx, event, err)
 	}
 }
 
-func cleanupRetryError(ctx context.Context, err error) error {
+func cleanupRetryError(ctx context.Context, event *workflowsmodel.WorkflowEvent, err error) error {
 	if ctx.Err() != nil {
-		return status.FromContextError(ctx.Err()).Err()
+		err = status.FromContextError(ctx.Err()).Err()
+	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		err = status.FromContextError(err).Err()
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return status.FromContextError(err).Err()
+	code := status.Code(err)
+	if code != codes.Canceled && code != codes.DeadlineExceeded {
+		code = codes.Unavailable
 	}
-	if status.Code(err) == codes.Canceled || status.Code(err) == codes.DeadlineExceeded {
-		return err
-	}
-	return status.Errorf(codes.Unavailable, "container cleanup: %v", err)
+	return status.Errorf(code, "container cleanup for job %s container %s: %v", event.JobID, event.ContainerCleanup.ContainerID, err)
 }
 
 func logCleanupQuarantine(ctx context.Context, event *workflowsmodel.WorkflowEvent, attempt *jobspb.ContainerCleanupAttemptResponse) {

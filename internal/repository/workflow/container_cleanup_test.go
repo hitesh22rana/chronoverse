@@ -4,6 +4,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -249,6 +250,13 @@ func TestCleanupReceiptFailuresDoNotAcknowledgeIntent(t *testing.T) {
 				}
 			} else if err == nil || kafkapkg.ShouldCommitOnError(err) {
 				t.Fatalf("failed cleanup was acknowledged: %v", err)
+			}
+			if phase != "ambiguous write" {
+				for _, identity := range []string{"job " + event.JobID, "container " + event.ContainerCleanup.ContainerID} {
+					if !strings.Contains(err.Error(), identity) {
+						t.Fatalf("cleanup retry lost identity %q: %v", identity, err)
+					}
+				}
 			}
 			assertCleanupReceiptFailureEffects(t, phase, counts)
 			if phase == "ambiguous write" {

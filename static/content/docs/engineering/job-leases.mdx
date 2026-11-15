@@ -22,6 +22,8 @@ Workers prove authority with an immediate conditional renewal before starting wo
 
 Lease duration must be a whole number of seconds from `1s` through `2147483647s`, matching the jobs RPC representation. Renewal interval must be positive and leave a positive renewal RPC budget below the lease duration. Invalid explicit timing fails worker startup instead of being truncated or silently rewritten. Configure both values when using a lease shorter than the default renewal interval.
 
+An unset environment renewal interval remains `10s`, even if lease duration is changed. Only programmatic executor configuration derives an omitted interval when the default no longer fits. Validation checks wire precision and a positive budget, not sufficient latency headroom: near-equal values may pass but time out during initial proof or renewal. Leave room for observed jobs-service latency and scheduling delays; the `30s`/`10s` defaults provide a five-second renewal RPC budget.
+
 ## Recovery
 
 Execution workers periodically request expired-lease recovery in bounded batches. A replay returns only leases whose token, worker, process owner, status, and database-evaluated expiry are still valid. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.

@@ -510,7 +510,9 @@ payload remains user-authored configuration.
   out-of-range values fail startup.
 - `EXECUTION_WORKER_LEASE_RENEW_INTERVAL`: positive duration below the lease
   duration that leaves a positive renewal RPC budget (default `10s`). Invalid
-  explicit intervals fail startup; shorter leases need a matching interval.
+  explicit intervals fail startup. If unset, the interval remains `10s` even
+  when lease duration changes; configure both environment values for a shorter
+  lease. Validation checks a positive budget, not adequate RPC latency headroom.
 - `EXECUTION_WORKER_SYSTEM_RETRY_LIMIT`
 - `EXECUTION_WORKER_SYSTEM_RETRY_BACKOFF`
 - `EXECUTION_WORKER_RECOVERY_INTERVAL`

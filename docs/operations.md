@@ -564,7 +564,10 @@ Lease duration must be a whole number of seconds between `1s` and
 positive and leave a positive renewal RPC budget below the lease duration.
 Invalid explicit timing fails startup rather than being truncated, defaulted or
 silently rewritten. When shortening the lease duration, configure its renewal
-interval as well.
+interval as well. An unset environment interval keeps its `10s` default; it is
+not derived from the lease duration. Only programmatic executor configuration
+with a zero interval derives `duration/3` when the default interval no longer
+fits the configured lease.
 
 Each initial lease proof and periodic renewal has an RPC budget of the smaller
 of five seconds and one third of the configured gap between lease duration and
@@ -574,6 +577,12 @@ recovery both cancel and join their renewal supervisor before returning. A late
 renewal failure does not override an already accepted settlement. These bounds
 rely on the jobs client honoring contexts; process pauses and downstream fencing
 remain separate concerns.
+
+Validation enforces wire precision and a positive renewal budget; it does not
+impose a minimum operational budget. A near-equal lease duration and interval
+can pass validation yet time out during initial proof or renewal. Leave enough
+budget for observed jobs-service latency and scheduling delays; the `30s`/`10s`
+defaults provide a five-second RPC budget.
 
 Keep the lease duration comfortably above the renewal interval. Increase
 concurrency only when Docker host capacity, per-workload resource limits, Kafka

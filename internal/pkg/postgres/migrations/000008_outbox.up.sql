@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     published_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,
     cleanup_state TEXT CHECK (cleanup_state IN ('READY','PROCESSING','RETRY','QUARANTINED','COMPLETED')),
     cleanup_generation BIGINT NOT NULL DEFAULT 1 CHECK (cleanup_generation > 0),
+    -- Must match cleanupMaxAttempts in internal/repository/jobs/cleanup_attempts.go.
     cleanup_attempts INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_attempts BETWEEN 0 AND 3),
     cleanup_token UUID,
     cleanup_lease_until TIMESTAMP WITHOUT TIME ZONE,

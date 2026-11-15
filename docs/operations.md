@@ -554,8 +554,11 @@ cleanup snapshots if Kafka retention expires. On its normal publication cycle,
 the relay requeues unfinished published cleanup older than five minutes when no
 attempt lease or retry delay is active. This preserves the execution generation
 and attempt count; it does not grant another failure budget. Completed and
-quarantined cleanup is excluded. Other published event types retain their usual
-retention behavior.
+quarantined cleanup is excluded. Republishing does not consult consumer lag;
+backlogs older than this window can generate duplicate deliveries. Attempt
+admission and receipts make duplicate deliveries safe, but Kafka backlog and
+relay throughput still need monitoring. Other published event types retain their
+usual retention behavior.
 
 Receipts survive job/workflow deletion and published-outbox pruning. Enqueueing
 cleanup consults receipts, and a previously queued delivery also checks them,
@@ -576,7 +579,9 @@ lease expires. Concurrent deliveries wait for the active lease. Failed attempts
 wait 30 seconds, then 60 seconds, before another acquisition. Caller cancellation
 is reported with a detached five-second deadline and returns the attempt without
 spending the failure budget. If reporting is unavailable, the Kafka record stays
-retryable and the lease eventually expires.
+retryable and the lease eventually expires. Repeated successfully reported
+caller cancellations can therefore retry indefinitely without quarantine; the
+three-attempt bound applies to failures and abandoned attempts, not interruptions.
 
 After exhaustion, the worker persists `QUARANTINED` before acknowledging the
 record, allowing later workflow events to proceed. Quarantine does not mean the
@@ -606,8 +611,11 @@ grpcurl -H "authorization: Bearer $JOBS_ADMIN_TOKEN" \
 
 Use the deployment's TLS credentials when connecting. Redrive increments the
 cleanup generation, resets its execution/publication budgets and requeues the
-original snapshot. It refuses a live execution lease. Repeating a request with
-the old generation returns `STALE` without resetting the new budget; late Kafka
+original snapshot. This is an explicit administrative override for unfinished
+work, not only quarantined cleanup: it also accepts `READY`, `RETRY` (overriding
+backoff), and `PROCESSING` with an expired lease. It refuses a live execution
+lease. Repeating a request with the old generation returns `STALE` without
+resetting the new budget; late Kafka
 deliveries and reports from that generation also do no work. A completion receipt
 returns `COMPLETED` without requeueing, even after outbox pruning. The RPC cannot
 change the original runtime routing. Execution quarantine is separate from

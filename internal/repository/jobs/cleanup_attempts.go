@@ -117,15 +117,19 @@ func (a *cleanupAttempt) transition(operation string, now time.Time, token strin
 }
 
 const (
-	cleanupQuarantined = "QUARANTINED"
-	cleanupProcessing  = "PROCESSING"
+	// Keep cleanupMaxAttempts aligned with the outbox_events.cleanup_attempts CHECK constraint.
+	cleanupMaxAttempts  = 3
+	cleanupAttemptLease = 4 * time.Minute
+	cleanupRetryBackoff = 30 * time.Second
+	cleanupQuarantined  = "QUARANTINED"
+	cleanupProcessing   = "PROCESSING"
 )
 
 func (a *cleanupAttempt) begin(now time.Time) error {
 	if a.lease.Valid && a.lease.Time.After(now) || a.next.Valid && a.next.Time.After(now) {
 		return status.Error(codes.Aborted, "cleanup attempt is leased or waiting for retry")
 	}
-	if a.Attempts >= 3 {
+	if a.Attempts >= cleanupMaxAttempts {
 		a.State = cleanupQuarantined
 		a.lease = sql.NullTime{}
 		return nil
@@ -133,7 +137,7 @@ func (a *cleanupAttempt) begin(now time.Time) error {
 	a.State = cleanupProcessing
 	a.Attempts++
 	a.Token = uuid.NewString()
-	a.lease = sql.NullTime{Time: now.Add(4 * time.Minute), Valid: true}
+	a.lease = sql.NullTime{Time: now.Add(cleanupAttemptLease), Valid: true}
 	return nil
 }
 
@@ -150,11 +154,11 @@ func (a *cleanupAttempt) fail(now time.Time, token string, interrupted bool) err
 		a.Attempts--
 		a.State = "READY"
 		a.next = sql.NullTime{}
-	case a.Attempts >= 3:
+	case a.Attempts >= cleanupMaxAttempts:
 		a.State = cleanupQuarantined
 	default:
 		a.State = "RETRY"
-		a.next = sql.NullTime{Time: now.Add(time.Duration(a.Attempts) * 30 * time.Second), Valid: true}
+		a.next = sql.NullTime{Time: now.Add(time.Duration(a.Attempts) * cleanupRetryBackoff), Valid: true}
 	}
 	// Retain the token so a response-lost report cannot spend or refund the budget twice.
 	a.Token = a.storedToken.String

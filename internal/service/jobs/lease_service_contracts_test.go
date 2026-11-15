@@ -230,9 +230,10 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.AttachJobContainerRequest{Id: leaseContractJobID, LeaseToken: "lease", ContainerId: "container", RuntimeNodeId: "runtime", CommandId: "attach"}
+			req := &jobspb.AttachJobContainerRequest{Id: leaseContractJobID, LeaseToken: "lease", ContainerId: strings.Repeat("c", 256), RuntimeNodeId: "runtime", CommandId: "attach"}
 			return &leaseServiceContract{
 				name: "AttachJobContainer", request: req, required: []string{"id", "lease_token", "container_id", "runtime_node_id", "command_id"},
+				invalid: map[string]protoreflect.Value{"container_id": protoreflect.ValueOfString(strings.Repeat("c", 257))},
 				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
 					return nil, svc.AttachJobContainer(ctx, req)
 				},

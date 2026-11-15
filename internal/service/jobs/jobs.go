@@ -309,7 +309,7 @@ func (s *Service) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRe
 type AttachJobContainerRequest struct {
 	ID            string `validate:"required"`
 	LeaseToken    string `validate:"required"`
-	ContainerID   string `validate:"required"`
+	ContainerID   string `validate:"required,max=256"`
 	RuntimeNodeID string `validate:"required"`
 	CommandID     string `validate:"required"`
 }

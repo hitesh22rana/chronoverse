@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     runtime_node_id TEXT DEFAULT NULL REFERENCES runtime_nodes(id),
     runtime_endpoint TEXT DEFAULT NULL,
     terminal_reason_code TEXT DEFAULT NULL,
-    container_id TEXT NULL, -- Unique identifier for the container, if applicable
+    container_id VARCHAR(256) NULL, -- Unique identifier for the container, if applicable
     status JOB_STATUS DEFAULT 'PENDING' NOT NULL,
     scheduled_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     started_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL,

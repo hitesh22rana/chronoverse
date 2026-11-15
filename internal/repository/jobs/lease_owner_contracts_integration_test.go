@@ -215,3 +215,35 @@ func TestIntegrationAttachContainerFaultsRollBackAndAllowRetry(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegrationAttachedContainerFitsCleanupReceipt(t *testing.T) {
+	ctx := t.Context()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	fixture := seedClaimedJob(ctx, t, pg, repo)
+	before := readLeaseOwnership(ctx, t, pg, fixture.JobID)
+	command := "attach-limit-" + fixtureTag()
+	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, strings.Repeat("c", 257), before.RuntimeNodeID.String, command); err == nil {
+		t.Fatal("oversized container ID was persisted")
+	}
+	if after := readLeaseOwnership(ctx, t, pg, fixture.JobID); after != before {
+		t.Fatal("rejected ID changed lease ownership")
+	}
+	containerID := strings.Repeat("c", 256)
+	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RecordContainerCleanupReceipt(ctx, fixture.JobID, containerID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if _, err := pg.Exec(cleanupCtx, `DELETE FROM container_cleanup_receipts WHERE job_id=$1`, fixture.JobID); err != nil {
+			t.Error(err)
+		}
+	})
+	if completed, err := repo.GetContainerCleanupReceipt(ctx, fixture.JobID, containerID); err != nil || !completed {
+		t.Fatalf("accepted container cannot be receipted: completed=%v err=%v", completed, err)
+	}
+}

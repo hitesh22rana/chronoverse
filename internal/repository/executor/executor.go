@@ -334,19 +334,11 @@ func (r *Repository) runClaimedWorkflow(
 		span.End()
 	}()
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	if renewErr := r.renewLease(ctx, claim.GetId(), claim.GetLeaseToken()); renewErr != nil {
 		return renewErr
 	}
-
-	renewDone := make(chan error, 1)
-	go r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken(), renewDone)
-	go func() {
-		if renewErr := <-renewDone; renewErr != nil {
-			cancel()
-		}
-	}()
+	ctx, stopRenewal := r.startLeaseRenewal(ctx, claim, "execution")
+	defer stopRenewal()
 
 	authCtx, err := r.withAuthorization(ctx)
 	if err != nil {
@@ -441,35 +433,64 @@ func (r *Repository) newExecutionContext(parent context.Context) context.Context
 	return context.WithoutCancel(parent)
 }
 
-func (r *Repository) renewLeaseLoop(ctx context.Context, jobID, leaseToken string, done chan<- error) {
+// startLeaseRenewal joins the supervisor before releasing execution capacity.
+func (r *Repository) startLeaseRenewal(parentCtx context.Context, claim *jobspb.ClaimJobResponse, executionPath string) (workCtx context.Context, stop func()) {
+	ctx, cancel := context.WithCancelCause(parentCtx)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		if err := r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken()); err != nil {
+			loggerpkg.FromContext(parentCtx).Warn("job lease renewal failed",
+				zap.String("job_id", claim.GetId()),
+				zap.String("workflow_id", claim.GetWorkflowId()),
+				zap.String("execution_path", executionPath),
+				zap.Error(err),
+			)
+			cancel(err)
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled); <-stopped }
+}
+
+func (r *Repository) renewLeaseLoop(ctx context.Context, jobID, leaseToken string) error {
 	ticker := time.NewTicker(r.cfg.LeaseRenewInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
-			done <- nil
-			return
+			return nil
 		case <-ticker.C:
 			if err := r.renewLease(ctx, jobID, leaseToken); err != nil {
-				done <- err
-				return
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
 			}
 		}
 	}
 }
 
 func (r *Repository) renewLease(ctx context.Context, jobID, leaseToken string) error {
+	// Leave room for request latency and cancellation before the next lease expiry.
+	budget := min(5*time.Second, (r.cfg.LeaseDuration-r.cfg.LeaseRenewInterval)/3)
+	if budget <= 0 {
+		return status.Error(codes.InvalidArgument, "lease renewal requires an interval below its duration")
+	}
+	ctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
 	authCtx, err := r.withAuthorization(ctx)
 	if err != nil {
-		return err
+		return normalizeExecutionError(err)
 	}
 	_, err = r.svc.Jobs.RenewJobLease(authCtx, &jobspb.RenewJobLeaseRequest{
 		Id:                   jobID,
 		LeaseToken:           leaseToken,
 		LeaseDurationSeconds: int32(r.cfg.LeaseDuration.Seconds()),
 	})
-	return err
+	if ctx.Err() != nil {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	return normalizeExecutionError(err)
 }
 
 func (r *Repository) cancelClaimedJob(ctx context.Context, claim *jobspb.ClaimJobResponse) error {

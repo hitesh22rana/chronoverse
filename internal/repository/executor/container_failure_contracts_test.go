@@ -285,7 +285,7 @@ func TestClaimedWorkflowReleasesLeaseWhenAdmissionAuthorizationFails(t *testing.
 	t.Parallel()
 	auth := &admissionAuth{}
 	fixture := newClaimedRunFixtureWithAuth(&scriptedJobsClient{}, &scriptedWorkflowsClient{flow: containerWorkflow()}, nil, nil, auth)
-	fixture.repo.cfg.LeaseRenewInterval = time.Hour
+	fixture.repo.cfg.LeaseRenewInterval = fixture.repo.cfg.LeaseDuration / 2
 	if err := fixture.repo.runClaimedWorkflow(t.Context(), claimedJob(1), time.Now(), 1); err != nil {
 		t.Fatalf("retry release=%v", err)
 	}

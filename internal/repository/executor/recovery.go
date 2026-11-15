@@ -121,32 +121,13 @@ func (r *Repository) withRecoveredLeaseRenewal(
 	claim *jobspb.ClaimJobResponse,
 	recoverFn func(context.Context) error,
 ) error {
-	ctx, cancel := context.WithCancel(parentCtx)
-	defer cancel()
-	if err := r.renewLease(ctx, claim.GetId(), claim.GetLeaseToken()); err != nil {
+	if err := r.renewLease(parentCtx, claim.GetId(), claim.GetLeaseToken()); err != nil {
 		return err
 	}
-
-	renewDone := make(chan error, 1)
-	go r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken(), renewDone)
-
-	renewStopped := make(chan struct{})
-	go func() {
-		defer close(renewStopped)
-		if renewErr := <-renewDone; renewErr != nil {
-			loggerpkg.FromContext(parentCtx).Warn("recovered job lease renewal failed",
-				zap.String("job_id", claim.GetId()),
-				zap.String("workflow_id", claim.GetWorkflowId()),
-				zap.Error(renewErr),
-			)
-			cancel()
-		}
-	}()
-
-	err := recoverFn(ctx)
-	cancel()
-	<-renewStopped
-	return err
+	ctx, stopRenewal := r.startLeaseRenewal(parentCtx, claim, "recovery")
+	defer stopRenewal()
+	// Accepted settlement remains authoritative even if renewal fails during shutdown.
+	return recoverFn(ctx)
 }
 
 // reconcileHandoffs retains ambiguous executions until PostgreSQL-backed claim

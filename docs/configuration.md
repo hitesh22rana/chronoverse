@@ -505,8 +505,12 @@ payload remains user-authored configuration.
 - `EXECUTION_WORKER_WORKLOAD_CONTAINER_MEMORY`
 - `EXECUTION_WORKER_WORKLOAD_CONTAINER_CPUS`
 - `EXECUTION_WORKER_WORKLOAD_CONTAINER_PIDS_LIMIT`
-- `EXECUTION_WORKER_LEASE_DURATION`
-- `EXECUTION_WORKER_LEASE_RENEW_INTERVAL`
+- `EXECUTION_WORKER_LEASE_DURATION`: whole seconds from `1s` through
+  `2147483647s` (default `30s`). Zero, negative, fractional-second and
+  out-of-range values fail startup.
+- `EXECUTION_WORKER_LEASE_RENEW_INTERVAL`: positive duration below the lease
+  duration that leaves a positive renewal RPC budget (default `10s`). Invalid
+  explicit intervals fail startup; shorter leases need a matching interval.
 - `EXECUTION_WORKER_SYSTEM_RETRY_LIMIT`
 - `EXECUTION_WORKER_SYSTEM_RETRY_BACKOFF`
 - `EXECUTION_WORKER_RECOVERY_INTERVAL`

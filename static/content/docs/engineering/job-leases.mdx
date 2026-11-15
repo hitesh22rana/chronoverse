@@ -20,6 +20,8 @@ The token is required to:
 
 Workers prove authority with an immediate conditional renewal before starting work from a claim or recovery response, then renew while the workload runs. Renewal never revives an already-expired lease. `EXECUTION_WORKER_LEASE_DURATION` must remain comfortably longer than `EXECUTION_WORKER_LEASE_RENEW_INTERVAL` to tolerate transient latency.
 
+Lease duration must be a whole number of seconds from `1s` through `2147483647s`, matching the jobs RPC representation. Renewal interval must be positive and leave a positive renewal RPC budget below the lease duration. Invalid explicit timing fails worker startup instead of being truncated or silently rewritten. Configure both values when using a lease shorter than the default renewal interval.
+
 ## Recovery
 
 Execution workers periodically request expired-lease recovery in bounded batches. A replay returns only leases whose token, worker, process owner, status, and database-evaluated expiry are still valid. Recovery includes the job's stored runtime owner and endpoint, so cleanup targets the Docker daemon that created the container. If that runtime is unavailable, recovery releases or fails eligible work through the normal retry policy instead of moving the container lifecycle to a different node.

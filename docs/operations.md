@@ -559,6 +559,13 @@ reconciliation. These deadlines depend on Docker honoring request contexts.
 - `EXECUTION_WORKER_IMAGE_PULL_LOCK_*` settings coordinate cold image pulls on
   the selected runtime node before Docker container creation.
 
+Lease duration must be a whole number of seconds between `1s` and
+`2147483647s`, matching the jobs RPC representation. Renewal interval must be
+positive and leave a positive renewal RPC budget below the lease duration.
+Invalid explicit timing fails startup rather than being truncated, defaulted or
+silently rewritten. When shortening the lease duration, configure its renewal
+interval as well.
+
 Each initial lease proof and periodic renewal has an RPC budget of the smaller
 of five seconds and one third of the configured gap between lease duration and
 renewal interval; an earlier caller deadline still applies. Renewal failure

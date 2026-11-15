@@ -155,3 +155,37 @@ func clearExecutionWorkerEnvironment(t *testing.T) {
 		}
 	}
 }
+
+func TestExecutionWorkerValidatesLeaseTiming(t *testing.T) {
+	clearExecutionWorkerEnvironment(t)
+	setExecutionWorkerRequiredEnvironment(t)
+	for _, tc := range []struct{ duration, interval, field string }{
+		{"1s", "100ms", ""},
+		{"2147483647s", "1s", ""},
+		{"30s", "1500ms", ""},
+		{"500ms", "100ms", "LEASE_DURATION"},
+		{"1500ms", "500ms", "LEASE_DURATION"},
+		{"0s", "1s", "LEASE_DURATION"},
+		{"-1s", "1s", "LEASE_DURATION"},
+		{"2147483648s", "1s", "LEASE_DURATION"},
+		{"30s", "-1s", "LEASE_RENEW_INTERVAL"},
+		{"30s", "0s", "LEASE_RENEW_INTERVAL"},
+		{"30s", "30s", "LEASE_RENEW_INTERVAL"},
+		{"1s", "999999999ns", "LEASE_RENEW_INTERVAL"},
+	} {
+		t.Run(tc.duration+"/"+tc.interval, func(t *testing.T) {
+			t.Setenv("EXECUTION_WORKER_LEASE_DURATION", tc.duration)
+			t.Setenv("EXECUTION_WORKER_LEASE_RENEW_INTERVAL", tc.interval)
+			cfg, err := config.InitExecutionJobConfig()
+			if tc.field == "" {
+				if err != nil || cfg == nil {
+					t.Fatalf("representable timing rejected: %v", err)
+				}
+				return
+			}
+			if cfg != nil || err == nil || !strings.Contains(err.Error(), "EXECUTION_WORKER_"+tc.field) {
+				t.Fatalf("invalid lease timing accepted: cfg=%v err=%v", cfg, err)
+			}
+		})
+	}
+}

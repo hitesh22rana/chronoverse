@@ -51,11 +51,7 @@ func TestRecoveryNumericAndMetadataContracts(t *testing.T) {
 	if cfg.Concurrency != max(1, runtime.GOMAXPROCS(0)) || cfg.AwaitingReconciliationLimit != cfg.Concurrency {
 		t.Fatalf("normalized concurrency=%+v", cfg)
 	}
-	cfg = Config{LeaseDuration: time.Nanosecond, LeaseRenewInterval: time.Nanosecond}
-	normalizeLeaseIntervals(&cfg)
-	if cfg.LeaseRenewInterval != time.Second {
-		t.Fatalf("subnanosecond division fallback=%v", cfg.LeaseRenewInterval)
-	}
+
 	repo := &Repository{}
 	repo.recoverClaimedExpiredLeases(t.Context(), []*jobspb.ExpiredJobLease{nil})
 	if got := classifyExecutionFailure(nil); got.Retryable || got.ReasonCode != "EXECUTION_FAILED" {

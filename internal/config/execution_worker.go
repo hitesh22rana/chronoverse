@@ -10,6 +10,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/kelseyhightower/envconfig"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/imagepull"
 )
 
@@ -74,9 +75,11 @@ func InitExecutionJobConfig() (*ExecutionWorker, error) {
 	return &cfg, nil
 }
 
-// validate rejects workload container limits that the Docker runtime would
-// silently ignore or misinterpret.
+// validate rejects settings the worker or runtime would misinterpret.
 func (c *ExecutionWorkerConfig) validate() error {
+	if err := jobsmodel.ValidateLeaseTiming(c.LeaseDuration, c.LeaseRenewInterval); err != nil {
+		return fmt.Errorf("invalid EXECUTION_WORKER_%w", err)
+	}
 	if err := (&imagepull.Config{TTL: c.ImagePullLockTTL, WaitTimeout: c.ImagePullLockWaitTimeout, RetryInterval: c.ImagePullLockRetryInterval}).Validate(); err != nil {
 		return fmt.Errorf("invalid EXECUTION_WORKER_IMAGE_PULL_LOCK_%w", err)
 	}

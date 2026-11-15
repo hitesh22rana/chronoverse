@@ -109,19 +109,21 @@ func TestRecoveryBudgetShrinksFinalWaveAndSettlesEveryLease(t *testing.T) {
 
 func TestLeaseRenewalConfigurationRetainsAWindowBeforeExpiry(t *testing.T) {
 	t.Parallel()
-	for _, interval := range []time.Duration{time.Second, 9 * time.Second, 12 * time.Second} {
+	for _, interval := range []time.Duration{time.Second, 8 * time.Second, 9 * time.Second, 12 * time.Second} {
 		t.Run(interval.String(), func(t *testing.T) {
 			t.Parallel()
 			cfg, err := normalizeConfig(&Config{LeaseDuration: 9 * time.Second, LeaseRenewInterval: interval})
+			if interval >= 9*time.Second {
+				if err == nil {
+					t.Fatal("explicit interval at/after expiry was silently accepted")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := interval
-			if interval >= 9*time.Second {
-				want = 3 * time.Second
-			}
-			if cfg.LeaseRenewInterval != want || cfg.LeaseRenewInterval >= cfg.LeaseDuration {
-				t.Fatalf("renewal/lease interval = %v/%v, want %v before expiry", cfg.LeaseRenewInterval, cfg.LeaseDuration, want)
+			if cfg.LeaseRenewInterval != interval {
+				t.Fatalf("explicit interval changed: got %v want %v", cfg.LeaseRenewInterval, interval)
 			}
 		})
 	}

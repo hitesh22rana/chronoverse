@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"runtime"
 	"time"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
 func normalizeConfig(cfg *Config) (Config, error) {
@@ -19,7 +21,12 @@ func normalizeConfig(cfg *Config) (Config, error) {
 			normalized.Concurrency,
 		)
 	}
-	normalizeLeaseIntervals(&normalized)
+	if cfg != nil && cfg.LeaseRenewInterval == 0 && normalized.LeaseRenewInterval >= normalized.LeaseDuration {
+		normalized.LeaseRenewInterval = normalized.LeaseDuration / 3
+	}
+	if err := jobsmodel.ValidateLeaseTiming(normalized.LeaseDuration, normalized.LeaseRenewInterval); err != nil {
+		return Config{}, fmt.Errorf("invalid executor %w", err)
+	}
 
 	return normalized, nil
 }
@@ -58,10 +65,10 @@ func applyWorkerConfigOverrides(normalized, cfg *Config) {
 	if cfg.Concurrency > 0 {
 		normalized.Concurrency = cfg.Concurrency
 	}
-	if cfg.LeaseDuration > 0 {
+	if cfg.LeaseDuration != 0 {
 		normalized.LeaseDuration = cfg.LeaseDuration
 	}
-	if cfg.LeaseRenewInterval > 0 {
+	if cfg.LeaseRenewInterval != 0 {
 		normalized.LeaseRenewInterval = cfg.LeaseRenewInterval
 	}
 	if cfg.RecoveryInterval > 0 {
@@ -114,14 +121,5 @@ func normalizeConcurrency(cfg *Config) {
 	}
 	if cfg.AwaitingReconciliationLimit <= 0 {
 		cfg.AwaitingReconciliationLimit = cfg.Concurrency
-	}
-}
-
-func normalizeLeaseIntervals(cfg *Config) {
-	if cfg.LeaseRenewInterval >= cfg.LeaseDuration {
-		cfg.LeaseRenewInterval = cfg.LeaseDuration / 3
-	}
-	if cfg.LeaseRenewInterval <= 0 {
-		cfg.LeaseRenewInterval = time.Second
 	}
 }

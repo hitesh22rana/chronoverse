@@ -57,6 +57,21 @@ func (mr *MockServiceMockRecorder) AttachJobContainer(ctx, req any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AttachJobContainer", reflect.TypeOf((*MockService)(nil).AttachJobContainer), ctx, req)
 }
 
+// BeginContainerCleanupAttempt mocks base method.
+func (m *MockService) BeginContainerCleanupAttempt(ctx context.Context, req *jobs0.ContainerCleanupAttemptRequest) (*jobs0.ContainerCleanupAttemptResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BeginContainerCleanupAttempt", ctx, req)
+	ret0, _ := ret[0].(*jobs0.ContainerCleanupAttemptResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BeginContainerCleanupAttempt indicates an expected call of BeginContainerCleanupAttempt.
+func (mr *MockServiceMockRecorder) BeginContainerCleanupAttempt(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BeginContainerCleanupAttempt", reflect.TypeOf((*MockService)(nil).BeginContainerCleanupAttempt), ctx, req)
+}
+
 // CancelClaimedJob mocks base method.
 func (m *MockService) CancelClaimedJob(ctx context.Context, req *jobs0.CancelClaimedJobRequest) error {
 	m.ctrl.T.Helper()
@@ -113,6 +128,21 @@ func (m *MockService) CompleteJob(ctx context.Context, req *jobs0.CompleteJobReq
 func (mr *MockServiceMockRecorder) CompleteJob(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockService)(nil).CompleteJob), ctx, req)
+}
+
+// FailContainerCleanupAttempt mocks base method.
+func (m *MockService) FailContainerCleanupAttempt(ctx context.Context, req *jobs0.ContainerCleanupAttemptRequest) (*jobs0.ContainerCleanupAttemptResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FailContainerCleanupAttempt", ctx, req)
+	ret0, _ := ret[0].(*jobs0.ContainerCleanupAttemptResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FailContainerCleanupAttempt indicates an expected call of FailContainerCleanupAttempt.
+func (mr *MockServiceMockRecorder) FailContainerCleanupAttempt(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailContainerCleanupAttempt", reflect.TypeOf((*MockService)(nil).FailContainerCleanupAttempt), ctx, req)
 }
 
 // FailJob mocks base method.
@@ -261,6 +291,21 @@ func (m *MockService) RecoverExpiredJobLeases(ctx context.Context, req *jobs0.Re
 func (mr *MockServiceMockRecorder) RecoverExpiredJobLeases(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecoverExpiredJobLeases", reflect.TypeOf((*MockService)(nil).RecoverExpiredJobLeases), ctx, req)
+}
+
+// RedriveContainerCleanup mocks base method.
+func (m *MockService) RedriveContainerCleanup(ctx context.Context, req *jobs0.ContainerCleanupAttemptRequest) (*jobs0.ContainerCleanupAttemptResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RedriveContainerCleanup", ctx, req)
+	ret0, _ := ret[0].(*jobs0.ContainerCleanupAttemptResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RedriveContainerCleanup indicates an expected call of RedriveContainerCleanup.
+func (mr *MockServiceMockRecorder) RedriveContainerCleanup(ctx, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RedriveContainerCleanup", reflect.TypeOf((*MockService)(nil).RedriveContainerCleanup), ctx, req)
 }
 
 // ReleaseJobForRetry mocks base method.

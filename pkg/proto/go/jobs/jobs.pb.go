@@ -3057,6 +3057,159 @@ func (*RecordContainerCleanupReceiptResponse) Descriptor() ([]byte, []int) {
 	return file_jobs_jobs_proto_rawDescGZIP(), []int{42}
 }
 
+// Cleanup generations are independent of workflow generations.
+type ContainerCleanupAttemptRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Generation    int64                  `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`               // Expected cleanup generation, not the workflow generation.
+	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`                          // Failure reports only: the token granted by Begin.
+	ErrorCode     string                 `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"` // Failure reports only: non-OK gRPC status name.
+	Interrupted   bool                   `protobuf:"varint,6,opt,name=interrupted,proto3" json:"interrupted,omitempty"`             // Caller cancellation returns the attempt without spending its budget.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerCleanupAttemptRequest) Reset() {
+	*x = ContainerCleanupAttemptRequest{}
+	mi := &file_jobs_jobs_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerCleanupAttemptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerCleanupAttemptRequest) ProtoMessage() {}
+
+func (x *ContainerCleanupAttemptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerCleanupAttemptRequest.ProtoReflect.Descriptor instead.
+func (*ContainerCleanupAttemptRequest) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *ContainerCleanupAttemptRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ContainerCleanupAttemptRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetInterrupted() bool {
+	if x != nil {
+		return x.Interrupted
+	}
+	return false
+}
+
+type ContainerCleanupAttemptResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Generation    int64                  `protobuf:"varint,2,opt,name=generation,proto3" json:"generation,omitempty"`
+	Attempts      int32                  `protobuf:"varint,3,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerCleanupAttemptResponse) Reset() {
+	*x = ContainerCleanupAttemptResponse{}
+	mi := &file_jobs_jobs_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerCleanupAttemptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerCleanupAttemptResponse) ProtoMessage() {}
+
+func (x *ContainerCleanupAttemptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerCleanupAttemptResponse.ProtoReflect.Descriptor instead.
+func (*ContainerCleanupAttemptResponse) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ContainerCleanupAttemptResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptResponse) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ContainerCleanupAttemptResponse) GetAttempts() int32 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *ContainerCleanupAttemptResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 var File_jobs_jobs_proto protoreflect.FileDescriptor
 
 const file_jobs_jobs_proto_rawDesc = "" +
@@ -3322,7 +3475,24 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\"B\n" +
 	"\"GetContainerCleanupReceiptResponse\x12\x1c\n" +
 	"\tcompleted\x18\x01 \x01(\bR\tcompleted\"'\n" +
-	"%RecordContainerCleanupReceiptResponse*i\n" +
+	"%RecordContainerCleanupReceiptResponse\"\xd1\x01\n" +
+	"\x1eContainerCleanupAttemptRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
+	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x03 \x01(\x03R\n" +
+	"generation\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x05 \x01(\tR\terrorCode\x12 \n" +
+	"\vinterrupted\x18\x06 \x01(\bR\vinterrupted\"\x89\x01\n" +
+	"\x1fContainerCleanupAttemptResponse\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x02 \x01(\x03R\n" +
+	"generation\x12\x1a\n" +
+	"\battempts\x18\x03 \x01(\x05R\battempts\x12\x14\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token*i\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
@@ -3331,8 +3501,11 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fLogSortOrder\x12\x1e\n" +
 	"\x1aLOG_SORT_ORDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LOG_SORT_ORDER_DESC\x10\x01\x12\x16\n" +
-	"\x12LOG_SORT_ORDER_ASC\x10\x022\xb8\f\n" +
-	"\vJobsService\x12n\n" +
+	"\x12LOG_SORT_ORDER_ASC\x10\x022\xff\x0e\n" +
+	"\vJobsService\x12m\n" +
+	"\x1cBeginContainerCleanupAttempt\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12l\n" +
+	"\x1bFailContainerCleanupAttempt\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12h\n" +
+	"\x17RedriveContainerCleanup\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12n\n" +
 	"\x1aGetContainerCleanupReceipt\x12$.jobs.ContainerCleanupReceiptRequest\x1a(.jobs.GetContainerCleanupReceiptResponse\"\x00\x12t\n" +
 	"\x1dRecordContainerCleanupReceipt\x12$.jobs.ContainerCleanupReceiptRequest\x1a+.jobs.RecordContainerCleanupReceiptResponse\"\x00\x12D\n" +
 	"\vScheduleJob\x12\x18.jobs.ScheduleJobRequest\x1a\x19.jobs.ScheduleJobResponse\"\x00\x12>\n" +
@@ -3369,7 +3542,7 @@ func file_jobs_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_jobs_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_jobs_jobs_proto_goTypes = []any{
 	(LogStream)(0),                                // 0: jobs.LogStream
 	(LogSortOrder)(0),                             // 1: jobs.LogSortOrder
@@ -3416,6 +3589,8 @@ var file_jobs_jobs_proto_goTypes = []any{
 	(*ContainerCleanupReceiptRequest)(nil),        // 42: jobs.ContainerCleanupReceiptRequest
 	(*GetContainerCleanupReceiptResponse)(nil),    // 43: jobs.GetContainerCleanupReceiptResponse
 	(*RecordContainerCleanupReceiptResponse)(nil), // 44: jobs.RecordContainerCleanupReceiptResponse
+	(*ContainerCleanupAttemptRequest)(nil),        // 45: jobs.ContainerCleanupAttemptRequest
+	(*ContainerCleanupAttemptResponse)(nil),       // 46: jobs.ContainerCleanupAttemptResponse
 }
 var file_jobs_jobs_proto_depIdxs = []int32{
 	9,  // 0: jobs.ListReadyRuntimeNodesResponse.nodes:type_name -> jobs.GetReadyRuntimeNodeResponse
@@ -3429,48 +3604,54 @@ var file_jobs_jobs_proto_depIdxs = []int32{
 	1,  // 8: jobs.SearchJobLogsRequest.sort_order:type_name -> jobs.LogSortOrder
 	38, // 9: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
 	40, // 10: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
-	42, // 11: jobs.JobsService.GetContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
-	42, // 12: jobs.JobsService.RecordContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
-	2,  // 13: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	4,  // 14: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
-	6,  // 15: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
-	8,  // 16: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
-	10, // 17: jobs.JobsService.ListReadyRuntimeNodes:input_type -> jobs.ListReadyRuntimeNodesRequest
-	12, // 18: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
-	14, // 19: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
-	16, // 20: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
-	18, // 21: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
-	20, // 22: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
-	22, // 23: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
-	25, // 24: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
-	27, // 25: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
-	29, // 26: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
-	32, // 27: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
-	35, // 28: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
-	37, // 29: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
-	39, // 30: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
-	43, // 31: jobs.JobsService.GetContainerCleanupReceipt:output_type -> jobs.GetContainerCleanupReceiptResponse
-	44, // 32: jobs.JobsService.RecordContainerCleanupReceipt:output_type -> jobs.RecordContainerCleanupReceiptResponse
-	3,  // 33: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	5,  // 34: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
-	7,  // 35: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
-	9,  // 36: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
-	11, // 37: jobs.JobsService.ListReadyRuntimeNodes:output_type -> jobs.ListReadyRuntimeNodesResponse
-	13, // 38: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
-	15, // 39: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
-	17, // 40: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
-	19, // 41: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
-	21, // 42: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
-	23, // 43: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
-	26, // 44: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
-	28, // 45: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
-	30, // 46: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
-	34, // 47: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
-	33, // 48: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
-	34, // 49: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
-	41, // 50: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
-	31, // [31:51] is the sub-list for method output_type
-	11, // [11:31] is the sub-list for method input_type
+	45, // 11: jobs.JobsService.BeginContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
+	45, // 12: jobs.JobsService.FailContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
+	45, // 13: jobs.JobsService.RedriveContainerCleanup:input_type -> jobs.ContainerCleanupAttemptRequest
+	42, // 14: jobs.JobsService.GetContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
+	42, // 15: jobs.JobsService.RecordContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
+	2,  // 16: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
+	4,  // 17: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
+	6,  // 18: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
+	8,  // 19: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
+	10, // 20: jobs.JobsService.ListReadyRuntimeNodes:input_type -> jobs.ListReadyRuntimeNodesRequest
+	12, // 21: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
+	14, // 22: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
+	16, // 23: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
+	18, // 24: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
+	20, // 25: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
+	22, // 26: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
+	25, // 27: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
+	27, // 28: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
+	29, // 29: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
+	32, // 30: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
+	35, // 31: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
+	37, // 32: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
+	39, // 33: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
+	46, // 34: jobs.JobsService.BeginContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
+	46, // 35: jobs.JobsService.FailContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
+	46, // 36: jobs.JobsService.RedriveContainerCleanup:output_type -> jobs.ContainerCleanupAttemptResponse
+	43, // 37: jobs.JobsService.GetContainerCleanupReceipt:output_type -> jobs.GetContainerCleanupReceiptResponse
+	44, // 38: jobs.JobsService.RecordContainerCleanupReceipt:output_type -> jobs.RecordContainerCleanupReceiptResponse
+	3,  // 39: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
+	5,  // 40: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
+	7,  // 41: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
+	9,  // 42: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
+	11, // 43: jobs.JobsService.ListReadyRuntimeNodes:output_type -> jobs.ListReadyRuntimeNodesResponse
+	13, // 44: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
+	15, // 45: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
+	17, // 46: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
+	19, // 47: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
+	21, // 48: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
+	23, // 49: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
+	26, // 50: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
+	28, // 51: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
+	30, // 52: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
+	34, // 53: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
+	33, // 54: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
+	34, // 55: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
+	41, // 56: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
+	34, // [34:57] is the sub-list for method output_type
+	11, // [11:34] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -3488,7 +3669,7 @@ func file_jobs_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_jobs_proto_rawDesc), len(file_jobs_jobs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   43,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

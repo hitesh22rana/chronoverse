@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 
 	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/repository/outboxrelay"
@@ -77,6 +78,7 @@ func assertDurableCleanupSnapshot(t *testing.T, fixture *workflowFixture, job, n
 	}
 	var event struct {
 		ID, UserID, JobID string
+		CleanupGeneration int64
 		ContainerCleanup  struct {
 			ContainerID, RuntimeNodeID, RuntimeEndpoint string
 			Attempts                                    int
@@ -87,6 +89,7 @@ func assertDurableCleanupSnapshot(t *testing.T, fixture *workflowFixture, job, n
 		t.Fatal(err)
 	}
 	c := event.ContainerCleanup
+	require.Equal(t, int64(1), event.CleanupGeneration, "cleanup delivery generation")
 	if event.ID != fixture.WorkflowID || event.UserID != fixture.UserID || event.JobID != job ||
 		c.ContainerID != "cleanup-original" || c.RuntimeNodeID != node ||
 		c.RuntimeEndpoint != "tcp://runtime:2376" || c.Attempts != 2 || !c.LogRetention {

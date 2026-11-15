@@ -3,6 +3,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -68,7 +69,7 @@ func TestContainerCleanupRetriesFromSnapshotWithoutWorkflow(t *testing.T) {
 		return container, nil
 	}}}
 	event := &workflowsmodel.WorkflowEvent{
-		EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "deleted-workflow", UserID: "owner", JobID: "job",
+		CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "deleted-workflow", UserID: "owner", JobID: "job",
 		ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "original-container", RuntimeNodeID: "original-node", RuntimeEndpoint: "tcp://original:2376", Attempts: 2, LogRetention: true},
 	}
 	err := repo.runTargetWorkflow(t.Context(), event)
@@ -131,7 +132,7 @@ func TestContainerCleanupBoundsEachAttempt(t *testing.T) {
 				}
 				repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: jobs, CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
 				event := &workflowsmodel.WorkflowEvent{
-					EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "owner", JobID: "job",
+					CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "owner", JobID: "job",
 					ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "container", RuntimeEndpoint: "runtime", LogRetention: true},
 				}
 				started := time.Now()
@@ -150,7 +151,7 @@ func TestContainerCleanupRejectsMalformedIntentAndRetriesRoutingFailure(t *testi
 		calls++
 		return nil, status.Error(codes.FailedPrecondition, "runtime unavailable")
 	}}}
-	event := &workflowsmodel.WorkflowEvent{EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "owner", JobID: "job"}
+	event := &workflowsmodel.WorkflowEvent{CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "owner", JobID: "job"}
 	for _, snapshot := range []*workflowsmodel.ContainerCleanup{nil, {ContainerID: "container"}} {
 		event.ContainerCleanup = snapshot
 		if err := repo.runTargetWorkflow(t.Context(), event); status.Code(err) != codes.InvalidArgument {
@@ -161,6 +162,11 @@ func TestContainerCleanupRejectsMalformedIntentAndRetriesRoutingFailure(t *testi
 		t.Fatal("malformed intent reached runtime")
 	}
 	event.ContainerCleanup = &workflowsmodel.ContainerCleanup{ContainerID: "container", RuntimeEndpoint: "endpoint"}
+	event.CleanupGeneration = 0
+	if err := repo.runTargetWorkflow(t.Context(), event); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing cleanup generation accepted: %v", err)
+	}
+	event.CleanupGeneration = 1
 	if err := repo.runTargetWorkflow(t.Context(), event); err == nil || kafkapkg.ShouldCommitOnError(err) {
 		t.Fatalf("routing failure acknowledged: %v", err)
 	}
@@ -212,7 +218,7 @@ func cleanupReceiptFailureFixture(phase string) (*Repository, *workflowsmodel.Wo
 		repo.auth = testAuth{issueToken: func(context.Context, string) (string, error) { return "", failure }}
 	}
 	event := &workflowsmodel.WorkflowEvent{
-		EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "user", JobID: "job",
+		CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "user", JobID: "job",
 		ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "original", RuntimeEndpoint: "runtime"},
 	}
 	return repo, event, counts
@@ -223,7 +229,11 @@ func TestCleanupReceiptFailuresDoNotAcknowledgeIntent(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			repo, event, counts := cleanupReceiptFailureFixture(phase)
 			err := repo.runTargetWorkflow(t.Context(), event)
-			if err == nil || kafkapkg.ShouldCommitOnError(err) {
+			if phase == "ambiguous write" {
+				if err != nil {
+					t.Fatalf("durable completion was not acknowledged: %v", err)
+				}
+			} else if err == nil || kafkapkg.ShouldCommitOnError(err) {
 				t.Fatalf("failed cleanup was acknowledged: %v", err)
 			}
 			assertCleanupReceiptFailureEffects(t, phase, counts)
@@ -255,4 +265,161 @@ func assertCleanupReceiptFailureEffects(t *testing.T, phase string, c *cleanupRe
 			t.Fatalf("removes/writes=%d/%d", c.removes, c.writes)
 		}
 	}
+}
+
+func TestContainerCleanupAcknowledgesOnlyDurableDisposition(t *testing.T) {
+	for _, state := range []string{"COMPLETED", "QUARANTINED", "STALE"} {
+		t.Run(state, func(t *testing.T) {
+			repo, event, _ := cleanupReceiptFailureFixture("remove")
+			client, ok := repo.svc.Jobs.(*testJobsClient)
+			if !ok {
+				t.Fatal("unexpected jobs fixture")
+			}
+			client.beginCleanup = func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+				return &jobspb.ContainerCleanupAttemptResponse{State: state}, nil
+			}
+			repo.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
+				t.Fatal("non-executable delivery contacted Docker")
+				return nil, status.Error(codes.Internal, "unexpected Docker call")
+			}
+			if err := repo.runTargetWorkflow(t.Context(), event); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestContainerCleanupRequiresPersistedQuarantine(t *testing.T) {
+	for _, tc := range []struct {
+		state   string
+		failure bool
+	}{{state: "QUARANTINED"}, {state: "COMPLETED"}, {state: "STALE"}, {failure: true}} {
+		reportFailure := tc.failure
+		t.Run(fmt.Sprint("persist-disposition/", tc.state, reportFailure), func(t *testing.T) {
+			repo, event, counts := cleanupReceiptFailureFixture("remove")
+			client, ok := repo.svc.Jobs.(*testJobsClient)
+			if !ok {
+				t.Fatal("unexpected jobs fixture")
+			}
+			client.failCleanup = func(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+				if req.Token != "owner" || req.Generation != 1 || req.ErrorCode != "Unavailable" || req.Interrupted {
+					t.Fatalf("wrong failure identity: %v", req)
+				}
+				if _, ok := ctx.Deadline(); !ok {
+					t.Fatal("failure report has no deadline")
+				}
+				if reportFailure {
+					return nil, status.Error(codes.Unavailable, "database unavailable")
+				}
+				return &jobspb.ContainerCleanupAttemptResponse{State: tc.state}, nil
+			}
+			err := repo.runTargetWorkflow(t.Context(), event)
+			if (err != nil) != reportFailure || counts.removes != 1 {
+				t.Fatalf("report failure=%v, err=%v, removes=%d", reportFailure, err, counts.removes)
+			}
+			if reportFailure && kafkapkg.ShouldCommitOnError(err) {
+				t.Fatal("acknowledged unpersisted quarantine")
+			}
+		})
+	}
+}
+
+func TestCleanupFailureReportingDetachesAndBoundsCancellation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		repo, event, _ := cleanupReceiptFailureFixture("remove")
+		client, ok := repo.svc.Jobs.(*testJobsClient)
+		if !ok {
+			t.Fatal("unexpected jobs fixture")
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		repo.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
+			cancel()
+			return nil, status.Error(codes.Unavailable, "runtime lost")
+		}
+		reported := false
+		client.failCleanup = func(reportCtx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			if !req.Interrupted || reportCtx.Err() != nil {
+				t.Fatalf("cancellation prevented reporting: %v/%v", req, reportCtx.Err())
+			}
+			reported = true
+			<-reportCtx.Done()
+			return nil, reportCtx.Err()
+		}
+		started := time.Now()
+		err := repo.runTargetWorkflow(ctx, event)
+		if !reported || status.Code(err) != codes.Canceled || time.Since(started) != 5*time.Second || kafkapkg.ShouldCommitOnError(err) {
+			t.Fatalf("unbounded or acknowledged failed report: %v (%v)", err, time.Since(started))
+		}
+	})
+}
+
+func TestCleanupAdmissionFailureDoesNotAcknowledgeOrContactDocker(t *testing.T) {
+	for _, mode := range []string{"RPC failure", "missing token", "missing disposition", "stalled admission", "report authorization", "stalled report"} {
+		t.Run(mode, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				repo, event, counts := cleanupAdmissionFailureFixture(t, mode)
+				started := time.Now()
+				err := repo.runTargetWorkflow(t.Context(), event)
+				if err == nil || kafkapkg.ShouldCommitOnError(err) {
+					t.Fatalf("unpersisted cleanup was acknowledged: %v", err)
+				}
+				if mode == "stalled admission" || mode == "stalled report" {
+					if status.Code(err) != codes.DeadlineExceeded || time.Since(started) != 5*time.Second {
+						t.Fatalf("unbounded RPC: %v / %v", err, time.Since(started))
+					}
+				}
+				wantEffects := 0
+				if mode == "report authorization" || mode == "stalled report" {
+					wantEffects = 1
+				}
+				if counts.factories != wantEffects || counts.removes != wantEffects {
+					t.Fatalf("unowned cleanup reached Docker: %+v", counts)
+				}
+			})
+		})
+	}
+}
+
+func cleanupAdmissionFailureFixture(t *testing.T, mode string) (*Repository, *workflowsmodel.WorkflowEvent, *cleanupReceiptEffects) {
+	t.Helper()
+	repo, event, counts := cleanupReceiptFailureFixture("remove")
+	client, ok := repo.svc.Jobs.(*testJobsClient)
+	if !ok {
+		t.Fatal("unexpected jobs fixture")
+	}
+	switch mode {
+	case "RPC failure":
+		client.beginCleanup = func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			return nil, status.Error(codes.InvalidArgument, "invalid intent")
+		}
+	case "missing token":
+		client.beginCleanup = func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			return &jobspb.ContainerCleanupAttemptResponse{State: "PROCESSING"}, nil
+		}
+	case "missing disposition":
+		client.beginCleanup = func(context.Context, *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			return &jobspb.ContainerCleanupAttemptResponse{}, nil
+		}
+	case "stalled admission":
+		client.beginCleanup = func(ctx context.Context, _ *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+	case "report authorization":
+		calls := 0
+		repo.auth = testAuth{issueToken: func(context.Context, string) (string, error) {
+			calls++
+			if calls == 3 {
+				return "", status.Error(codes.Unavailable, "credentials unavailable")
+			}
+			return "token", nil
+		}}
+	case "stalled report":
+		client.failCleanup = func(ctx context.Context, _ *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+	}
+	return repo, event, counts
 }

@@ -35,7 +35,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// WorkflowsService contains the service definition for the Workflow service.
+// WorkflowsService handles workflow related operations.
 type WorkflowsServiceClient interface {
 	// CreateWorkflow a new workflow.
 	CreateWorkflow(ctx context.Context, in *CreateWorkflowRequest, opts ...grpc.CallOption) (*CreateWorkflowResponse, error)
@@ -175,7 +175,7 @@ func (c *workflowsServiceClient) ListWorkflows(ctx context.Context, in *ListWork
 // All implementations should embed UnimplementedWorkflowsServiceServer
 // for forward compatibility.
 //
-// WorkflowsService contains the service definition for the Workflow service.
+// WorkflowsService handles workflow related operations.
 type WorkflowsServiceServer interface {
 	// CreateWorkflow a new workflow.
 	CreateWorkflow(context.Context, *CreateWorkflowRequest) (*CreateWorkflowResponse, error)

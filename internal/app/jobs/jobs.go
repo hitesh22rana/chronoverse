@@ -35,6 +35,9 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
+	"BeginContainerCleanupAttempt":  true,
+	"FailContainerCleanupAttempt":   true,
+	"RedriveContainerCleanup":       true,
 	"GetContainerCleanupReceipt":    true,
 	"RecordContainerCleanupReceipt": true,
 	"CancelJob":                     true,
@@ -53,6 +56,9 @@ var internalAPIs = map[string]bool{
 
 // Service provides job related operations.
 type Service interface {
+	BeginContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
+	FailContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
+	RedriveContainerCleanup(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
 	GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (bool, error)
 	RecordContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) error
 	ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest) (string, error)

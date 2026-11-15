@@ -337,7 +337,7 @@ func (r *Repository) runClaimedWorkflow(
 	if renewErr := r.renewLease(ctx, claim.GetId(), claim.GetLeaseToken()); renewErr != nil {
 		return renewErr
 	}
-	ctx, stopRenewal := r.startLeaseRenewal(ctx, claim)
+	ctx, stopRenewal := r.startLeaseRenewal(ctx, claim, "execution")
 	defer stopRenewal()
 
 	authCtx, err := r.withAuthorization(ctx)
@@ -434,13 +434,18 @@ func (r *Repository) newExecutionContext(parent context.Context) context.Context
 }
 
 // startLeaseRenewal joins the supervisor before releasing execution capacity.
-func (r *Repository) startLeaseRenewal(parentCtx context.Context, claim *jobspb.ClaimJobResponse) (workCtx context.Context, stop func()) {
+func (r *Repository) startLeaseRenewal(parentCtx context.Context, claim *jobspb.ClaimJobResponse, executionPath string) (workCtx context.Context, stop func()) {
 	ctx, cancel := context.WithCancelCause(parentCtx)
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
 		if err := r.renewLeaseLoop(ctx, claim.GetId(), claim.GetLeaseToken()); err != nil {
-			loggerpkg.FromContext(parentCtx).Warn("job lease renewal failed", zap.String("job_id", claim.GetId()), zap.Error(err))
+			loggerpkg.FromContext(parentCtx).Warn("job lease renewal failed",
+				zap.String("job_id", claim.GetId()),
+				zap.String("workflow_id", claim.GetWorkflowId()),
+				zap.String("execution_path", executionPath),
+				zap.Error(err),
+			)
 			cancel(err)
 		}
 	}()

@@ -124,7 +124,7 @@ func (r *Repository) withRecoveredLeaseRenewal(
 	if err := r.renewLease(parentCtx, claim.GetId(), claim.GetLeaseToken()); err != nil {
 		return err
 	}
-	ctx, stopRenewal := r.startLeaseRenewal(parentCtx, claim)
+	ctx, stopRenewal := r.startLeaseRenewal(parentCtx, claim, "recovery")
 	defer stopRenewal()
 	// Accepted settlement remains authoritative even if renewal fails during shutdown.
 	return recoverFn(ctx)

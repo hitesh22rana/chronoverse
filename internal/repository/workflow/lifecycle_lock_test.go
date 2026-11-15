@@ -343,3 +343,30 @@ func TestLifecycleLockParentCancellationRemainsRetryable(t *testing.T) {
 		})
 	}
 }
+
+func TestLifecycleLockCompletionCancelsAndJoinsInFlightRenewal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		started := make(chan struct{})
+		stopped := make(chan struct{})
+		base := &lifecycleLock{acquired: true}
+		lock := &renewalLock{workflowLockStore: base, extend: func(ctx context.Context, _, _ string, _ time.Duration) (bool, error) {
+			close(started)
+			<-ctx.Done()
+			close(stopped)
+			return false, ctx.Err()
+		}}
+		err := (&Repository{rdb: lock}).withLifecycleLock(t.Context(), "workflow:BUILD:one", 3*time.Second, func(context.Context) error {
+			<-started
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("successful work became a renewal failure during shutdown: %v", err)
+		}
+		select {
+		case <-stopped:
+		default:
+			t.Fatal("completed work returned before renewal stopped")
+		}
+		assertLockReleased(t, base, 1)
+	})
+}

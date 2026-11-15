@@ -180,7 +180,7 @@ func TestContainerCleanupRejectsMalformedIntentAndRetriesRoutingFailure(t *testi
 	}
 }
 
-type cleanupReceiptEffects struct{ factories, removes, writes int }
+type cleanupReceiptEffects struct{ factories, removes, writes, reads int }
 
 func cleanupReceiptFailureFixture(phase string) (*Repository, *workflowsmodel.WorkflowEvent, *cleanupReceiptEffects) {
 	failure := status.Error(codes.Unavailable, "dependency unavailable")
@@ -214,8 +214,22 @@ func cleanupReceiptFailureFixture(phase string) (*Repository, *workflowsmodel.Wo
 		},
 	}
 	repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: jobs, CsvcForEndpoint: func(string, string) (ContainerSvc, error) { counts.factories++; return container, nil }}}
-	if phase == "auth" {
-		repo.auth = testAuth{issueToken: func(context.Context, string) (string, error) { return "", failure }}
+	failAuthorizationAt := map[string]int{"auth": 1, "cleanup auth": 2}[phase]
+	if failAuthorizationAt > 0 {
+		authorizations := 0
+		repo.auth = testAuth{issueToken: func(context.Context, string) (string, error) {
+			authorizations++
+			if authorizations == failAuthorizationAt {
+				return "", failure
+			}
+			return "token", nil
+		}}
+	}
+	if phase == "cleanup auth" {
+		jobs.getReceipt = func(context.Context, *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+			counts.reads++
+			return &jobspb.GetContainerCleanupReceiptResponse{}, nil
+		}
 	}
 	event := &workflowsmodel.WorkflowEvent{
 		CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "user", JobID: "job",
@@ -225,7 +239,7 @@ func cleanupReceiptFailureFixture(phase string) (*Repository, *workflowsmodel.Wo
 }
 
 func TestCleanupReceiptFailuresDoNotAcknowledgeIntent(t *testing.T) {
-	for _, phase := range []string{"auth", "read", "remove", "write", "ambiguous write"} {
+	for _, phase := range []string{"auth", "cleanup auth", "read", "remove", "write", "ambiguous write"} {
 		t.Run(phase, func(t *testing.T) {
 			repo, event, counts := cleanupReceiptFailureFixture(phase)
 			err := repo.runTargetWorkflow(t.Context(), event)
@@ -252,6 +266,10 @@ func TestCleanupReceiptFailuresDoNotAcknowledgeIntent(t *testing.T) {
 func assertCleanupReceiptFailureEffects(t *testing.T, phase string, c *cleanupReceiptEffects) {
 	t.Helper()
 	switch phase {
+	case "cleanup auth":
+		if c.reads != 0 || c.factories != 0 || c.removes != 0 || c.writes != 0 {
+			t.Fatalf("cleanup authorization failure reached receipts or Docker: %+v", c)
+		}
 	case "auth", "read":
 		if c.factories != 0 || c.removes != 0 || c.writes != 0 {
 			t.Fatal("receipt admission failure reached Docker or recorded completion")

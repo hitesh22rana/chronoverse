@@ -15,7 +15,19 @@ The scheduling worker scans due workflows, validates generation and build state,
 
 ## Job execution
 
-The execution worker consumes the job event, claims a lease, receives the runtime endpoint registered by `runtime-agent`, ensures the resolved image on that runtime, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
+The execution worker consumes the job event, claims a lease and receives the
+runtime endpoint registered by `runtime-agent`. It ensures the resolved image,
+persists an immutable creation intent, obtains one Create grant, and creates the
+named/labeled container. It verifies and records the full ID and attaches it to
+the job **before** obtaining one Start grant. Start targets that immutable ID;
+lease renewal and log publication continue while execution runs. Lost mutation
+replies do not authorize another transmission. Terminal state changes require
+the lease token.
+
+Settlement, cancellation and deletion close intent authority and retain cleanup
+obligations for observed IDs. Original-instance completion receipts release the
+corresponding holds; later workflow container work remains gated while a prior
+Start-reserved ID is unresolved.
 
 ## Logs and analytics
 

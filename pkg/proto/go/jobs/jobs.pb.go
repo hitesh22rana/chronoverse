@@ -3106,6 +3106,9 @@ func (*RecordContainerCleanupReceiptResponse) Descriptor() ([]byte, []int) {
 }
 
 // Cleanup generations are independent of workflow generations.
+// Every operation requires immutable job/container/runtime-instance/intent identity.
+// Redrive additionally requires a repair reason; its audit actor is the validated
+// admin JWT subject, never a caller-supplied field.
 type ContainerCleanupAttemptRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`

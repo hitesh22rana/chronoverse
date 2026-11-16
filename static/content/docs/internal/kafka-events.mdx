@@ -4,7 +4,7 @@ Kafka events connect the durable state owned by services with the asynchronous w
 
 ## Topic contracts
 
-- `workflows`: build, reschedule, termination, deletion, and workflow terminal effects.
+- `workflows`: build, reschedule, termination, deletion, workflow terminal effects, and immutable container-cleanup snapshots.
 - `jobs`: dispatch and container execution work.
 - `job_logs`: deterministic retained stdout and stderr events.
 - `analytics`: workflow, job, and log aggregate inputs.
@@ -12,6 +12,12 @@ Kafka events connect the durable state owned by services with the asynchronous w
 ## Event identity
 
 Events carry stable identifiers or deterministic keys for replay-sensitive side effects. Workflow generation and job dispatch attempt fields provide additional stale-work protection.
+
+A container-cleanup event carries the job/full container ID, original runtime
+routing/instance and intent identity. Its cleanup generation is independent of
+workflow generation. Duplicate delivery does not create another execution budget
+or inflate cleanup backlog gauges. Administrative redrive advances the retained
+cleanup generation, leaving older reports/deliveries stale.
 
 ## Trace headers
 

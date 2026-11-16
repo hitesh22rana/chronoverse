@@ -14,6 +14,29 @@ Monitor request and RPC latency, Kafka consumer progress, outbox pending and dea
 
 For endpoint traffic, use histogram counts for request rate, status-code attributes for error ratios, and histogram buckets for latency percentiles. Group REST traffic by `http.route` rather than raw URL paths, and group gRPC traffic by `rpc.service` and `rpc.method`.
 
+## Container cleanup signals
+
+Use the [durable cleanup gauges](/docs/operations/observability#durable-cleanup-metrics)
+to distinguish execution failures from publication failures:
+
+| Signal | First response |
+| --- | --- |
+| Sustained nonzero `quarantined` | Inspect the retained failure and original runtime, repair it, then request an audited redrive |
+| Sustained nonzero `publication_dead` | Inspect outbox/Kafka publication before redriving the retained cleanup |
+| Rising `oldest_due` | Check consumer progress, abandoned execution leases, connectivity and repeated worker interruptions |
+| Rising `outstanding` | Compare arrival and completion rates; backlog alone does not prove failure |
+
+Use max across jobs-service replicas because each reports the same durable state.
+Choose age thresholds above normal delivery latency; five minutes overdue sustained
+for five minutes is an initial example to tune for the deployment. Missing telemetry
+is not a zero backlog.
+
+Quarantine does not prove removal and does not release a workflow admission gate
+or runtime capacity hold. Use the [cleanup recovery procedure](/docs/operations/recovery#container-cleanup)
+and the retained-row queries in the runbook to identify affected work.
+
+<SourceLink path="docs/operations.md">Cleanup inspection SQL and operational thresholds</SourceLink>
+
 ## User-visible checks
 
 Track scheduling delay, workflow build failures, jobs stuck outside terminal states, SSE connection failures, missing retained logs, and analytics lag.

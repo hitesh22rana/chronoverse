@@ -101,6 +101,34 @@ sum by (rpc_service, rpc_method) (
 
 Watch latency distributions, error ratios, and saturation rather than relying only on process uptime.
 
+### Durable cleanup metrics
+
+Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
+
+| OTLP metric | Meaning |
+| --- | --- |
+| `chronoverse.container_cleanup.outstanding` | All unfinished container cleanup, including quarantined work and dead publication |
+| `chronoverse.container_cleanup.quarantined` | Execution quarantines requiring operator repair and redrive |
+| `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose outbox publication is `DEAD` |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup, excluding active cleanup leases, future cleanup backoff and quarantined work |
+
+These are gauges of retained work, not counts of deliveries or log lines.
+Duplicate delivery and exporter restarts do not increase the backlog. A matching
+completion receipt removes the cleanup from every measurement. No job, container,
+runtime or actor identity is exported as a metric label.
+
+Every jobs-service replica reads the same database totals. Aggregate replicas
+with **max**, not sum. Collection has a five-second deadline and honors an earlier
+caller deadline. A failed collection omits samples rather than reporting a healthy
+zero; monitor telemetry availability separately.
+
+See [monitoring](/docs/operations/monitoring) for alert interpretation and
+[recovery](/docs/operations/recovery) for diagnosis, redrive and audit history.
+These signals are available through the existing telemetry pipeline; the built-in
+request/runtime dashboard does not provision cleanup-specific panels or alerts.
+
+<SourceLink path="internal/repository/jobs/cleanup_metrics.go">Cleanup metric definitions and collection</SourceLink>
+
 ## Logs
 
 Structured application logs include service context and trace correlation where available. Container job stdout and stderr are a separate product data stream and follow the live/retained log pipeline.

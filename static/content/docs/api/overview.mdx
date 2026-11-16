@@ -10,6 +10,14 @@ Application routes use an encrypted session cookie. Mutating routes additionally
 
 Send `Content-Type: application/json` for JSON request bodies. SSE log streams use `text/event-stream`, and raw log downloads use `text/plain`.
 
+## Internal administration
+
+The OpenAPI reference describes public HTTP requests and responses. Cleanup
+attempts, completion receipts and administrative redrive are separate
+[internal gRPC contracts](/docs/internal/grpc-services#container-cleanup-rpcs).
+Their repair reason and audited principal are not public job fields or HTTP
+request parameters.
+
 ## Safe retries
 
 The following commands require `Idempotency-Key`:

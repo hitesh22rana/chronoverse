@@ -16,6 +16,46 @@ Scheduling, reads, status updates, lease claim and renewal, container attachment
 
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
+### Container cleanup RPCs
+
+These are admin-authorized internal gRPC operations, not routes in the public
+HTTP OpenAPI document. They use the messages in `proto/jobs/jobs.proto`.
+Every request identifies `job_id` and `intent_id` as UUIDs, the immutable
+`container_id`, and the original `runtime_instance`. Clients invoke named RPCs;
+the uppercase operation constants are internal dispatch values, not request fields.
+
+| RPC | Additional request / result contract |
+| --- | --- |
+| `GetContainerCleanupReceipt` | Returns whether that exact identity has recorded completion proof |
+| `RecordContainerCleanupReceipt` | Records caller-verified original-instance removal/absence and releases only the corresponding hold |
+| `BeginContainerCleanupAttempt` | Requires a positive expected cleanup `generation`; `PROCESSING` with a token grants one attempt |
+| `FailContainerCleanupAttempt` | Requires the generation, Begin token and a nonempty, non-OK `error_code` of up to 32 bytes; `interrupted` reports caller cancellation |
+| `RedriveContainerCleanup` | Requires the generation and a nonblank `reason` of at most 2048 bytes; an accepted transition is audited with the validated JWT subject |
+
+Cleanup generations are independent of workflow generations. Attempt responses
+contain `state`, `generation`, `attempts` and `token`; audit identity/reason/time is
+persisted separately, not added to public job responses. A stale redrive returns
+`STALE` and a completed identity returns `COMPLETED`, without another requeue.
+A live cleanup lease prevents redrive.
+
+Receipt callers must confirm removal or absence on the verified original daemon
+before recording proof. Jobs-service validates stored materialization provenance
+and commits receipt/hold changes; it does not perform the Docker removal itself.
+
+The service rejects redrive without an authenticated admin subject. An actor is
+never accepted from request fields or unvalidated metadata. Audit actor values
+are limited to 256 bytes. Shared service credentials cannot provide individual
+human attribution.
+
+Jobs-service also owns creation-intent Ensure/observation/Create/Start reservation,
+discovery claim/report and admin inspection/redrive RPCs. Single-use mutation grants
+are not replayed. `RedriveContainerIntent` controls discovery inspection and has
+separate generation/audit state from cleanup execution.
+
+[Recovery examples and audit inspection](/docs/operations/recovery#container-cleanup)
+
+<SourceLink path="proto/jobs/jobs.proto">Jobs protobuf messages and RPC definitions</SourceLink>
+
 ## Notifications service
 
 Notification creation, listing, and marking records read.

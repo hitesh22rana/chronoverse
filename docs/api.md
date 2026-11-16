@@ -9,6 +9,12 @@ All non-auth application routes require a valid session cookie. Mutating routes
 also require CSRF validation. Browser clients get the session and CSRF cookies
 from login or registration.
 
+Internal cleanup attempts, completion receipts and administrative redrive use
+admin-authorized gRPC messages in [jobs.proto](../proto/jobs/jobs.proto), not public
+HTTP endpoints. Their repair reason and authenticated audit actor do not extend
+this document's public request/response schemas. See the
+[operations runbook](operations.md) for redrive and audit inspection.
+
 ## Common Behavior
 
 ### Headers

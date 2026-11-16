@@ -70,7 +70,8 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
   PostgreSQL backend usage as replicas scale and roll.
 - **PostgreSQL** stores users, workflows, jobs, runtime nodes, analytics,
   idempotency keys, outbox events, leases, retry state, and transactional
-  metadata.
+  metadata, including container intents, verified materializations, cleanup
+  receipts, physical capacity holds and administrative redrive audit.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
@@ -141,8 +142,11 @@ workers are deployed together on the user's Kubernetes infrastructure.
    health check; `HEARTBEAT` jobs do not.
 3. The worker creates a Docker client for the returned runtime endpoint, ensures
    the resolved image digest exists on that runtime under a runtime-node-scoped
-   image pull lock, runs the image, attaches the container ID with
-   `runtime_node_id`, and renews the lease while the job runs.
+   image pull lock, then persists an immutable intent before obtaining one Create
+   grant. It verifies/records the full container ID and attaches it before obtaining
+   one Start grant. The worker uses the recorded runtime endpoint and
+   checks original-instance identity around observation. It renews the lease while
+   the job runs.
 4. Logs are emitted both for live streaming and durable processing when retention
    is enabled.
 5. Completion, user failures, system failures, retries, and cancellations are
@@ -198,8 +202,14 @@ expected operating conditions.
   retry operations.
 - **Partition-aware Kafka workers** preserve per-partition ordering and commit
   only after the selected retry/commit policy permits it.
-- **Cleanup loops** remove old outbox and processed-event records after their
-  retention windows.
+- **Cleanup loops** prune ordinary published outbox and processed-event records
+  after retention. Unfinished container cleanup remains retained until matching
+  removal evidence exists. Creation-name discovery and cleanup audit history have
+  no automatic expiry; age cannot release a physical capacity hold.
+- **Cleanup observability and audit** use committed state for backlog/quarantine
+  gauges. Administrative redrive records its validated principal, repair reason
+  and expected/new generation atomically with requeueing; duplicate delivery or a
+  stale retry cannot inflate gauges or create another accepted audit transition.
 
 ## Security and Observability
 

@@ -33,7 +33,18 @@ lease lasts four minutes around the three-minute cleanup budget. Failures back o
 for 30 seconds, then 60 seconds. Successfully reported caller cancellation refunds
 its attempt; repeated interruptions can postpone cleanup indefinitely. After
 exhaustion, persisted `QUARANTINED` lets the Kafka handler acknowledge that delivery
-while retaining the unfinished obligation. Publication `DEAD` is a separate state.
+while retaining the unfinished obligation. Publication `DEAD` is a separate state requiring operator repair.
+
+Successful cleanup publication schedules replay after five minutes by default;
+successive successful waves wait ten, twenty, forty, then sixty minutes repeatedly.
+`OUTBOX_RELAY_REPLAY_INTERVAL` and `OUTBOX_RELAY_REPLAY_MAX_INTERVAL` configure
+these defaults with whole-millisecond precision. Durable pacing survives relay
+restarts, and publication capacity is shared fairly with initial deliveries.
+Consumer lag is not required. The cap is a scheduling interval, not a guaranteed
+delivery deadline during overload, key blocking, lease/backoff delays or outages.
+Ambiguous broker sends may still duplicate before that interval.
+
+[Replay scheduling and ordering](/docs/engineering/transactional-outbox#claiming)
 
 ### Administrative redrive
 
@@ -59,7 +70,7 @@ request fields or caller metadata. A shared credential identifies its principal,
 not the individual human using it.
 
 An accepted redrive increments the generation, resets execution/publication budgets
-and requeues the original snapshot. It may override `READY`, `RETRY`, quarantined
+and requeues the original snapshot with initial-wave pacing. It may override `READY`, `RETRY`, quarantined
 or expired-lease work, but refuses a live execution lease. Repeating an old generation
 returns `STALE` without another reset or audit entry. A completion receipt returns
 `COMPLETED` without requeueing. Redrive cannot retarget the original runtime or

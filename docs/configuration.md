@@ -570,6 +570,8 @@ metadata growth.
 - `OUTBOX_RELAY_CONTEXT_TIMEOUT`
 - `OUTBOX_RELAY_MAX_ATTEMPTS`
 - `OUTBOX_RELAY_RETRY_BACKOFF`
+- `OUTBOX_RELAY_REPLAY_INTERVAL` (default `5m`)
+- `OUTBOX_RELAY_REPLAY_MAX_INTERVAL` (default `1h`)
 - `OUTBOX_RELAY_PROCESSING_LEASE`
 - `OUTBOX_RELAY_WORKER_ID`
 - `OUTBOX_RELAY_CLEANUP_ENABLED`
@@ -582,6 +584,19 @@ Compose sets `OUTBOX_RELAY_WORKER_ID` from the hostname when not provided. Keep
 the processing lease longer than normal Kafka publish latency. Idempotency
 cleanup deletes up to the configured number of batches per cleanup cycle and
 stops early after a partial batch. The default is ten batches of 1,000 rows.
+
+Replay intervals require whole milliseconds, with `1ms <= interval <= maximum`.
+Zero replay intervals select defaults; negative or fractional-millisecond values
+fail validation. Successful cleanup delivery arms the next recovery wave; delays
+double to the cap without resetting execution budgets. Configure identical values
+across replicas. Existing persisted due times are not rewritten on a config change.
+Workflow batches share capacity between initial delivery and replay, including
+batch size one; unused slots can be borrowed. `DEAD` publication still needs
+operator repair. The cap is a scheduled interval, not a delivery latency guarantee.
+
+Enabled publication requires positive batch/attempt limits and poll/context
+durations; transport lease/backoff must be at least one millisecond. Disabled
+maintenance settings retain their existing behavior.
 
 ## Dashboard Settings
 

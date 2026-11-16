@@ -662,14 +662,43 @@ accepted terminal settlement retains its separate detached ten-second budget.
 Published cleanup events are retained until a matching receipt exists, even
 past the normal published-event retention window. This preserves unfinished
 cleanup snapshots if Kafka retention expires. On its normal publication cycle,
-the relay requeues unfinished published cleanup older than five minutes when no
-attempt lease or retry delay is active. This preserves the execution generation
-and attempt count; it does not grant another failure budget. Completed and
-quarantined cleanup is excluded. Republishing does not consult consumer lag;
-backlogs older than this window can generate duplicate deliveries. Attempt
-admission and receipts make duplicate deliveries safe, but Kafka backlog and
-relay throughput still need monitoring. Other published event types retain their
-usual retention behavior.
+the relay requeues due unfinished published cleanup when no execution lease or
+retry delay is active. Successful initial publication schedules recovery after
+`OUTBOX_RELAY_REPLAY_INTERVAL` (default five minutes). Each successful replay
+wave doubles the next interval, capped by `OUTBOX_RELAY_REPLAY_MAX_INTERVAL`
+(default one hour): five, ten, twenty, forty, sixty minutes, then sixty minutes
+repeatedly. Replay rounds and due times survive relay restarts; rounds saturate
+without imposing a lifetime replay limit. Transport retries remain in their
+current wave. Execution generation, attempts and failure budget are unchanged.
+Completed and quarantined cleanup is excluded; publication `DEAD` requires
+administrative repair rather than automatic budget renewal.
+
+Workflow publication allocates its total batch fairly between initial deliveries
+and replay, borrowing unused slots in either direction. A durable database turn
+also alternates batch-one allocations and the first send of larger batches across
+replicas and restarts. Selected records are explicitly interleaved before Kafka
+I/O; the scheduling row is locked only during the short claim transaction.
+Per-key unpublished predecessor barriers, including `DEAD` and delayed `FAILED`
+rows, still apply across both classes. Fairness applies to eligible independent
+keys, not a fixed per-event latency under overload. Other topics poll independently.
+
+Republishing does not require consumer-lag data. The interval cap bounds the
+scheduled wait after successful publication, not delivery or physical-cleanup
+latency: overload, active leases/backoff, key blockers, unavailable services,
+disabled relays, repeated crashes, quarantine and `DEAD` can postpone recovery.
+A broker-accepted send followed by a crash or failed database acknowledgement can
+still be sent again after the transport lease, before its normal recovery
+interval. This is at-least-once delivery, not a broker-wide duplicate bound.
+Monitor Kafka backlog, retained work and relay throughput. Other published event
+types retain their usual retention behavior.
+
+An accepted audited administrative redrive resets pacing to round zero for its
+new cleanup generation. Configure matching replay intervals across replicas; the
+successful publisher determines the next persisted due time. Configuration
+changes affect future successful publications, not existing due timestamps. Both
+intervals require whole milliseconds and `1ms <= interval <= maximum`. Programmatic
+zero intervals select defaults; explicit negative or fractional-millisecond
+values are rejected.
 
 Receipts survive job/workflow deletion and published-outbox pruning. Enqueueing
 cleanup consults receipts, and a previously queued delivery also checks them,
@@ -877,6 +906,8 @@ invalid image requests, missing images and registry access denials retain the
 - `OUTBOX_RELAY_BATCH_SIZE` and `OUTBOX_RELAY_POLL_INTERVAL` control throughput
   and database polling pressure.
 - `OUTBOX_RELAY_PROCESSING_LEASE` controls how long a relay owns claimed rows.
+- `OUTBOX_RELAY_REPLAY_INTERVAL` and `OUTBOX_RELAY_REPLAY_MAX_INTERVAL` pace
+  recurring unfinished cleanup delivery, defaulting to five minutes and one hour.
 - `OUTBOX_RELAY_MAX_ATTEMPTS` and `OUTBOX_RELAY_RETRY_BACKOFF` control retry and
   dead-event behavior.
 - `OUTBOX_RELAY_CLEANUP_*` and `OUTBOX_RELAY_PUBLISHED_RETENTION` control cleanup

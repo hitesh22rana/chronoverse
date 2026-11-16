@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -93,7 +94,7 @@ func leaseRPCContracts() []leaseRPCContract {
 	claim := &jobspb.ClaimJobResponse{Claimed: true, Id: leaseContractJobID, WorkflowId: leaseContractWorkflowID, UserId: leaseContractUserID, LeaseToken: "lease", Attempts: 4}
 	node := &jobspb.GetReadyRuntimeNodeResponse{RuntimeNodeId: "runtime", RuntimeEndpoint: "tcp://runtime:2376"}
 	nodes := &jobspb.ListReadyRuntimeNodesResponse{Nodes: []*jobspb.GetReadyRuntimeNodeResponse{node}}
-	return []leaseRPCContract{
+	contracts := []leaseRPCContract{
 		{
 			method:   "BeginContainerCleanupAttempt",
 			request:  &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2, Token: "owner", ErrorCode: "Unavailable"},
@@ -358,6 +359,7 @@ func leaseRPCContracts() []leaseRPCContract {
 			},
 		},
 	}
+	return slices.Concat(contracts, containerIntentRPCContracts())
 }
 
 func TestLeaseRPCContracts(t *testing.T) {

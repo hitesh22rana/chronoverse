@@ -95,7 +95,7 @@ func (j *creationFaultJobs) AttachJobContainer(ctx context.Context, req *jobspb.
 }
 
 func (j *creationFaultJobs) ReportContainerInspection(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return j.updateContainerIntent(ctx, "report", req)
+	return j.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req)
 }
 
 func TestIntegrationContainerCreationLostRepliesRemainRecoverable(t *testing.T) {
@@ -163,7 +163,7 @@ func testContainerCreationFault(t *testing.T, daemon *containerpkg.DockerWorkflo
 	if mode != "process death" && (runErr == nil) != wantSuccess {
 		t.Fatalf("execution result: %v", runErr)
 	}
-	intentResult, err := jobs.UpdateContainerIntent(ctx, "get", &jobsmodel.ContainerIntentCommand{JobID: fixture.JobID, Attempt: 1})
+	intentResult, err := jobs.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, &jobsmodel.ContainerIntentCommand{JobID: fixture.JobID, Attempt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

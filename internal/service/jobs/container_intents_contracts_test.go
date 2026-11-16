@@ -28,34 +28,34 @@ type intentServiceCall struct {
 
 func intentServiceCalls(s *jobsservice.Service) []intentServiceCall {
 	return []intentServiceCall{
-		{name: "ensure", operation: "ensure", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationEnsure, operation: jobsmodel.ContainerIntentOperationEnsure, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.EnsureContainerIntent(c, r)
 		}},
-		{name: "get", operation: "get", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationGet, operation: jobsmodel.ContainerIntentOperationGet, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.GetContainerIntent(c, r)
 		}},
-		{name: "create", operation: "reserve_create", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: "create", operation: jobsmodel.ContainerIntentOperationReserveCreate, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ReserveContainerCreate(c, r)
 		}},
-		{name: "start", operation: "reserve_start", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: "start", operation: jobsmodel.ContainerIntentOperationReserveStart, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ReserveContainerStart(c, r)
 		}},
-		{name: "close", operation: "close", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationClose, operation: jobsmodel.ContainerIntentOperationClose, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.CloseContainerIntent(c, r)
 		}},
-		{name: "observe", operation: "observe", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationObserve, operation: jobsmodel.ContainerIntentOperationObserve, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ObserveContainer(c, r)
 		}},
-		{name: "report", operation: "report", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationReport, operation: jobsmodel.ContainerIntentOperationReport, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ReportContainerInspection(c, r)
 		}},
-		{name: "redrive", operation: "redrive", call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationRedrive, operation: jobsmodel.ContainerIntentOperationRedrive, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.RedriveContainerIntent(c, r)
 		}},
 		{name: "claim", list: true, claim: true, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ClaimContainerIntents(c, r)
 		}},
-		{name: "list", list: true, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
+		{name: jobsmodel.ContainerIntentOperationList, list: true, call: func(c context.Context, r *jobspb.ContainerIntentCommand) (proto.Message, error) {
 			return s.ListContainerIntents(c, r)
 		}},
 	}
@@ -167,23 +167,23 @@ func TestContainerIntentServiceRejectsMalformedCommandsBeforeStorage(t *testing.
 		name, method string
 		change       func(*jobspb.ContainerIntentCommand)
 	}{
-		{"batch below zero", "list", func(r *jobspb.ContainerIntentCommand) { r.BatchSize = -1 }},
-		{"batch too large", "list", func(r *jobspb.ContainerIntentCommand) { r.BatchSize = 501 }},
-		{"invalid token", "list", func(r *jobspb.ContainerIntentCommand) { r.Token = "invalid" }},
-		{"long stage", "list", func(r *jobspb.ContainerIntentCommand) { r.Stage = strings.Repeat("s", 33) }},
-		{"long outcome", "list", func(r *jobspb.ContainerIntentCommand) { r.Outcome = strings.Repeat("o", 33) }},
-		{"invalid job", "list", func(r *jobspb.ContainerIntentCommand) { r.JobId = "invalid" }},
-		{"invalid intent", "list", func(r *jobspb.ContainerIntentCommand) { r.IntentId = "invalid" }},
-		{"long diagnostic", "list", func(r *jobspb.ContainerIntentCommand) { r.ErrorMessage = strings.Repeat("e", 8193) }},
-		{"long reason", "list", func(r *jobspb.ContainerIntentCommand) { r.Reason = strings.Repeat("r", 2049) }},
-		{"long runtime", "list", func(r *jobspb.ContainerIntentCommand) { r.RuntimeInstance = strings.Repeat("r", 257) }},
-		{"long fingerprint", "list", func(r *jobspb.ContainerIntentCommand) { r.RequestHash = strings.Repeat("f", 257) }},
+		{"batch below zero", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.BatchSize = -1 }},
+		{"batch too large", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.BatchSize = 501 }},
+		{"invalid token", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.Token = "invalid" }},
+		{"long stage", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.Stage = strings.Repeat("s", 33) }},
+		{"long outcome", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.Outcome = strings.Repeat("o", 33) }},
+		{"invalid job", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.JobId = "invalid" }},
+		{"invalid intent", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.IntentId = "invalid" }},
+		{"long diagnostic", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.ErrorMessage = strings.Repeat("e", 8193) }},
+		{"long reason", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.Reason = strings.Repeat("r", 2049) }},
+		{"long runtime", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.RuntimeInstance = strings.Repeat("r", 257) }},
+		{"long fingerprint", jobsmodel.ContainerIntentOperationList, func(r *jobspb.ContainerIntentCommand) { r.RequestHash = strings.Repeat("f", 257) }},
 		{"missing lease", "create", func(r *jobspb.ContainerIntentCommand) { r.LeaseToken = "" }},
-		{"missing lookup", "get", func(r *jobspb.ContainerIntentCommand) { r.IntentId = ""; r.JobId = "" }},
-		{"missing materialization", "observe", func(r *jobspb.ContainerIntentCommand) { r.ContainerId = "" }},
-		{"missing inspection token", "report", func(r *jobspb.ContainerIntentCommand) { r.Token = "" }},
-		{"unknown inspection outcome", "report", func(r *jobspb.ContainerIntentCommand) { r.Outcome = "unsupported" }},
-		{"missing repair reason", "redrive", func(r *jobspb.ContainerIntentCommand) { r.Reason = " " }},
+		{"missing lookup", jobsmodel.ContainerIntentOperationGet, func(r *jobspb.ContainerIntentCommand) { r.IntentId = ""; r.JobId = "" }},
+		{"missing materialization", jobsmodel.ContainerIntentOperationObserve, func(r *jobspb.ContainerIntentCommand) { r.ContainerId = "" }},
+		{"missing inspection token", jobsmodel.ContainerIntentOperationReport, func(r *jobspb.ContainerIntentCommand) { r.Token = "" }},
+		{"unknown inspection outcome", jobsmodel.ContainerIntentOperationReport, func(r *jobspb.ContainerIntentCommand) { r.Outcome = "unsupported" }},
+		{"missing repair reason", jobsmodel.ContainerIntentOperationRedrive, func(r *jobspb.ContainerIntentCommand) { r.Reason = " " }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
@@ -200,7 +200,10 @@ func TestContainerIntentServiceRejectsMalformedCommandsBeforeStorage(t *testing.
 			}
 		})
 	}
-	for _, method := range []string{"ensure", "get", "claim", "list", "redrive"} {
+	for _, method := range []string{
+		jobsmodel.ContainerIntentOperationEnsure, jobsmodel.ContainerIntentOperationGet,
+		"claim", jobsmodel.ContainerIntentOperationList, jobsmodel.ContainerIntentOperationRedrive,
+	} {
 		t.Run(method+"/nil", func(t *testing.T) {
 			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
 			ctx := auth.WithSubject(auth.WithRole(t.Context(), auth.RoleAdmin.String()), "internal/executor")
@@ -218,8 +221,8 @@ func TestContainerIntentServiceRejectsMalformedCommandsBeforeStorage(t *testing.
 
 func TestContainerIntentDiscoveryAndRedriveRequireVerifiedPrincipal(t *testing.T) {
 	for _, subject := range []string{"", "internal/workflow"} {
-		for _, method := range []string{"ensure", "claim", "redrive"} {
-			if method == "redrive" && subject != "" {
+		for _, method := range []string{jobsmodel.ContainerIntentOperationEnsure, "claim", jobsmodel.ContainerIntentOperationRedrive} {
+			if method == jobsmodel.ContainerIntentOperationRedrive && subject != "" {
 				continue
 			}
 			t.Run(method+"/"+subject, func(t *testing.T) {

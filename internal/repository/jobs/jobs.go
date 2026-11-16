@@ -14,20 +14,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/meilisearch/meilisearch-go"
+	goredis "github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/meilisearch/meilisearch-go"
-	goredis "github.com/redis/go-redis/v9"
-
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -39,12 +36,15 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
-	authSubject           = "internal/jobs"
-	delimiter             = '$'
-	jobStatusUpdateBuffer = time.Minute // 1 minute
+	subscriptionKindSubscribe = "subscribe"
+	formattedSearchResultKey  = "_formatted"
+	authSubject               = "internal/jobs"
+	delimiter                 = '$'
+	jobStatusUpdateBuffer     = time.Minute // 1 minute
 
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
@@ -119,6 +119,9 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 	}
 	if pg != nil {
 		if metricsErr := r.registerContainerIntentMetrics(otel.Meter("chronoverse/jobs/container-intents")); metricsErr != nil {
+			otel.Handle(metricsErr)
+		}
+		if metricsErr := r.registerCleanupMetrics(otel.Meter("chronoverse/jobs/container-cleanup")); metricsErr != nil {
 			otel.Handle(metricsErr)
 		}
 	}
@@ -811,7 +814,7 @@ func (r *Repository) subscribeToJobLogsChannel(ctx context.Context, jobID string
 	}
 
 	ack, ok := msg.(*goredis.Subscription)
-	if !ok || ack.Kind != "subscribe" || ack.Channel != channel {
+	if !ok || ack.Kind != subscriptionKindSubscribe || ack.Channel != channel {
 		_ = sub.Close()
 		return nil, status.Errorf(codes.Internal, "unexpected subscription acknowledgement: %#v", msg)
 	}
@@ -1192,7 +1195,7 @@ func searchHitString(source map[string]any, field string) string {
 func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 	source := make(map[string]any)
 	for k, v := range hit {
-		if k == "_formatted" {
+		if k == formattedSearchResultKey {
 			continue
 		}
 

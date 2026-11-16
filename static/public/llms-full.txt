@@ -1333,7 +1333,9 @@ permissions. Replacement execution waits for original-runtime cleanup evidence;
 runtime heartbeats retain unresolved capacity holds. Discovery continues after
 source deletion, and infrastructure faults use bounded system retries.
 
-Quarantine requires operator repair and generation-fenced redrive. Permanent
+Quarantine requires operator repair and generation-fenced redrive. Cleanup redrive
+also requires a repair reason and records the authenticated principal, timestamp
+and generation change. Durable cleanup gauges expose quarantined or overdue work. Permanent
 loss of the original runtime can keep execution blocked: there is no force-run
 bypass, and cleanup evidence must not be expired merely by age. Execution and
 cleanup roles need the proxy's daemon-identity read permission; workflow workers

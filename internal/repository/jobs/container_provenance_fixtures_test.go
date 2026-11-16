@@ -47,17 +47,17 @@ func seedContainerProvenance(
 		RuntimeInstance:    "daemon-" + fixtureTag(),
 		RequestHash:        "request-" + fixtureTag(),
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", command)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, command)
 	if err != nil {
 		t.Fatalf("ensure container intent: %v", err)
 	}
 	command.IntentID = ensured.Intent.ID
-	granted, err := repo.UpdateContainerIntent(ctx, "reserve_create", command)
+	granted, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, command)
 	if err != nil || !granted.Granted {
 		t.Fatalf("reserve container create: %+v %v", granted, err)
 	}
 	command.ContainerID = containerID
-	if _, err = repo.UpdateContainerIntent(ctx, "observe", command); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, command); err != nil {
 		t.Fatalf("observe container materialization: %v", err)
 	}
 	t.Cleanup(func() {

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	dockercontainer "github.com/moby/moby/api/types/container"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -230,7 +231,7 @@ func (r *Repository) settleRecoveredContainer(
 ) error {
 	workflowForLogs := workflowFromExpiredLease(job)
 
-	if !intent.GetStartReserved() || state.Status == "created" || (!state.Running && state.Status != "exited") {
+	if !intent.GetStartReserved() || state.Status == string(dockercontainer.StateCreated) || (!state.Running && state.Status != string(dockercontainer.StateExited)) {
 		if cleanupErr := r.cleanupContainer(ctx, csvc, claim.GetId(), job.GetContainerId()); cleanupErr != nil {
 			return cleanupErr
 		}

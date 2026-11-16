@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/google/uuid"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
@@ -25,12 +24,12 @@ func TestIntegrationContainerIntentGrantsClosureAndCapacity(t *testing.T) {
 	user, workflow := seedUserWorkflow(ctx, t, pg)
 	job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
 	command := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "daemon-original", RequestHash: "frozen-request"}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", command)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, command)
 	if err != nil {
 		t.Fatal(err)
 	}
 	command.IntentID = ensured.Intent.ID
-	for _, operation := range []string{"reserve_create"} {
+	for _, operation := range []string{jobsmodel.ContainerIntentOperationReserveCreate} {
 		result, grantErr := repo.UpdateContainerIntent(ctx, operation, command)
 		if grantErr != nil || !result.Granted {
 			t.Fatalf("first grant: %+v %v", result, grantErr)
@@ -41,17 +40,17 @@ func TestIntegrationContainerIntentGrantsClosureAndCapacity(t *testing.T) {
 		}
 	}
 	command.ContainerID = strings.Repeat("a", 64)
-	if _, err = repo.UpdateContainerIntent(ctx, "observe", command); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, command); err != nil {
 		t.Fatal(err)
 	}
 	if err = repo.AttachJobContainer(ctx, job, lease, command.ContainerID, ensured.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	start, err := repo.UpdateContainerIntent(ctx, "reserve_start", command)
+	start, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, command)
 	if err != nil || !start.Granted {
 		t.Fatalf("start grant %+v %v", start, err)
 	}
-	repeated, err := repo.UpdateContainerIntent(ctx, "reserve_start", command)
+	repeated, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, command)
 	if err != nil || repeated.Granted {
 		t.Fatalf("start replay %+v %v", repeated, err)
 	}
@@ -115,7 +114,7 @@ func TestIntegrationContainerIntentGrantsClosureAndCapacity(t *testing.T) {
 	// A later materialization has its own receipt; it cannot inherit Start authority.
 	late := *command
 	late.ContainerID = strings.Repeat("b", 64)
-	if _, err = repo.UpdateContainerIntent(ctx, "observe", &late); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, &late); err != nil {
 		t.Fatal(err)
 	}
 	var obligations int
@@ -132,7 +131,7 @@ func TestIntegrationContainerReservationSerializesWithTermination(t *testing.T) 
 	user, workflow := seedUserWorkflow(ctx, t, pg)
 	job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
 	request := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "daemon-closure", RequestHash: "immutable"}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", request)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +146,7 @@ func TestIntegrationContainerReservationSerializesWithTermination(t *testing.T) 
 	}
 	result := make(chan error, 1)
 	go func() {
-		granted, callErr := repo.UpdateContainerIntent(ctx, "reserve_create", request)
+		granted, callErr := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, request)
 		if callErr == nil && granted.Granted {
 			callErr = fmt.Errorf("termination raced into a new create grant")
 		}
@@ -181,7 +180,7 @@ func TestIntegrationConcurrentContainerCreateHasOneGrant(t *testing.T) {
 	user, workflow := seedUserWorkflow(ctx, t, pg)
 	job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
 	request := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "daemon-concurrent", RequestHash: "immutable"}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", request)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +188,11 @@ func TestIntegrationConcurrentContainerCreateHasOneGrant(t *testing.T) {
 	results := make(chan *jobsmodel.ContainerIntentResult, 2)
 	errs := make(chan error, 2)
 	for range 2 {
-		go func() { r, e := repo.UpdateContainerIntent(ctx, "reserve_create", request); results <- r; errs <- e }()
+		go func() {
+			r, e := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, request)
+			results <- r
+			errs <- e
+		}()
 	}
 	winners := 0
 	for range 2 {
@@ -215,7 +218,7 @@ func TestIntegrationContainerGrantRequiresOriginalLeaseAndGeneration(t *testing.
 			user, workflow := seedUserWorkflow(ctx, t, pg)
 			job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
 			command := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "original-daemon", RequestHash: "immutable"}
-			ensured, err := repo.UpdateContainerIntent(ctx, "ensure", command)
+			ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, command)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +234,7 @@ func TestIntegrationContainerGrantRequiresOriginalLeaseAndGeneration(t *testing.
 					t.Fatal(err)
 				}
 			}
-			result, err := repo.UpdateContainerIntent(ctx, "reserve_create", command)
+			result, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, command)
 			if status.Code(err) != codes.Aborted || (result != nil && result.Granted) {
 				t.Fatalf("%s reopened authority: %+v %v", change, result, err)
 			}
@@ -246,16 +249,16 @@ func TestIntegrationRemovedContainerCannotAcquireStart(t *testing.T) {
 	user, workflow := seedUserWorkflow(ctx, t, pg)
 	job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
 	command := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "daemon-removed", RequestHash: "immutable"}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", command)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, command)
 	if err != nil {
 		t.Fatal(err)
 	}
 	command.IntentID = ensured.Intent.ID
-	if _, err = repo.UpdateContainerIntent(ctx, "reserve_create", command); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, command); err != nil {
 		t.Fatal(err)
 	}
 	command.ContainerID = strings.Repeat("c", 64)
-	if _, err = repo.UpdateContainerIntent(ctx, "observe", command); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, command); err != nil {
 		t.Fatal(err)
 	}
 	if err = repo.AttachJobContainer(ctx, job, lease, command.ContainerID, ensured.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
@@ -269,7 +272,7 @@ func TestIntegrationRemovedContainerCannotAcquireStart(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	granted, err := repo.UpdateContainerIntent(ctx, "reserve_start", command)
+	granted, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, command)
 	if status.Code(err) != codes.Aborted || (granted != nil && granted.Granted) {
 		t.Fatalf("removed container got start authority: %+v %v", granted, err)
 	}
@@ -289,12 +292,12 @@ func TestIntegrationDiscoveryInterruptionPreservesFailureBudget(t *testing.T) {
 		JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1,
 		RuntimeInstance: "daemon-interruption", RequestHash: "immutable",
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", req)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.IntentID = ensured.Intent.ID
-	if _, err = repo.UpdateContainerIntent(ctx, "close", req); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req); err != nil {
 		t.Fatal(err)
 	}
 	req.Token = uuid.NewString()
@@ -306,7 +309,7 @@ func TestIntegrationDiscoveryInterruptionPreservesFailureBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Outcome = "INTERRUPTED"
-	result, err := repo.UpdateContainerIntent(ctx, "report", req)
+	result, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +318,7 @@ func TestIntegrationDiscoveryInterruptionPreservesFailureBudget(t *testing.T) {
 	}
 	// A late report cannot reuse the released inspection lease.
 	req.Outcome = "ERROR"
-	if _, err = repo.UpdateContainerIntent(ctx, "report", req); status.Code(err) != codes.Aborted {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req); status.Code(err) != codes.Aborted {
 		t.Fatalf("stale report: %v", err)
 	}
 }
@@ -330,12 +333,12 @@ func TestIntegrationDeletedWorkflowRetainsLateContainerObligation(t *testing.T) 
 		JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1,
 		RuntimeInstance: "daemon-late-response", RequestHash: "immutable",
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", request)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.IntentID = ensured.Intent.ID
-	grant, err := repo.UpdateContainerIntent(ctx, "reserve_create", request)
+	grant, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, request)
 	if err != nil || !grant.Granted {
 		t.Fatalf("create permission: %+v %v", grant, err)
 	}
@@ -344,7 +347,7 @@ func TestIntegrationDeletedWorkflowRetainsLateContainerObligation(t *testing.T) 
 		t.Fatal(err)
 	}
 	request.ContainerID = strings.Repeat("c", 64)
-	observed, err := repo.UpdateContainerIntent(ctx, "observe", request)
+	observed, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +361,7 @@ func TestIntegrationDeletedWorkflowRetainsLateContainerObligation(t *testing.T) 
 	if err != nil || route != ensured.Intent.RuntimeEndpoint || instance != request.RuntimeInstance || intent != request.IntentID {
 		t.Fatalf("late cleanup lost provenance: %q %q %q %v", route, instance, intent, err)
 	}
-	if _, err = repo.UpdateContainerIntent(ctx, "reserve_start", request); status.Code(err) != codes.Aborted {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, request); status.Code(err) != codes.Aborted {
 		t.Fatalf("deleted source admitted Start: %v", err)
 	}
 }
@@ -413,7 +416,7 @@ func TestIntegrationRemovalReceiptSerializesWithStartReservation(t *testing.T) {
 		JobID: job, LeaseToken: lease, Attempt: 1, IntentID: identity.IntentID,
 		RuntimeInstance: identity.RuntimeInstance, ContainerID: id,
 	}
-	grant, err := repo.UpdateContainerIntent(ctx, "reserve_start", req)
+	grant, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, req)
 	if err != nil || !grant.Granted {
 		t.Fatalf("Start after interrupted receipt: %+v %v", grant, err)
 	}
@@ -441,13 +444,13 @@ func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) 
 	req := &jobsmodel.ContainerIntentCommand{
 		JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "original-daemon", RequestHash: "frozen",
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", req)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.IntentID = ensured.Intent.ID
 	req.Outcome, req.ErrorCode, req.ErrorMessage = "UNKNOWN", "Unavailable", "original Create diagnostic"
-	if _, err = repo.UpdateContainerIntent(ctx, "close", req); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req); err != nil {
 		t.Fatal(err)
 	}
 	redrive := &jobsmodel.ContainerIntentCommand{IntentID: req.IntentID, Actor: "internal/operator", Reason: "original daemon restored", Generation: ensured.Intent.Generation}
@@ -461,12 +464,12 @@ func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) 
 			t.Fatalf("claim inspection: %+v %v", batch, claimErr)
 		}
 		if attempt == 1 {
-			if _, err = repo.UpdateContainerIntent(ctx, "redrive", redrive); status.Code(err) != codes.Aborted {
+			if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationRedrive, redrive); status.Code(err) != codes.Aborted {
 				t.Fatalf("live inspection was redriven: %v", err)
 			}
 		}
 		staleToken = batch[0].Token
-		result, reportErr := repo.UpdateContainerIntent(ctx, "report", &jobsmodel.ContainerIntentCommand{
+		result, reportErr := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, &jobsmodel.ContainerIntentCommand{
 			IntentID: req.IntentID, Token: staleToken, Generation: batch[0].Generation, Outcome: "ERROR", ErrorCode: "Unavailable", ErrorMessage: "inspection unreachable",
 		})
 		if reportErr != nil {
@@ -486,7 +489,7 @@ func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) 
 	if len(batch) > 0 && batch[0].ID == req.IntentID {
 		t.Fatal("quarantined intent was automatically reclaimed")
 	}
-	repaired, err := repo.UpdateContainerIntent(ctx, "redrive", redrive)
+	repaired, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationRedrive, redrive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,15 +507,15 @@ func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) 
 	if actor != redrive.Actor || reason != redrive.Reason || oldGeneration != redrive.Generation || newGeneration != repaired.Intent.Generation {
 		t.Fatalf("redrive lost audit identity: %q %q %d/%d", actor, reason, oldGeneration, newGeneration)
 	}
-	if _, err = repo.UpdateContainerIntent(ctx, "redrive", redrive); status.Code(err) != codes.Aborted {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationRedrive, redrive); status.Code(err) != codes.Aborted {
 		t.Fatalf("stale redrive accepted: %v", err)
 	}
-	if _, err = repo.UpdateContainerIntent(ctx, "report", &jobsmodel.ContainerIntentCommand{
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, &jobsmodel.ContainerIntentCommand{
 		IntentID: req.IntentID, Token: staleToken, Generation: redrive.Generation, Outcome: "ABSENT",
 	}); status.Code(err) != codes.Aborted {
 		t.Fatalf("old-generation report accepted: %v", err)
 	}
-	grant, err := repo.UpdateContainerIntent(ctx, "reserve_create", req)
+	grant, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, req)
 	if err != nil || grant.Granted {
 		t.Fatalf("administrative redrive created execution authority: %+v %v", grant, err)
 	}

@@ -66,12 +66,12 @@ func TestIntegrationContainerIntentMetricsReflectDurableQuarantine(t *testing.T)
 		JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1,
 		RuntimeInstance: "metrics-daemon", RequestHash: "immutable",
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", req)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.IntentID = ensured.Intent.ID
-	if _, err = repo.UpdateContainerIntent(ctx, "close", req); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req); err != nil {
 		t.Fatal(err)
 	}
 	due := collectIntentMetrics(t, reader)

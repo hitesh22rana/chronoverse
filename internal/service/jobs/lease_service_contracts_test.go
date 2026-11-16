@@ -16,6 +16,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/service/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/service/jobs/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -55,7 +56,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 	}
 	return []func() *leaseServiceContract{
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupAttemptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
+			req := &jobspb.ContainerCleanupAttemptRequest{
+				RuntimeInstance: "test-daemon",
+				IntentId:        leaseContractJobID,
+				JobId:           leaseContractJobID,
+				ContainerId:     "container",
+				Generation:      2,
+			}
 			return &leaseServiceContract{
 				name: "BeginContainerCleanupAttempt", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id", "generation"},
 				invalid: map[string]protoreflect.Value{
@@ -67,13 +74,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.BeginContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "begin", jobsmodel.CleanupIdentity{
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), jobsmodel.CleanupOperationBegin, jobsmodel.CleanupIdentity{
 						JobID:           req.JobId,
 						ContainerID:     req.ContainerId,
 						RuntimeInstance: req.RuntimeInstance,
 						IntentID:        req.IntentId,
-					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted, jobsmodel.CleanupRedrive{}).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool, _ jobsmodel.CleanupRedrive) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -98,13 +105,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.FailContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "fail", jobsmodel.CleanupIdentity{
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), jobsmodel.CleanupOperationFail, jobsmodel.CleanupIdentity{
 						JobID:           req.JobId,
 						ContainerID:     req.ContainerId,
 						RuntimeInstance: req.RuntimeInstance,
 						IntentID:        req.IntentId,
-					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted, jobsmodel.CleanupRedrive{}).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool, _ jobsmodel.CleanupRedrive) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -113,25 +120,35 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupAttemptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
+			req := &jobspb.ContainerCleanupAttemptRequest{
+				RuntimeInstance: "test-daemon",
+				IntentId:        leaseContractJobID,
+				JobId:           leaseContractJobID,
+				ContainerId:     "container",
+				Generation:      2,
+				Reason:          "runtime restored",
+			}
 			return &leaseServiceContract{
-				name: "RedriveContainerCleanup", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id", "generation"},
+				name: "RedriveContainerCleanup", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id", "generation", "reason"},
 				invalid: map[string]protoreflect.Value{
 					"job_id":       protoreflect.ValueOfString("bad-id"),
 					"container_id": protoreflect.ValueOfString(strings.Repeat("x", 257)),
 					"generation":   protoreflect.ValueOfInt64(-1),
 				},
 				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
-					return svc.RedriveContainerCleanup(ctx, req)
+					return svc.RedriveContainerCleanup(auth.WithSubject(auth.WithRole(ctx, auth.RoleAdmin.String()), "operations/test"), req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "redrive", jobsmodel.CleanupIdentity{
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), jobsmodel.CleanupOperationRedrive, jobsmodel.CleanupIdentity{
 						JobID:           req.JobId,
 						ContainerID:     req.ContainerId,
 						RuntimeInstance: req.RuntimeInstance,
 						IntentID:        req.IntentId,
-					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted, jobsmodel.CleanupRedrive{
+						Actor:  "operations/test",
+						Reason: "runtime restored",
+					}).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool, _ jobsmodel.CleanupRedrive) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -246,7 +263,7 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			req := &jobspb.FailJobRequest{
 				Id:                 leaseContractJobID,
 				LeaseToken:         "lease",
-				CommandId:          "fail",
+				CommandId:          jobsmodel.CleanupOperationFail,
 				FailureKind:        "USER",
 				TerminalReasonCode: "NON_ZERO_EXIT",
 				ErrorCode:          "Aborted",

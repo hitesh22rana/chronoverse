@@ -50,7 +50,7 @@ func seedIntentFailureFixture(t *testing.T, repo *Repository) *jobsmodel.Contain
 	workflow := testkit.SeedWorkflow(ctx, t, repo.pg, user, "intent-fault")
 	job, lease := seedRunningJob(ctx, t, repo.pg, repo, workflow, user, t.Name())
 	command := &jobsmodel.ContainerIntentCommand{JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "original-daemon", RequestHash: "immutable"}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", command)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,12 +68,12 @@ func TestIntegrationContainerGrantFailureRollsBackOnWriteAndCommit(t *testing.T)
 			repo := isolatedContainerIntentRepository(t)
 			command := seedIntentFailureFixture(t, repo)
 			remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_creation_intents", "UPDATE", deferred, map[string]string{"id": command.IntentID})
-			result, err := repo.UpdateContainerIntent(t.Context(), "reserve_create", command)
+			result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationReserveCreate, command)
 			if result != nil || status.Code(err) != codes.Internal {
 				t.Fatalf("failed transaction returned a send grant: %+v %v", result, err)
 			}
 			remove()
-			stored, err := repo.UpdateContainerIntent(t.Context(), "get", command)
+			stored, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, command)
 			if err != nil || stored.Intent.CreateReserved {
 				t.Fatalf("failed grant remained committed: %+v %v", stored, err)
 			}
@@ -85,7 +85,7 @@ func TestIntegrationContainerIntentUnavailableStorageHasNoSuccess(t *testing.T) 
 	repo := isolatedContainerIntentRepository(t)
 	command := seedIntentFailureFixture(t, repo)
 	repo.pg.Close()
-	if result, err := repo.UpdateContainerIntent(t.Context(), "get", command); result != nil || status.Code(err) != codes.Internal {
+	if result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, command); result != nil || status.Code(err) != codes.Internal {
 		t.Fatalf("closed pool returned intent: %+v %v", result, err)
 	}
 	if result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, false); result != nil || status.Code(err) != codes.Internal {
@@ -107,24 +107,24 @@ func TestIntegrationContainerReceiptFailureRetainsHoldAndObligation(t *testing.T
 		t.Run(table, func(t *testing.T) {
 			repo := isolatedContainerIntentRepository(t)
 			req := seedIntentFailureFixture(t, repo)
-			if _, err := repo.UpdateContainerIntent(t.Context(), "reserve_create", req); err != nil {
+			if _, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationReserveCreate, req); err != nil {
 				t.Fatal(err)
 			}
 			req.ContainerID = strings.Repeat("a", 64)
-			if _, err := repo.UpdateContainerIntent(t.Context(), "observe", req); err != nil {
+			if _, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationObserve, req); err != nil {
 				t.Fatal(err)
 			}
-			intent, err := repo.UpdateContainerIntent(t.Context(), "get", req)
+			intent, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, req)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if err = repo.AttachJobContainer(t.Context(), req.JobID, req.LeaseToken, req.ContainerID, intent.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = repo.UpdateContainerIntent(t.Context(), "reserve_start", req); err != nil {
+			if _, err = repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationReserveStart, req); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = repo.UpdateContainerIntent(t.Context(), "close", req); err != nil {
+			if _, err = repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationClose, req); err != nil {
 				t.Fatal(err)
 			}
 			event, field, value := "UPDATE", "intent_id", req.IntentID
@@ -280,12 +280,12 @@ func TestIntegrationContainerIntentMissingAndUnknownOperationsFailClosed(t *test
 	}
 	bad := *req
 	bad.IntentID = "not-a-uuid"
-	if result, err := repo.UpdateContainerIntent(t.Context(), "get", &bad); result != nil || status.Code(err) != codes.InvalidArgument {
+	if result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, &bad); result != nil || status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid identity became a result: %+v %v", result, err)
 	}
 	missing := *req
 	missing.IntentID = uuid.NewString()
-	if result, err := repo.UpdateContainerIntent(t.Context(), "get", &missing); result != nil || status.Code(err) != codes.NotFound {
+	if result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, &missing); result != nil || status.Code(err) != codes.NotFound {
 		t.Fatalf("missing identity became a result: %+v %v", result, err)
 	}
 }
@@ -363,21 +363,21 @@ func TestIntegrationContainerIdentityProducersAndConflicts(t *testing.T) {
 	repo.cfg.FetchLimit = 10
 	ctx := t.Context()
 	first := seedIntentFailureFixture(t, repo)
-	if _, err := repo.UpdateContainerIntent(ctx, "reserve_create", first); err != nil {
+	if _, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, first); err != nil {
 		t.Fatal(err)
 	}
 	first.ContainerID = strings.Repeat("c", 64)
-	if _, err := repo.UpdateContainerIntent(ctx, "observe", first); err != nil {
+	if _, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, first); err != nil {
 		t.Fatal(err)
 	}
-	intent, err := repo.UpdateContainerIntent(ctx, "get", first)
+	intent, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, first)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = repo.AttachJobContainer(ctx, first.JobID, first.LeaseToken, first.ContainerID, intent.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = repo.UpdateContainerIntent(ctx, "reserve_start", first); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, first); err != nil {
 		t.Fatal(err)
 	}
 	listed, err := repo.ListJobs(ctx, intent.Intent.WorkflowID, intent.Intent.UserID, "", nil)
@@ -396,17 +396,17 @@ func TestIntegrationContainerIdentityProducersAndConflicts(t *testing.T) {
 		t.Fatal("public list exposed internal provenance")
 	}
 	second := seedIntentFailureFixture(t, repo)
-	if _, err = repo.UpdateContainerIntent(ctx, "reserve_create", second); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, second); err != nil {
 		t.Fatal(err)
 	}
 	second.ContainerID = first.ContainerID
-	result, observeErr := repo.UpdateContainerIntent(ctx, "observe", second)
+	result, observeErr := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, second)
 	if observeErr == nil || result != nil {
 		t.Fatalf("cross-intent physical ID accepted: %+v %v", result, observeErr)
 	}
 	lookup := *second
 	lookup.ContainerID = ""
-	untouched, err := repo.UpdateContainerIntent(ctx, "get", &lookup)
+	untouched, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, &lookup)
 	if err != nil || untouched.Intent.ContainerID != "" {
 		t.Fatalf("failed observation changed identity: %+v %v", untouched, err)
 	}

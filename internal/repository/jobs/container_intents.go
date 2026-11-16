@@ -14,17 +14,6 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
-const (
-	intentOperationEnsure        = "ensure"
-	intentOperationGet           = "get"
-	intentOperationReserveCreate = "reserve_create"
-	intentOperationReserveStart  = "reserve_start"
-	intentOperationObserve       = "observe"
-	intentOperationClose         = "close"
-	intentOperationReport        = "report"
-	intentOperationRedrive       = "redrive"
-)
-
 const intentColumns = `
 	id::text,
 	job_id::text,
@@ -138,7 +127,7 @@ func (r *Repository) applyContainerIntent(
 	if err != nil {
 		return nil, err
 	}
-	if operation == intentOperationEnsure {
+	if operation == jobsmodel.ContainerIntentOperationEnsure {
 		if req.WorkflowGeneration != workflowGeneration {
 			return nil, status.Error(codes.Aborted, "workflow generation changed before intent creation")
 		}
@@ -160,7 +149,7 @@ func (r *Repository) applyContainerIntent(
 	if mutateErr := r.mutateContainerIntent(ctx, tx, operation, req, intent, result); mutateErr != nil {
 		return nil, mutateErr
 	}
-	if operation != intentOperationGet {
+	if operation != jobsmodel.ContainerIntentOperationGet {
 		result.Intent, err = refreshContainerIntent(ctx, tx, intent.ID)
 		if err != nil {
 			return nil, err
@@ -171,7 +160,7 @@ func (r *Repository) applyContainerIntent(
 
 func requiresJobAuthority(operation string) bool {
 	switch operation {
-	case intentOperationEnsure, intentOperationReserveCreate, intentOperationReserveStart, intentOperationClose:
+	case jobsmodel.ContainerIntentOperationEnsure, jobsmodel.ContainerIntentOperationReserveCreate, jobsmodel.ContainerIntentOperationReserveStart, jobsmodel.ContainerIntentOperationClose:
 		return true
 	default:
 		return false
@@ -184,7 +173,7 @@ func resolveContainerIntentID(
 	operation string,
 	req *jobsmodel.ContainerIntentCommand,
 ) error {
-	if req.IntentID != "" || operation == intentOperationEnsure {
+	if req.IntentID != "" || operation == jobsmodel.ContainerIntentOperationEnsure {
 		return nil
 	}
 	err := tx.QueryRow(ctx, `
@@ -245,7 +234,7 @@ FOR UPDATE`, req.JobID, req.LeaseToken, req.Attempt).Scan(&valid, &processID)
 	if err != nil {
 		return "", 0, err
 	}
-	if !valid || (terminated && operation != intentOperationClose) {
+	if !valid || (terminated && operation != jobsmodel.ContainerIntentOperationClose) {
 		return "", 0, status.Error(codes.Aborted, "container execution authority is no longer held")
 	}
 	return processID, workflowGeneration, nil
@@ -336,7 +325,7 @@ WHERE id=$1`, intent.ID, processID, req.LeaseToken, workflowGeneration).Scan(&sa
 	if err != nil {
 		return err
 	}
-	if !sameProcess && operation != intentOperationClose {
+	if !sameProcess && operation != jobsmodel.ContainerIntentOperationClose {
 		return status.Error(codes.Aborted, "container authority changed since intent creation")
 	}
 	return nil
@@ -352,17 +341,17 @@ func (r *Repository) mutateContainerIntent(
 ) error {
 	var err error
 	switch operation {
-	case intentOperationEnsure, intentOperationGet:
+	case jobsmodel.ContainerIntentOperationEnsure, jobsmodel.ContainerIntentOperationGet:
 		err = observeIntentContainer(ctx, tx, intent, req)
-	case intentOperationReserveCreate, intentOperationReserveStart:
+	case jobsmodel.ContainerIntentOperationReserveCreate, jobsmodel.ContainerIntentOperationReserveStart:
 		result.Granted, err = reserveContainerIntent(ctx, tx, operation, intent, req)
-	case intentOperationObserve:
+	case jobsmodel.ContainerIntentOperationObserve:
 		err = recordContainerObservation(ctx, tx, intent, req)
-	case intentOperationClose:
+	case jobsmodel.ContainerIntentOperationClose:
 		err = closeContainerIntent(ctx, tx, intent, req)
-	case intentOperationReport:
+	case jobsmodel.ContainerIntentOperationReport:
 		err = reportContainerInspection(ctx, tx, intent, req)
-	case intentOperationRedrive:
+	case jobsmodel.ContainerIntentOperationRedrive:
 		err = r.redriveContainerIntent(ctx, tx, intent, req)
 	default:
 		return status.Error(codes.InvalidArgument, "unknown container intent operation")
@@ -413,7 +402,7 @@ func reserveContainerIntent(
 		return false, nil
 	}
 	column := "create_reserved_at"
-	if operation == intentOperationReserveStart {
+	if operation == jobsmodel.ContainerIntentOperationReserveStart {
 		column = "start_reserved_at"
 		if err := validateStartReservation(ctx, tx, intent, req); err != nil {
 			return false, err
@@ -427,7 +416,7 @@ WHERE id=$1 AND `+column+` IS NULL AND closed_at IS NULL`, intent.ID)
 		return false, err
 	}
 	granted := ct.RowsAffected() == 1
-	if operation == intentOperationReserveStart && granted {
+	if operation == jobsmodel.ContainerIntentOperationReserveStart && granted {
 		_, err = tx.Exec(ctx, `
 INSERT INTO runtime_capacity_holds(
   intent_id,job_id,attempt,container_id,runtime_node_id,runtime_instance
@@ -569,13 +558,13 @@ UPDATE container_creation_intents
 SET inspection_token=NULL,
   inspection_until=NULL,
   last_inspection_at=clock_timestamp() AT TIME ZONE 'utc',
-  inspection_errors=CASE WHEN $2='ERROR' THEN LEAST(3,inspection_errors+1) WHEN $2='INTERRUPTED' THEN inspection_errors ELSE 0 END,
-  quarantined=($2='ERROR' AND inspection_errors+1>=3),
-  inspection_error_code=CASE WHEN $2='ERROR' THEN $3 WHEN $2='INTERRUPTED' THEN inspection_error_code ELSE '' END,
-  inspection_error_message=CASE WHEN $2='ERROR' THEN $4 WHEN $2='INTERRUPTED' THEN inspection_error_message ELSE '' END,
+  inspection_errors=CASE WHEN $2=$5::text THEN LEAST(3,inspection_errors+1) WHEN $2=$6::text THEN inspection_errors ELSE 0 END,
+  quarantined=($2=$5::text AND inspection_errors+1>=3),
+  inspection_error_code=CASE WHEN $2=$5::text THEN $3 WHEN $2=$6::text THEN inspection_error_code ELSE '' END,
+  inspection_error_message=CASE WHEN $2=$5::text THEN $4 WHEN $2=$6::text THEN inspection_error_message ELSE '' END,
   next_inspection_at=(clock_timestamp() AT TIME ZONE 'utc')+
-    (CASE WHEN $2='ERROR' THEN LEAST(300,15*power(2,inspection_errors)) WHEN $2='INTERRUPTED' THEN 15 ELSE 300 END + random()*5)*interval '1 second'
-WHERE id=$1`, intent.ID, req.Outcome, req.ErrorCode, truncateDiagnostic(req.ErrorMessage))
+    (CASE WHEN $2=$5::text THEN LEAST(300,15*power(2,inspection_errors)) WHEN $2=$6::text THEN 15 ELSE 300 END + random()*5)*interval '1 second'
+WHERE id=$1`, intent.ID, req.Outcome, req.ErrorCode, truncateDiagnostic(req.ErrorMessage), jobsmodel.ContainerInspectionError, jobsmodel.ContainerInspectionInterrupted)
 	return err
 }
 

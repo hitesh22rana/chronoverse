@@ -21,14 +21,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 const (
@@ -43,7 +42,15 @@ const (
 type Repository interface {
 	UpdateContainerIntent(context.Context, string, *jobsmodel.ContainerIntentCommand) (*jobsmodel.ContainerIntentResult, error)
 	ListContainerIntents(context.Context, *jobsmodel.ContainerIntentCommand, bool) ([]*jobsmodel.ContainerIntent, error)
-	UpdateContainerCleanup(ctx context.Context, operation string, identity jobsmodel.CleanupIdentity, generation int64, token, errorCode string, interrupted bool) (*jobsmodel.CleanupAttempt, error)
+	UpdateContainerCleanup(
+		ctx context.Context,
+		operation string,
+		identity jobsmodel.CleanupIdentity,
+		generation int64,
+		token, errorCode string,
+		interrupted bool,
+		redrive jobsmodel.CleanupRedrive,
+	) (*jobsmodel.CleanupAttempt, error)
 	GetContainerCleanupReceipt(ctx context.Context, identity jobsmodel.CleanupIdentity) (bool, error)
 	RecordContainerCleanupReceipt(ctx context.Context, identity jobsmodel.CleanupIdentity) error
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)

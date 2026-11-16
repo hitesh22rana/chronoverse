@@ -250,27 +250,27 @@ func (c *durableJobsClient) updateContainerIntent(
 }
 
 func (c *durableJobsClient) EnsureContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "ensure", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 }
 
 func (c *durableJobsClient) GetContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "get", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, req)
 }
 
 func (c *durableJobsClient) ReserveContainerCreate(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "reserve_create", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, req)
 }
 
 func (c *durableJobsClient) ObserveContainer(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "observe", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, req)
 }
 
 func (c *durableJobsClient) ReserveContainerStart(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "reserve_start", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, req)
 }
 
 func (c *durableJobsClient) CloseContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
-	return c.updateContainerIntent(ctx, "close", req)
+	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req)
 }
 
 // AttachJobContainer is unreachable: claimed-run fixtures execute heartbeats,

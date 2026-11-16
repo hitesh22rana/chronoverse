@@ -711,13 +711,60 @@ WHERE cleanup_state IS NOT NULL AND cleanup_state <> 'COMPLETED'
 ORDER BY cleanup_failed_at NULLS LAST, created_at;
 ```
 
+Jobs-service exports these gauges from committed cleanup state, with a
+five-second collection deadline and no job, container, actor or runtime labels:
+
+| Metric | Meaning |
+| --- | --- |
+| `chronoverse.container_cleanup.outstanding` | Unfinished cleanup rows, including quarantined work and failed publication |
+| `chronoverse.container_cleanup.quarantined` | Current execution quarantines requiring repair/redrive |
+| `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose publication is `DEAD` |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup; active cleanup leases, future cleanup backoff and quarantined work are excluded |
+
+These are backlog gauges, not delivery counters: duplicate records and worker or
+exporter restarts do not create additional work. Completion removes the row from
+all four measurements. Collection failure omits samples rather than reporting a
+healthy zero; alert on telemetry loss as well. Each jobs-service replica reads the
+same database totals, so use the maximum across replicas, not their sum.
+
+Alert on sustained nonzero quarantine or publication-dead counts. Alert on oldest
+due age exceeding the normal delivery-latency budget; five minutes sustained for
+five minutes is an initial example to tune against the deployment's latency.
+Outstanding count alone is not a failure. Use the query above to identify affected
+work and distinguish backoff, a live lease, publication failure and quarantine.
+
 Repair the runtime/configuration issue, then call the internal jobs-service RPC
 with an admin token for the jobs-service audience and the observed generation:
 
 ```sh
 grpcurl -H "authorization: Bearer $JOBS_ADMIN_TOKEN" \
-  -d '{"job_id":"<job UUID>","container_id":"<container ID>","generation":"1"}' \
+  -d '{
+    "job_id":"<job UUID>",
+    "container_id":"<container ID>",
+    "runtime_instance":"<original daemon ID>",
+    "intent_id":"<intent UUID>",
+    "generation":"1",
+    "reason":"original daemon connectivity restored"
+  }' \
   "$JOBS_SERVICE_ADDRESS" jobs.JobsService/RedriveContainerCleanup
+```
+
+The repair reason is required (maximum 2048 bytes). The audit actor comes only
+from the validated admin JWT subject, never from a request field or metadata.
+A shared service principal identifies that credential, not the individual human
+using it. Use distinct authenticated principals when individual attribution is
+required. Each accepted generation transition writes its actor, reason, expected
+and new generation, immutable cleanup identity and database timestamp in the same
+transaction as requeueing. A failed transaction writes neither change; retrying
+an old generation does not create a second audit. History survives source deletion
+and outbox pruning, without an automatic expiry policy:
+
+```sql
+SELECT job_id, container_id, runtime_instance, intent_id,
+       expected_generation, generation, actor, reason, created_at
+FROM container_cleanup_redrives
+ORDER BY created_at DESC, event_key, generation
+LIMIT 100;
 ```
 
 Use the deployment's TLS credentials when connecting. Redrive increments the

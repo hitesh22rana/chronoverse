@@ -32,7 +32,7 @@ func TestContainerIntentAdmissionRequiresExecutionPrincipal(t *testing.T) {
 			service := jobsservice.New(validator.New(), repo, nil)
 			ctx := auth.WithSubject(auth.WithRole(t.Context(), tc.role), tc.subject)
 			if tc.want == codes.OK {
-				repo.EXPECT().UpdateContainerIntent(gomock.Any(), "ensure", gomock.Any()).
+				repo.EXPECT().UpdateContainerIntent(gomock.Any(), jobsmodel.ContainerIntentOperationEnsure, gomock.Any()).
 					DoAndReturn(func(_ context.Context, _ string, cmd *jobsmodel.ContainerIntentCommand) (*jobsmodel.ContainerIntentResult, error) {
 						if cmd.WorkflowGeneration != 1 || cmd.RuntimeInstance != "daemon-original" || cmd.LeaseToken != "owned-lease" {
 							t.Fatalf("lost authority evidence: %+v", cmd)
@@ -55,7 +55,7 @@ func TestContainerIntentRedriveAuditsValidatedPrincipal(t *testing.T) {
 	repo := jobsmock.NewMockRepository(gomock.NewController(t))
 	service := jobsservice.New(validator.New(), repo, nil)
 	ctx := auth.WithSubject(auth.WithRole(t.Context(), auth.RoleAdmin.String()), "operations/alice")
-	repo.EXPECT().UpdateContainerIntent(gomock.Any(), "redrive", gomock.Any()).
+	repo.EXPECT().UpdateContainerIntent(gomock.Any(), jobsmodel.ContainerIntentOperationRedrive, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ string, cmd *jobsmodel.ContainerIntentCommand) (*jobsmodel.ContainerIntentResult, error) {
 			if cmd.Actor != "operations/alice" || cmd.Generation != 3 || cmd.Reason != "original runtime restored" {
 				t.Fatalf("untrusted/lost redrive evidence: %+v", cmd)

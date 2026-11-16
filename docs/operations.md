@@ -516,11 +516,107 @@ or daemon is unavailable. If PostgreSQL is unavailable, runtime-agent exits and
 the existing runtime heartbeat TTL controls when the last `READY` row becomes
 ineligible.
 
+### Container Creation and Reconciliation
+
+Container execution persists an immutable intent before sending Docker Create.
+Each attempt has its own name and original runtime instance. Create and Start
+permissions are single-use: a lost permission response does not grant another
+transmission. The container is observed and attached before Start, and Start
+always targets its full immutable ID. Both Docker proxy deployments route these
+mutations through a backend that does not retry accepted requests.
+
+A Create timeout is an unknown outcome, not proof that no container exists.
+Execution workers resolve the intent name using verified ownership labels and
+persist each observed ID. Closed intents remain discoverable after job, workflow
+and owner deletion. A later materialization is cleanup-only and receives its own
+immutable cleanup obligation; a receipt for another ID does not cover it.
+
+Expired-lease recovery never completes a `created` container from its zero exit
+code. It cleans that object and applies system recovery. Only an observed `exited`
+container with a committed Start reservation can settle from its exit code and
+retained logs. An infrastructure Create fault retains its original diagnostic
+and uses the system retry budget; a typed invalid workload remains a user failure.
+Network repair uses a new attempt rather than resending Create for the same intent.
+Intent/grant/observation and attachment RPCs each have a five-second deadline;
+Create and Start mutation I/O are capped at thirty seconds. These budgets do not
+shorten the workload timeout or prove that a timed-out daemon mutation did not run.
+
+A workflow cannot admit another container job while a prior Start-reserved ID
+lacks original-instance removal evidence, even if the prior job is terminal.
+The scheduler defers blocked jobs without spending execution attempts or creating
+repeated dispatches. Runtime occupancy includes durable unresolved capacity holds;
+heartbeats cannot erase them, and duplicate receipts cannot release capacity twice.
+HTTP workflows and unrelated workflow lifecycle events remain independent.
+
+Discovery has one reserved worker, separate from expired-lease recovery. Each
+recovery cycle processes at most ten discovery items, bounded by
+`EXECUTION_WORKER_RECOVERY_BATCH_SIZE`. Each claim is obtained immediately before
+its inspection, with a 45-second ownership lease. Inspection work has a 30-second
+operation budget and failure reporting a detached five-second budget; daemon
+identity reads are capped at five seconds. Healthy absence reschedules discovery
+after five minutes with jitter. Inspection errors back off and quarantine after
+three consecutive reported failures. Worker shutdown releases the inspection lease
+without spending or resetting that budget; repeated interruptions can postpone
+discovery indefinitely. Redrive does not reopen execution authority.
+
+Use the internal-admin `ListContainerIntents` and `GetContainerIntent` RPCs to
+inspect original routing, image reference, creation outcome, inspection error,
+next due time, quarantine and capacity holds. `RedriveContainerIntent` requires
+the expected inspection generation and a repair reason. Jobs-service records
+the authenticated principal and generation transition in
+`container_intent_redrives`; no caller-supplied actor is trusted. Never use SQL
+to manufacture a receipt or clear a hold.
+
+Monitor `chronoverse.container_intents.discovery_due`,
+`chronoverse.container_intents.quarantined`,
+`chronoverse.container_intents.oldest_due` (seconds) and
+`chronoverse.container_intents.capacity_holds`. These jobs-service gauges read
+persisted state with a five-second collection budget and carry no identity labels.
+Holds also exist during live execution; a nonzero hold count alone is not a failure.
+Alert on quarantine and overdue inspection, and investigate holds that outlive their
+execution. Collection failure
+omits the sample rather than reporting a false zero. The following queries provide
+per-runtime diagnosis without secret-bearing request data:
+
+```sql
+SELECT quarantined, count(*) AS intents,
+       min(next_inspection_at) AS oldest_due
+FROM container_creation_intents
+WHERE closed_at IS NOT NULL
+GROUP BY quarantined;
+
+SELECT runtime_node_id, runtime_instance, count(*) AS held_slots
+FROM runtime_capacity_holds
+WHERE released_at IS NULL
+GROUP BY runtime_node_id, runtime_instance;
+
+SELECT intent_id, expected_generation, generation, actor, reason, created_at
+FROM container_intent_redrives
+ORDER BY created_at DESC
+LIMIT 100;
+```
+
+Quarantine requires diagnosis and repair before redrive. Confirm the original
+runtime is reachable, its instance identity matches, and the cleanup role can
+read `/info` (including versioned API paths). That read exposes privileged daemon
+metadata; workflow workers still cannot list or inspect containers or start work.
+An identity mismatch or denied identity read cannot produce a usable receipt.
+
+If the original runtime is permanently lost, admission and held capacity can
+remain blocked indefinitely. There is no force-run or destroyed-runtime
+attestation bypass. Restore the original instance and establish physical absence,
+or design and review an explicit retirement procedure before releasing evidence.
+Do not age out discovery tombstones: a prior granted Create can arrive after an
+earlier absence observation. A previously granted Start can also arrive after
+cancellation while the runtime is unreachable; only completed full-ID removal
+closes that execution path. Runtime identity checks assume a stable authenticated
+binding and do not fence concurrently live cloned daemon identities.
+
 ### Durable Container Cleanup
 
 Job terminal transitions and retry detachment atomically enqueue an immutable
-`CONTAINER_CLEANUP` outbox event containing the container ID, runtime routing,
-attempt and log-retention policy. Workflow deletion preserves these snapshots
+`CONTAINER_CLEANUP` outbox event containing verified materialization/intent identity,
+original runtime instance and routing, attempt and log-retention policy. Workflow deletion preserves these snapshots
 before cascading job deletion. Cleanup does not require the workflow or job row
 to remain present, and repeated events target the original container ID.
 
@@ -529,12 +625,12 @@ attempt has a three-minute deadline, including the existing two-minute replay
 budget. Replay failures preserve the container for retry. Failed attempts remain
 uncommitted until completion or durable quarantine; a restart resumes from
 Kafka with the persisted execution budget. Removal in progress remains retryable;
-an already absent container is a successful cleanup. Executor inline removal is best effort with a detached
+absence on the verified original runtime is successful cleanup. Executor inline removal is best effort with a detached
 ten-second deadline; the durable event remains responsible for recovery if that
 attempt fails or the executor exits after settlement.
 
-Jobs-service stores a durable completion receipt for each exact job/container
-pair after Docker confirms removal or absence. Workflow cleanup and executor
+Jobs-service stores a durable completion receipt for each exact job/container/runtime-instance
+identity after Docker confirms removal or absence on the original daemon. Workflow cleanup and executor
 inline cleanup check receipts before contacting Docker and record completion
 after removal. A receipt read or write failure is a cleanup failure, not an
 acknowledgement. These internal RPCs require the jobs-service admin role. Attachment and receipt
@@ -693,7 +789,8 @@ cleanup budgets.
 Retry contract: `SYSTEM_RETRY_LIMIT=3` with `SYSTEM_RETRY_BACKOFF=30s`
 (`30s, 60s, 120s`, capped at `240s`) applies only to infrastructure codes
 (`Aborted`, `Canceled`, `Internal`, `ResourceExhausted`, `Unavailable`,
-`DeadlineExceeded`), including transient Docker ping failures. Unexpected heartbeat endpoint HTTP
+`DeadlineExceeded`) and explicitly tagged infrastructure failures that retain
+another diagnostic code, including transient Docker ping failures. Unexpected heartbeat endpoint HTTP
 statuses, including `429`, remain `USER` `UNEXPECTED_STATUS_CODE` terminal
 failures without retry: the probed endpoint throttling us is endpoint behavior,
 not platform infrastructure. After exhaustion the

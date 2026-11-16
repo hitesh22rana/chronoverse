@@ -4,12 +4,14 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -147,5 +149,86 @@ func TestContainerCleanupRejectsMutableNamesAndIDPrefixes(t *testing.T) {
 		if err := workflow.Terminate(t.Context(), id); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("Terminate(%q): %v", id, err)
 		}
+	}
+}
+
+//nolint:gocyclo // One HTTP matrix checks identity and mutation failures without duplicating daemon setup.
+func TestLifecycleRejectsUnknownRuntimeIdentityAndMalformedCreateSuccess(t *testing.T) {
+	for _, scenario := range []string{"missing identity", "identity unavailable", "invalid request", "health unavailable", "missing full ID", "canceled identity"} {
+		t.Run(scenario, func(t *testing.T) {
+			creates := 0
+			daemon := newNetworkLifecycleTestDaemon(t, true)
+			workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/info"):
+					if scenario == "identity unavailable" {
+						w.WriteHeader(http.StatusInternalServerError)
+						writeDockerTestResponse(t, w, `{"message":"info unavailable"}`)
+					} else {
+						writeDockerTestResponse(t, w, `{"ID":""}`)
+					}
+				case strings.HasSuffix(r.URL.Path, "/_ping") && scenario == "health unavailable":
+					w.WriteHeader(http.StatusInternalServerError)
+				case strings.HasSuffix(r.URL.Path, "/containers/create"):
+					creates++
+					w.WriteHeader(http.StatusCreated)
+					writeDockerTestResponse(t, w, `{"Id":"truncated-id"}`)
+				default:
+					daemon.ServeHTTP(w, r)
+				}
+			}))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if scenario == "canceled identity" {
+				cancel()
+			}
+			if scenario == "missing identity" || scenario == "identity unavailable" || scenario == "canceled identity" {
+				id, err := workflow.RuntimeInstance(ctx)
+				want := codes.Unavailable
+				if scenario == "canceled identity" {
+					want = codes.Canceled
+				}
+				if id != "" || status.Code(err) != want || creates != 0 {
+					t.Fatalf("unproven identity accepted: id=%q creates=%d error=%v", id, creates, err)
+				}
+				return
+			}
+			req := networkCreateRequest()
+			if scenario == "invalid request" {
+				req.IntentID = ""
+			}
+			id, err := workflow.Create(ctx, req)
+			wantCreates := 0
+			if scenario == "missing full ID" {
+				wantCreates = 1
+			}
+			if id != "" || err == nil || creates != wantCreates {
+				t.Fatalf("malformed Create accepted/replayed: id=%q creates=%d error=%v", id, creates, err)
+			}
+			if scenario == "missing full ID" && CreationOutcome(err) != "UNKNOWN" {
+				t.Fatalf("truncated identity was treated as definite rejection: %v", err)
+			}
+		})
+	}
+}
+
+func TestRuntimeInstanceConnectionFailureRemainsUncertain(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err = listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cli, err := client.New(client.WithHost("http://"+address), client.WithAPIVersion("1.51"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cli.Close()
+	workflow := &DockerWorkflow{Client: cli}
+	instance, err := workflow.RuntimeInstance(t.Context())
+	if instance != "" || status.Code(err) != codes.Unavailable || CreationOutcome(err) != "UNKNOWN" || t.Context().Err() != nil {
+		t.Fatalf("unreachable original daemon became usable identity: %q %v", instance, err)
 	}
 }

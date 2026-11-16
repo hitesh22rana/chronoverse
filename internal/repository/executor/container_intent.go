@@ -163,10 +163,9 @@ func (r *Repository) prepareContainerIntent(
 	if err != nil {
 		return nil, nil, terminalreason.Wrap(terminalreason.SystemError, err)
 	}
-	hash, err := idempotency.HashCanonical(map[string]any{"image": request.Image, "cmd": request.Cmd, "env": request.Env, "timeout": int64(request.Timeout), "generation": workflow.GetGeneration()})
-	if err != nil {
-		return nil, nil, status.Errorf(codes.Internal, "fingerprint container request: %v", err)
-	}
+	// The fingerprint contains only strings, string slices and integers.
+	//nolint:errcheck // These concrete values cannot fail JSON encoding.
+	hash, _ := idempotency.HashCanonical(map[string]any{"image": request.Image, "cmd": request.Cmd, "env": request.Env, "timeout": int64(request.Timeout), "generation": workflow.GetGeneration()})
 	command := &jobspb.ContainerIntentCommand{JobId: jobID, LeaseToken: leaseToken, Attempt: attempt, WorkflowGeneration: workflow.GetGeneration(), RuntimeInstance: instance, RequestHash: hash}
 	ensured, err := callContainerIntent(ctx, r.svc.Jobs.EnsureContainerIntent, command)
 	if err != nil {

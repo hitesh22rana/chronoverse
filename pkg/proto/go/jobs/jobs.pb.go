@@ -3106,6 +3106,9 @@ func (*RecordContainerCleanupReceiptResponse) Descriptor() ([]byte, []int) {
 }
 
 // Cleanup generations are independent of workflow generations.
+// Every operation requires immutable job/container/runtime-instance/intent identity.
+// Redrive additionally requires a repair reason; its audit actor is the validated
+// admin JWT subject, never a caller-supplied field.
 type ContainerCleanupAttemptRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -3116,6 +3119,7 @@ type ContainerCleanupAttemptRequest struct {
 	Interrupted     bool                   `protobuf:"varint,6,opt,name=interrupted,proto3" json:"interrupted,omitempty"`             // Caller cancellation returns the attempt without spending its budget.
 	RuntimeInstance string                 `protobuf:"bytes,7,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
 	IntentId        string                 `protobuf:"bytes,8,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	Reason          string                 `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"` // Redrive only: required operator repair reason (maximum 2048 bytes).
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -3202,6 +3206,13 @@ func (x *ContainerCleanupAttemptRequest) GetRuntimeInstance() string {
 func (x *ContainerCleanupAttemptRequest) GetIntentId() string {
 	if x != nil {
 		return x.IntentId
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -4082,7 +4093,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\tintent_id\x18\x04 \x01(\tR\bintentId\"B\n" +
 	"\"GetContainerCleanupReceiptResponse\x12\x1c\n" +
 	"\tcompleted\x18\x01 \x01(\bR\tcompleted\"'\n" +
-	"%RecordContainerCleanupReceiptResponse\"\x99\x02\n" +
+	"%RecordContainerCleanupReceiptResponse\"\xb1\x02\n" +
 	"\x1eContainerCleanupAttemptRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x1e\n" +
@@ -4094,7 +4105,8 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"error_code\x18\x05 \x01(\tR\terrorCode\x12 \n" +
 	"\vinterrupted\x18\x06 \x01(\bR\vinterrupted\x12)\n" +
 	"\x10runtime_instance\x18\a \x01(\tR\x0fruntimeInstance\x12\x1b\n" +
-	"\tintent_id\x18\b \x01(\tR\bintentId\"\x89\x01\n" +
+	"\tintent_id\x18\b \x01(\tR\bintentId\x12\x16\n" +
+	"\x06reason\x18\t \x01(\tR\x06reason\"\x89\x01\n" +
 	"\x1fContainerCleanupAttemptResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1e\n" +
 	"\n" +

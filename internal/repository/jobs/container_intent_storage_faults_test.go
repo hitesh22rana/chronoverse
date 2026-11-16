@@ -64,14 +64,14 @@ func TestContainerIntentStorageFailuresDoNotBecomePermission(t *testing.T) {
 	}{
 		{"lookup", []claimRow{{values: []any{"intent"}}}, 0, func(_ *Repository, tx *claimTx, _ *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
 			c.IntentID = ""
-			return resolveContainerIntentID(t.Context(), tx, "get", c)
+			return resolveContainerIntentID(t.Context(), tx, jobsmodel.ContainerIntentOperationGet, c)
 		}},
 		{
 			"authority",
 			[]claimRow{{values: []any{"workflow"}}, {values: []any{false, int64(1)}}, {values: []any{true, "process"}}},
 			0,
 			func(r *Repository, tx *claimTx, _ *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
-				_, _, err := r.lockContainerIntentAuthority(t.Context(), tx, "reserve_create", c)
+				_, _, err := r.lockContainerIntentAuthority(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveCreate, c)
 				return err
 			},
 		},
@@ -83,13 +83,13 @@ func TestContainerIntentStorageFailuresDoNotBecomePermission(t *testing.T) {
 			return err
 		}},
 		{"original authority", []claimRow{{values: []any{true}}}, 0, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
-			return validateOriginalAuthority(t.Context(), tx, "reserve_create", i, c, "process", 1)
+			return validateOriginalAuthority(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveCreate, i, c, "process", 1)
 		}},
 		{"materialization lookup", []claimRow{{values: []any{true}}}, 0, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
 			return observeIntentContainer(t.Context(), tx, i, c)
 		}},
 		{"create grant", nil, 1, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
-			granted, err := reserveContainerIntent(t.Context(), tx, "reserve_create", i, c)
+			granted, err := reserveContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveCreate, i, c)
 			if err != nil && granted {
 				t.Fatal("failed grant exposed permission")
 			}
@@ -100,7 +100,7 @@ func TestContainerIntentStorageFailuresDoNotBecomePermission(t *testing.T) {
 			[]claimRow{{values: []any{true}}, {values: []any{false}}, {values: []any{false}}},
 			2,
 			func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
-				granted, err := reserveContainerIntent(t.Context(), tx, "reserve_start", i, c)
+				granted, err := reserveContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveStart, i, c)
 				if err != nil && granted {
 					t.Fatal("failed Start exposed permission")
 				}
@@ -115,13 +115,13 @@ func TestContainerIntentStorageFailuresDoNotBecomePermission(t *testing.T) {
 			i.Closed = true
 			return recordContainerObservation(t.Context(), tx, i, c)
 		}},
-		{"close", nil, 2, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
+		{jobsmodel.ContainerIntentOperationClose, nil, 2, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
 			return closeContainerIntent(t.Context(), tx, i, c)
 		}},
 		{"inspection report", []claimRow{{values: []any{true}}}, 1, func(_ *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
 			return reportContainerInspection(t.Context(), tx, i, c)
 		}},
-		{"redrive", []claimRow{{values: []any{false}}}, 2, func(r *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
+		{jobsmodel.ContainerIntentOperationRedrive, []claimRow{{values: []any{false}}}, 2, func(r *Repository, tx *claimTx, i *jobsmodel.ContainerIntent, c *jobsmodel.ContainerIntentCommand) error {
 			return r.redriveContainerIntent(t.Context(), tx, i, c)
 		}},
 	} {
@@ -165,7 +165,7 @@ func TestContainerStartRejectsUnattachedOrConflictingMaterializations(t *testing
 				tc.change(i, c)
 			}
 			tx := &claimTx{t: t, rows: tc.rows}
-			granted, err := reserveContainerIntent(t.Context(), tx, "reserve_start", i, c)
+			granted, err := reserveContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveStart, i, c)
 			if granted || status.Code(err) != tc.code || tx.execs != 0 {
 				t.Fatalf("invalid Start mutated authority: grant=%v writes=%d error=%v", granted, tx.execs, err)
 			}
@@ -192,10 +192,10 @@ func TestContainerIntentIdentityRefusalsDoNotNeedDatabaseMutation(t *testing.T) 
 			}
 		})
 	}
-	if err := validateOriginalAuthority(t.Context(), nil, "reserve_create", i, c, "", 1); status.Code(err) != codes.Aborted {
+	if err := validateOriginalAuthority(t.Context(), nil, jobsmodel.ContainerIntentOperationReserveCreate, i, c, "", 1); status.Code(err) != codes.Aborted {
 		t.Fatalf("missing process minted permission: %v", err)
 	}
-	if _, err := (&Repository{}).UpdateContainerIntent(t.Context(), "ensure", nil); status.Code(err) != codes.InvalidArgument {
+	if _, err := (&Repository{}).UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationEnsure, nil); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("nil mutation accepted: %v", err)
 	}
 	if _, err := (&Repository{}).ListContainerIntents(t.Context(), nil, false); status.Code(err) != codes.InvalidArgument {
@@ -222,7 +222,7 @@ func TestContainerIntentLookupAndInspectionRefuseMissingProof(t *testing.T) {
 		i, c := intentStorageFixture()
 		c.IntentID = ""
 		tx := &claimTx{t: t, rows: []claimRow{{err: pgx.ErrNoRows}}}
-		if err := resolveContainerIntentID(t.Context(), tx, "get", c); status.Code(err) != codes.NotFound {
+		if err := resolveContainerIntentID(t.Context(), tx, jobsmodel.ContainerIntentOperationGet, c); status.Code(err) != codes.NotFound {
 			t.Fatalf("missing identity accepted: %v", err)
 		}
 		_ = i
@@ -236,7 +236,7 @@ func TestContainerIntentLookupAndInspectionRefuseMissingProof(t *testing.T) {
 	t.Run("deleted job authority", func(t *testing.T) {
 		_, c := intentStorageFixture()
 		tx := &claimTx{t: t, rows: []claimRow{{err: pgx.ErrNoRows}}}
-		if _, _, err := (&Repository{}).lockContainerIntentAuthority(t.Context(), tx, "reserve_create", c); status.Code(err) != codes.Aborted {
+		if _, _, err := (&Repository{}).lockContainerIntentAuthority(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveCreate, c); status.Code(err) != codes.Aborted {
 			t.Fatalf("deleted job granted authority: %v", err)
 		}
 	})
@@ -296,7 +296,7 @@ func TestContainerIntentDispatchDoesNotExposePartiallyLoadedOrWrittenAuthority(t
 			req := *base
 			tx := &claimTx{t: t, rows: append([]claimRow(nil), rows...), execTags: []string{"UPDATE 1"}}
 			tx.rows[index].err = failure
-			result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, "reserve_create", &req)
+			result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationReserveCreate, &req)
 			if err == nil || result != nil || !strings.Contains(err.Error(), failure.Error()) {
 				t.Fatalf("partial authority escaped after failed read: %+v %v", result, err)
 			}
@@ -306,7 +306,7 @@ func TestContainerIntentDispatchDoesNotExposePartiallyLoadedOrWrittenAuthority(t
 		req := *base
 		req.IntentID = ""
 		tx := &claimTx{t: t, rows: []claimRow{{err: failure}}}
-		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, "get", &req); result != nil || !errors.Is(err, failure) {
+		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationGet, &req); result != nil || !errors.Is(err, failure) {
 			t.Fatalf("unresolved identity escaped: %+v %v", result, err)
 		}
 	})
@@ -314,14 +314,14 @@ func TestContainerIntentDispatchDoesNotExposePartiallyLoadedOrWrittenAuthority(t
 		req := *base
 		req.WorkflowGeneration = 2
 		tx := &claimTx{t: t, rows: rows[:3]}
-		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, "ensure", &req); result != nil || status.Code(err) != codes.Aborted || tx.execs != 0 {
+		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationEnsure, &req); result != nil || status.Code(err) != codes.Aborted || tx.execs != 0 {
 			t.Fatalf("stale snapshot wrote intent: %+v %v", result, err)
 		}
 	})
 	t.Run("failed durable intent insert", func(t *testing.T) {
 		req := *base
 		tx := &claimTx{t: t, rows: rows[:3], execTags: []string{"INSERT 0 0"}, execErrors: []error{failure}}
-		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, "ensure", &req); result != nil || status.Code(err) != codes.Internal {
+		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationEnsure, &req); result != nil || status.Code(err) != codes.Internal {
 			t.Fatalf("failed durable identity escaped: %+v %v", result, err)
 		}
 	})
@@ -329,7 +329,7 @@ func TestContainerIntentDispatchDoesNotExposePartiallyLoadedOrWrittenAuthority(t
 		req := *base
 		req.JobID = "different-job"
 		tx := &claimTx{t: t, rows: []claimRow{intentStorageRow(i)}}
-		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, "get", &req); result != nil || status.Code(err) != codes.InvalidArgument {
+		if result, err := (&Repository{}).applyContainerIntent(t.Context(), tx, jobsmodel.ContainerIntentOperationGet, &req); result != nil || status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("mismatched identity returned: %+v %v", result, err)
 		}
 	})
@@ -351,7 +351,10 @@ func TestCleanupAttemptRequiresCompletePhysicalIdentity(t *testing.T) {
 		{JobID: "job", RuntimeInstance: "daemon", IntentID: "intent"},
 	} {
 		// No database is installed: invalid proof must be rejected before storage.
-		result, err := (&Repository{}).UpdateContainerCleanup(t.Context(), "begin", identity, 1, "", "", false)
+		result, err := (&Repository{}).UpdateContainerCleanup(t.Context(), jobsmodel.CleanupOperationBegin, identity, 1, "", "", false, jobsmodel.CleanupRedrive{
+			Actor:  "test/operator",
+			Reason: "runtime restored",
+		})
 		if result != nil || status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("incomplete cleanup identity accepted: identity=%v result=%+v error=%v", identity, result, err)
 		}

@@ -14,11 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"golang.org/x/net/http/httpproxy"
 	xproxy "golang.org/x/net/proxy"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
@@ -43,8 +42,10 @@ type targetResolver func(ctx context.Context, host string) ([]net.IPAddr, error)
 type proxyResolver func(*url.URL) (*url.URL, error)
 
 const (
-	httpScheme  = "http"
-	httpsScheme = "https"
+	proxySchemeSocks5  = "socks5"
+	proxySchemeSocks5h = "socks5h"
+	httpScheme         = "http"
+	httpsScheme        = "https"
 )
 
 func resolveProxyFromEnvironment(u *url.URL) (*url.URL, error) {
@@ -251,7 +252,7 @@ func proxyTunnelDialContext(
 		return func(ctx context.Context, network, _ string) (net.Conn, error) {
 			return dialHTTPProxyTunnel(ctx, network, proxyURL, proxyAddress, targetAddress, dialer)
 		}, nil
-	case "socks5", "socks5h":
+	case proxySchemeSocks5, proxySchemeSocks5h:
 		var auth *xproxy.Auth
 		if proxyURL.User != nil {
 			password, _ := proxyURL.User.Password()
@@ -282,7 +283,7 @@ func canonicalProxyAddress(proxyURL *url.URL) (string, error) {
 		switch strings.ToLower(proxyURL.Scheme) {
 		case httpsScheme:
 			port = "443"
-		case "socks5", "socks5h":
+		case proxySchemeSocks5, proxySchemeSocks5h:
 			port = "1080"
 		case httpScheme, "":
 			port = "80"

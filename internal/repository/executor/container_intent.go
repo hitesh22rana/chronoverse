@@ -6,15 +6,15 @@ import (
 	"strconv"
 	"time"
 
+	dockercontainer "github.com/moby/moby/api/types/container"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
-
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
+	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -134,9 +134,9 @@ func (r *Repository) verifyIntentContainer(ctx context.Context, csvc ContainerSv
 		return "", err
 	}
 	if state == nil || state.ID == "" ||
-		state.Labels["chronoverse.intent_id"] != intent.GetId() ||
-		state.Labels["chronoverse.job_id"] != intent.GetJobId() ||
-		state.Labels["chronoverse.attempt"] != strconv.Itoa(int(intent.GetAttempt())) {
+		state.Labels[container.IntentIDLabel] != intent.GetId() ||
+		state.Labels[container.JobIDLabel] != intent.GetJobId() ||
+		state.Labels[container.AttemptLabel] != strconv.Itoa(int(intent.GetAttempt())) {
 		return "", status.Error(codes.Unavailable, "container ownership does not match intent; administrative repair required")
 	}
 	return state.ID, nil
@@ -191,7 +191,7 @@ func (r *Repository) createIntentContainer(
 	containerID, err := csvc.Create(mutationCtx, request)
 	cancel()
 	if err != nil {
-		if container.CreationOutcome(err) == "REJECTED" {
+		if container.CreationOutcome(err) == container.CreationOutcomeRejected {
 			return "", err
 		}
 		// Resolve a lost reply by identity; absence never proves rejection.
@@ -251,7 +251,7 @@ func verifyUnstartedContainer(ctx context.Context, csvc ContainerSvc, containerI
 	if err != nil {
 		return err
 	}
-	if state == nil || state.Running || state.Status != "created" {
+	if state == nil || state.Running || state.Status != string(dockercontainer.StateCreated) {
 		return status.Error(codes.Unavailable, "container ran before its start reservation")
 	}
 	return nil

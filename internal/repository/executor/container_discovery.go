@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
@@ -63,14 +64,14 @@ func (r *Repository) claimAndInspectContainerIntent(ctx context.Context) bool {
 func (r *Repository) inspectContainerIntent(ctx context.Context, intent *jobspb.ContainerIntent) {
 	workCtx, cancel := context.WithTimeout(ctx, containerMutationTimeout)
 	defer cancel()
-	outcome := "ABSENT"
+	outcome := jobsmodel.ContainerInspectionAbsent
 	csvc, err := r.containerSvcForEndpoint(intent.GetRuntimeNodeId(), intent.GetRuntimeEndpoint())
 	var id string
 	if err == nil {
 		id, err = r.resolveIntentContainer(workCtx, csvc, intent)
 	}
 	if err == nil && id != "" {
-		outcome = "OBSERVED"
+		outcome = jobsmodel.ContainerInspectionObserved
 		authCtx, authErr := r.withAuthorization(workCtx)
 		if authErr != nil {
 			err = authErr
@@ -94,7 +95,7 @@ func (r *Repository) inspectContainerIntent(ctx context.Context, intent *jobspb.
 	}
 	command := &jobspb.ContainerIntentCommand{IntentId: intent.GetId(), Token: intent.GetToken(), Generation: intent.GetGeneration(), Outcome: outcome}
 	if err != nil {
-		command.Outcome = "ERROR"
+		command.Outcome = jobsmodel.ContainerInspectionError
 		command.ErrorCode = status.Code(err).String()
 		if command.ErrorCode == codes.OK.String() {
 			command.ErrorCode = codes.Unavailable.String()
@@ -102,7 +103,7 @@ func (r *Repository) inspectContainerIntent(ctx context.Context, intent *jobspb.
 		command.ErrorMessage = containerDiagnostic(err)
 	}
 	if ctx.Err() != nil {
-		command.Outcome = "INTERRUPTED"
+		command.Outcome = jobsmodel.ContainerInspectionInterrupted
 	}
 	disposition, reportErr := r.svc.Jobs.ReportContainerInspection(authCtx, command)
 	if reportErr != nil {

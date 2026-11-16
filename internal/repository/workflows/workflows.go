@@ -25,6 +25,11 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
+const (
+	workflowTerminalEffectCompleted = "COMPLETED"
+	workflowTerminalEffectFailed    = "FAILED"
+)
+
 // Config represents the repository constants configuration.
 type Config struct {
 	FetchLimit int
@@ -1174,7 +1179,7 @@ func verifyCompletedTerminalEffect(ctx context.Context, tx pgx.Tx, workflowID, u
 		}
 		return status.Errorf(codes.Internal, "failed to load completed terminal-effect replay: %v", err)
 	}
-	if storedWorkflowID != workflowID || storedUserID != userID || effect != "COMPLETED" {
+	if storedWorkflowID != workflowID || storedUserID != userID || effect != workflowTerminalEffectCompleted {
 		return status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
 	}
 	return nil
@@ -1193,7 +1198,7 @@ func replayWorkflowFailureEffect(ctx context.Context, tx pgx.Tx, workflowID, use
 	if err := tx.QueryRow(ctx, query, jobID).Scan(&storedWorkflowID, &storedUserID, &effect, &storedThreshold); err != nil {
 		return false, status.Errorf(codes.Internal, "failed to fetch workflow terminal effect: %v", err)
 	}
-	if storedWorkflowID != workflowID || storedUserID != userID || effect != "FAILED" {
+	if storedWorkflowID != workflowID || storedUserID != userID || effect != workflowTerminalEffectFailed {
 		return false, status.Error(codes.AlreadyExists, "job terminal identity was used with a different effect")
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -44,3 +44,10 @@ func (r *GetUserResponse) ToProto() *userspb.GetUserResponse {
 		UpdatedAt:              r.UpdatedAt.Format(time.RFC3339Nano),
 	}
 }
+
+// Notification preferences are the persisted user-facing delivery policy.
+const (
+	NotificationPreferenceAll    = "ALL"
+	NotificationPreferenceAlerts = "ALERTS"
+	NotificationPreferenceNone   = "NONE"
+)

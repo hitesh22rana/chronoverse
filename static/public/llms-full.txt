@@ -271,7 +271,7 @@ Create and update requests require `Idempotency-Key`. Workflow state and its pub
 <doc title="Jobs" path="./docs/concepts/jobs/">
 # Jobs
 
-A job is one execution attempt for a workflow. Jobs can be created by the scheduling worker or by an authenticated manual scheduling request.
+A job is scheduled work for a workflow and may have multiple execution attempts under the system retry policy. Jobs can be created by the scheduling worker or by an authenticated manual scheduling request.
 
 ## Triggers
 
@@ -443,7 +443,7 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 
 ## Persistence plane
 
-- PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, and analytics.
+- PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, container intents/receipts/holds, redrive audits, and analytics.
 - ClickHouse: retained high-volume job logs.
 - Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
 - Meilisearch: retained log search.
@@ -470,6 +470,9 @@ application.
 Workers request state transitions from domain services rather than directly inventing workflow or job state. This keeps replay and ownership rules concentrated at the domain boundary.
 
 Container execution has an additional locality invariant: a `container_id` is never enough on its own. `jobs-service` assigns a fresh `READY` runtime node during claim, persists `runtime_node_id` and a Docker endpoint snapshot on the job, and workers use that endpoint directly for execution, live logs, cleanup, and expired-lease recovery.
+Immutable intent/materialization records retain the original daemon instance after
+source deletion. Cleanup receipts and capacity release require that same instance;
+quarantine or an administrative redrive does not bypass physical proof.
 
 <SourceLink path="docs/architecture.md">Repository architecture notes</SourceLink>
 </doc>
@@ -491,7 +494,14 @@ Owns definitions, generations, build status, list filters, cleanup, termination,
 
 ## Jobs service
 
-Owns scheduling, job reads, status transitions, durable leases, recovery, retained log reads, search, downloads, and live log streams.
+Owns scheduling, job reads, status transitions, durable leases, recovery, retained
+log reads, search, downloads, and live log streams. It also owns container intent
+and materialization identity, cleanup attempt authority/receipts, physical capacity
+holds, durable cleanup metrics and administrative redrive audit. Workflow workers
+perform cleanup through jobs-service authority; they do not invent completion proof.
+
+Cleanup administration uses internal gRPC with an admin JWT and authenticated
+principal. It is not exposed through the public HTTP/OpenAPI surface.
 
 ## Notifications service
 
@@ -524,7 +534,19 @@ The scheduling worker scans due workflows, validates generation and build state,
 
 ## Job execution
 
-The execution worker consumes the job event, claims a lease, receives the runtime endpoint registered by `runtime-agent`, ensures the resolved image on that runtime, starts the container through the Docker proxy, attaches its container ID, renews ownership, and publishes output. Terminal state changes require the lease token.
+The execution worker consumes the job event, claims a lease and receives the
+runtime endpoint registered by `runtime-agent`. It ensures the resolved image,
+persists an immutable creation intent, obtains one Create grant, and creates the
+named/labeled container. It verifies and records the full ID and attaches it to
+the job **before** obtaining one Start grant. Start targets that immutable ID;
+lease renewal and log publication continue while execution runs. Lost mutation
+replies do not authorize another transmission. Terminal state changes require
+the lease token.
+
+Settlement, cancellation and deletion close intent authority and retain cleanup
+obligations for observed IDs. Original-instance completion receipts release the
+corresponding holds; later workflow container work remains gated while a prior
+Start-reserved ID is unresolved.
 
 ## Logs and analytics
 
@@ -600,7 +622,21 @@ Relay replicas claim pending rows with a processing lease and worker identity. A
 
 ## Cleanup
 
-Published rows remain available for a configurable retention period, then cleanup removes them in bounded batches. Dead rows are not equivalent to published rows and require operational attention.
+Ordinary published rows remain available for a configurable retention period,
+then cleanup removes them in bounded batches. Unfinished container cleanup is an
+exception: publication or execution quarantine does not prove removal, so published
+cleanup remains retained until a matching original-instance completion receipt
+exists. The relay can republish unfinished work after lost delivery or Kafka
+retention expiry without granting a fresh cleanup failure budget.
+
+Administrative cleanup redrive resets/requeues the retained row under its expected
+generation and atomically writes an authenticated actor/reason audit. Repeated
+requests with an old generation do not duplicate that transition. The audit history
+survives later outbox pruning. Publication `DEAD` and cleanup execution `QUARANTINED`
+are distinct operational signals.
+
+See [cleanup recovery](./docs/operations/recovery#container-cleanup) and
+[cleanup metrics](./docs/operations/observability#durable-cleanup-metrics).
 
 ## Scaling guidance
 
@@ -993,6 +1029,14 @@ Application routes use an encrypted session cookie. Mutating routes additionally
 
 Send `Content-Type: application/json` for JSON request bodies. SSE log streams use `text/event-stream`, and raw log downloads use `text/plain`.
 
+## Internal administration
+
+The OpenAPI reference describes public HTTP requests and responses. Cleanup
+attempts, completion receipts and administrative redrive are separate
+[internal gRPC contracts](./docs/internal/grpc-services#container-cleanup-rpcs).
+Their repair reason and audited principal are not public job fields or HTTP
+request parameters.
+
 ## Safe retries
 
 The following commands require `Idempotency-Key`:
@@ -1333,8 +1377,12 @@ permissions. Replacement execution waits for original-runtime cleanup evidence;
 runtime heartbeats retain unresolved capacity holds. Discovery continues after
 source deletion, and infrastructure faults use bounded system retries.
 
-Quarantine requires operator repair and generation-fenced redrive. Permanent
-loss of the original runtime can keep execution blocked: there is no force-run
+Quarantine requires operator repair and generation-fenced redrive. Cleanup redrive
+also requires a repair reason and records the authenticated principal, timestamp
+and generation change. Durable cleanup gauges expose quarantined or overdue work.
+See [monitoring](./docs/operations/monitoring#container-cleanup-signals) and
+[recovery](./docs/operations/recovery#container-cleanup) for the operational procedure.
+Permanent loss of the original runtime can keep execution blocked: there is no force-run
 bypass, and cleanup evidence must not be expired merely by age. Execution and
 cleanup roles need the proxy's daemon-identity read permission; workflow workers
 remain unable to list, inspect or start containers.
@@ -2352,6 +2400,46 @@ Scheduling, reads, status updates, lease claim and renewal, container attachment
 
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
+### Container cleanup RPCs
+
+These are admin-authorized internal gRPC operations, not routes in the public
+HTTP OpenAPI document. They use the messages in `proto/jobs/jobs.proto`.
+Every request identifies `job_id` and `intent_id` as UUIDs, the immutable
+`container_id`, and the original `runtime_instance`. Clients invoke named RPCs;
+the uppercase operation constants are internal dispatch values, not request fields.
+
+| RPC | Additional request / result contract |
+| --- | --- |
+| `GetContainerCleanupReceipt` | Returns whether that exact identity has recorded completion proof |
+| `RecordContainerCleanupReceipt` | Records caller-verified original-instance removal/absence and releases only the corresponding hold |
+| `BeginContainerCleanupAttempt` | Requires a positive expected cleanup `generation`; `PROCESSING` with a token grants one attempt |
+| `FailContainerCleanupAttempt` | Requires the generation, Begin token and a nonempty, non-OK `error_code` of up to 32 bytes; `interrupted` reports caller cancellation |
+| `RedriveContainerCleanup` | Requires the generation and a nonblank `reason` of at most 2048 bytes; an accepted transition is audited with the validated JWT subject |
+
+Cleanup generations are independent of workflow generations. Attempt responses
+contain `state`, `generation`, `attempts` and `token`; audit identity/reason/time is
+persisted separately, not added to public job responses. A stale redrive returns
+`STALE` and a completed identity returns `COMPLETED`, without another requeue.
+A live cleanup lease prevents redrive.
+
+Receipt callers must confirm removal or absence on the verified original daemon
+before recording proof. Jobs-service validates stored materialization provenance
+and commits receipt/hold changes; it does not perform the Docker removal itself.
+
+The service rejects redrive without an authenticated admin subject. An actor is
+never accepted from request fields or unvalidated metadata. Audit actor values
+are limited to 256 bytes. Shared service credentials cannot provide individual
+human attribution.
+
+Jobs-service also owns creation-intent Ensure/observation/Create/Start reservation,
+discovery claim/report and admin inspection/redrive RPCs. Single-use mutation grants
+are not replayed. `RedriveContainerIntent` controls discovery inspection and has
+separate generation/audit state from cleanup execution.
+
+[Recovery examples and audit inspection](./docs/operations/recovery#container-cleanup)
+
+<SourceLink path="proto/jobs/jobs.proto">Jobs protobuf messages and RPC definitions</SourceLink>
+
 ## Notifications service
 
 Notification creation, listing, and marking records read.
@@ -2377,7 +2465,7 @@ Kafka events connect the durable state owned by services with the asynchronous w
 
 ## Topic contracts
 
-- `workflows`: build, reschedule, termination, deletion, and workflow terminal effects.
+- `workflows`: build, reschedule, termination, deletion, workflow terminal effects, and immutable container-cleanup snapshots.
 - `jobs`: dispatch and container execution work.
 - `job_logs`: deterministic retained stdout and stderr events.
 - `analytics`: workflow, job, and log aggregate inputs.
@@ -2385,6 +2473,12 @@ Kafka events connect the durable state owned by services with the asynchronous w
 ## Event identity
 
 Events carry stable identifiers or deterministic keys for replay-sensitive side effects. Workflow generation and job dispatch attempt fields provide additional stale-work protection.
+
+A container-cleanup event carries the job/full container ID, original runtime
+routing/instance and intent identity. Its cleanup generation is independent of
+workflow generation. Duplicate delivery does not create another execution budget
+or inflate cleanup backlog gauges. Administrative redrive advances the retained
+cleanup generation, leaving older reports/deliveries stale.
 
 ## Trace headers
 
@@ -2405,6 +2499,24 @@ Events are delivered at least once. Consumers must remain idempotent, preconditi
 ## PostgreSQL
 
 Stores users, workflows, jobs, runtime nodes, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
+
+### Container lifecycle records
+
+Jobs-service owns the durable container protocol in PostgreSQL:
+
+| Record | Authority / retention |
+| --- | --- |
+| `container_creation_intents` | Per-attempt name, original routing/instance, single-use grants and monotonic closure; retained for late discovery |
+| `container_materializations` | Verified immutable IDs; one daemon/container identity cannot belong to multiple intents |
+| `runtime_capacity_holds` | Unresolved Start-reserved physical capacity; released only by matching removal proof |
+| `container_cleanup_receipts` | Exact original-instance completion evidence; repeated acknowledgment cannot release capacity twice |
+| `outbox_events` cleanup fields | Execution generation, token/lease, retry budget, backoff and quarantine on the retained cleanup intent |
+| `container_cleanup_redrives` | Accepted cleanup generation changes with authenticated actor, repair reason and timestamp; survives source/outbox pruning |
+| `container_intent_redrives` | Separate audit of administrative discovery-inspection redrive |
+
+Durable-state gauges read unfinished cleanup rather than counting deliveries.
+Audit retention is separate from outbox retention. Neither elapsed age nor an
+audit record replaces physical removal proof.
 
 ## ClickHouse
 
@@ -2449,6 +2561,29 @@ Compose checks PostgreSQL with TLS `psql`, ClickHouse with the secure client, Re
 Monitor request and RPC latency, Kafka consumer progress, outbox pending and dead rows, expired job leases, execution retries, log processor batch failures, ClickHouse insert latency, Meilisearch health, and database pool saturation.
 
 For endpoint traffic, use histogram counts for request rate, status-code attributes for error ratios, and histogram buckets for latency percentiles. Group REST traffic by `http.route` rather than raw URL paths, and group gRPC traffic by `rpc.service` and `rpc.method`.
+
+## Container cleanup signals
+
+Use the [durable cleanup gauges](./docs/operations/observability#durable-cleanup-metrics)
+to distinguish execution failures from publication failures:
+
+| Signal | First response |
+| --- | --- |
+| Sustained nonzero `quarantined` | Inspect the retained failure and original runtime, repair it, then request an audited redrive |
+| Sustained nonzero `publication_dead` | Inspect outbox/Kafka publication before redriving the retained cleanup |
+| Rising `oldest_due` | Check consumer progress, abandoned execution leases, connectivity and repeated worker interruptions |
+| Rising `outstanding` | Compare arrival and completion rates; backlog alone does not prove failure |
+
+Use max across jobs-service replicas because each reports the same durable state.
+Choose age thresholds above normal delivery latency; five minutes overdue sustained
+for five minutes is an initial example to tune for the deployment. Missing telemetry
+is not a zero backlog.
+
+Quarantine does not prove removal and does not release a workflow admission gate
+or runtime capacity hold. Use the [cleanup recovery procedure](./docs/operations/recovery#container-cleanup)
+and the retained-row queries in the runbook to identify affected work.
+
+<SourceLink path="docs/operations.md">Cleanup inspection SQL and operational thresholds</SourceLink>
 
 ## User-visible checks
 
@@ -2568,6 +2703,34 @@ sum by (rpc_service, rpc_method) (
 
 Watch latency distributions, error ratios, and saturation rather than relying only on process uptime.
 
+### Durable cleanup metrics
+
+Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
+
+| OTLP metric | Meaning |
+| --- | --- |
+| `chronoverse.container_cleanup.outstanding` | All unfinished container cleanup, including quarantined work and dead publication |
+| `chronoverse.container_cleanup.quarantined` | Execution quarantines requiring operator repair and redrive |
+| `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose outbox publication is `DEAD` |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup, excluding active cleanup leases, future cleanup backoff and quarantined work |
+
+These are gauges of retained work, not counts of deliveries or log lines.
+Duplicate delivery and exporter restarts do not increase the backlog. A matching
+completion receipt removes the cleanup from every measurement. No job, container,
+runtime or actor identity is exported as a metric label.
+
+Every jobs-service replica reads the same database totals. Aggregate replicas
+with **max**, not sum. Collection has a five-second deadline and honors an earlier
+caller deadline. A failed collection omits samples rather than reporting a healthy
+zero; monitor telemetry availability separately.
+
+See [monitoring](./docs/operations/monitoring) for alert interpretation and
+[recovery](./docs/operations/recovery) for diagnosis, redrive and audit history.
+These signals are available through the existing telemetry pipeline; the built-in
+request/runtime dashboard does not provision cleanup-specific panels or alerts.
+
+<SourceLink path="internal/repository/jobs/cleanup_metrics.go">Cleanup metric definitions and collection</SourceLink>
+
 ## Logs
 
 Structured application logs include service context and trace correlation where available. Container job stdout and stderr are a separate product data stream and follow the live/retained log pipeline.
@@ -2644,9 +2807,77 @@ Recovery scans for expired running jobs, invalidates old ownership, attempts con
 
 Generation, dispatch attempt, deterministic ID, and lease-token checks intentionally reject delayed work. A precondition failure can therefore indicate successful protection rather than a platform outage.
 
+## Container cleanup
+
+Container cleanup is durable work with an immutable job, full container ID,
+original runtime instance and creation-intent identity. It survives deletion of
+its source job, workflow or owner. A worker stops the container, replays retained
+logs when enabled, removes it, then records an exact-identity completion receipt.
+A replay failure retains the container for another attempt.
+
+Each cleanup generation permits three failed or abandoned attempts. An execution
+lease lasts four minutes around the three-minute cleanup budget. Failures back off
+for 30 seconds, then 60 seconds. Successfully reported caller cancellation refunds
+its attempt; repeated interruptions can postpone cleanup indefinitely. After
+exhaustion, persisted `QUARANTINED` lets the Kafka handler acknowledge that delivery
+while retaining the unfinished obligation. Publication `DEAD` is a separate state.
+
+### Administrative redrive
+
+Repair the original runtime or configuration first. Call the internal jobs-service
+`RedriveContainerCleanup` RPC over the deployment's authenticated TLS connection,
+using an admin JWT for the jobs-service audience. The request contains:
+
+```json
+{
+  "job_id": "<job UUID>",
+  "container_id": "<full container ID>",
+  "runtime_instance": "<original daemon ID>",
+  "intent_id": "<creation intent UUID>",
+  "generation": "1",
+  "reason": "original daemon connectivity restored"
+}
+```
+
+The generation is the observed **cleanup generation**, not workflow generation.
+The repair reason is required, cannot be whitespace-only and is limited to 2048
+bytes. The audit actor is derived from the validated JWT subject, never from
+request fields or caller metadata. A shared credential identifies its principal,
+not the individual human using it.
+
+An accepted redrive increments the generation, resets execution/publication budgets
+and requeues the original snapshot. It may override `READY`, `RETRY`, quarantined
+or expired-lease work, but refuses a live execution lease. Repeating an old generation
+returns `STALE` without another reset or audit entry. A completion receipt returns
+`COMPLETED` without requeueing. Redrive cannot retarget the original runtime or
+manufacture removal proof.
+
+The generation change and audit insert commit together. History retains the
+immutable identity, authenticated actor, reason, expected/new generation and database
+timestamp, independently of source rows or later outbox pruning:
+
+```sql
+SELECT job_id, container_id, runtime_instance, intent_id,
+       expected_generation, generation, actor, reason, created_at
+FROM container_cleanup_redrives
+ORDER BY created_at DESC, event_key, generation
+LIMIT 100;
+```
+
+See the [gRPC contract](./docs/internal/grpc-services#container-cleanup-rpcs) for
+attempt/receipt RPCs and [monitoring](./docs/operations/monitoring#container-cleanup-signals)
+for alert interpretation. Discovery inspection has its own `RedriveContainerIntent`
+operation and audit history; it does not reopen execution authority.
+
+<SourceLink path="docs/operations.md">Complete cleanup inspection and grpcurl runbook</SourceLink>
+
 ## Cleanup loops
 
-Workflow state, outbox rows, and analytics processed-event IDs use bounded cleanup. Retention windows must remain long enough for expected replay and investigation periods.
+Ordinary published outbox rows and processed-event records are pruned in bounded
+batches after retention. Published unfinished container cleanup remains retained
+until matching removal evidence exists, including after quarantine. Cleanup audit
+history and creation-name discovery tombstones have no automatic expiry policy.
+Age alone does not prove physical absence or authorize releasing a gate or hold.
 </doc>
 
 <doc title="Troubleshooting" path="./docs/operations/troubleshooting/">

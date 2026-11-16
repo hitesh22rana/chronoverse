@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	authorizationSchemeBearer = "Bearer"
 	// Expiry is the expiry time for the jwt token.
 	// For security reasons, the token should expire in a short time.
 	Expiry = time.Minute * 15 // 15 minutes
@@ -234,7 +235,7 @@ func parseBearerToken(data []string) (string, error) {
 	}
 
 	parts := strings.Split(data[0], " ")
-	if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
+	if len(parts) != 2 || parts[0] != authorizationSchemeBearer || parts[1] == "" {
 		return "", status.Error(codes.FailedPrecondition, "missing authorization token")
 	}
 

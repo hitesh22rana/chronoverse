@@ -71,9 +71,9 @@ export const docsConfig: DocGroup[] = [
   {
     title: "Internal Contracts",
     pages: [
-      { slug: "internal/grpc-services", title: "gRPC services", description: "Internal service RPC inventory and authorization.", source: "internal/grpc-services", sourceRefs: ["proto"] },
+      { slug: "internal/grpc-services", title: "gRPC services", description: "Internal service RPC inventory and authorization.", source: "internal/grpc-services", sourceRefs: ["proto", "internal/service/jobs/cleanup_attempts.go"] },
       { slug: "internal/kafka-events", title: "Kafka events", description: "Topics, keys, envelopes, and delivery expectations.", source: "internal/kafka-events", sourceRefs: ["internal/model/jobs/events.go", "internal/model/workflows/events.go"] },
-      { slug: "internal/data-stores", title: "Data stores", description: "Persistence ownership across five infrastructure systems.", source: "internal/data-stores", sourceRefs: ["internal/pkg/postgres/tables.go", "internal/pkg/clickhouse/tables.go"] },
+      { slug: "internal/data-stores", title: "Data stores", description: "Persistence ownership across five infrastructure systems.", source: "internal/data-stores", sourceRefs: ["internal/pkg/postgres/tables.go", "internal/pkg/clickhouse/tables.go", "internal/pkg/postgres/migrations/000008_outbox.up.sql"] },
     ],
   },
   {
@@ -91,9 +91,9 @@ export const docsConfig: DocGroup[] = [
     title: "Operations",
     pages: [
       { slug: "operations/monitoring", title: "Monitoring", description: "Health checks and runtime signals.", source: "operations/monitoring", sourceRefs: ["docs/operations.md", "compose.prod.yaml"] },
-      { slug: "operations/observability", title: "Observability", description: "OpenTelemetry signals and LGTM dashboards.", source: "operations/observability", sourceRefs: ["internal/pkg/otel/otel.go"] },
+      { slug: "operations/observability", title: "Observability", description: "OpenTelemetry signals and LGTM dashboards.", source: "operations/observability", sourceRefs: ["internal/pkg/otel/otel.go", "internal/repository/jobs/cleanup_metrics.go"] },
       { slug: "operations/scaling", title: "Scaling", description: "Partitions, replicas, leases, and capacity boundaries.", source: "operations/scaling", sourceRefs: ["docs/operations.md"] },
-      { slug: "operations/recovery", title: "Retries and recovery", description: "Outbox retries, lease recovery, and stale event handling.", source: "operations/recovery", sourceRefs: ["internal/repository/executor/recovery.go", "internal/repository/outboxrelay/outboxrelay.go"] },
+      { slug: "operations/recovery", title: "Retries and recovery", description: "Outbox retries, lease recovery, and stale event handling.", source: "operations/recovery", sourceRefs: ["internal/repository/executor/recovery.go", "internal/repository/outboxrelay/outboxrelay.go", "internal/repository/jobs/cleanup_attempts.go", "docs/operations.md"] },
       { slug: "operations/troubleshooting", title: "Troubleshooting", description: "Diagnose TLS, readiness, logs, SSE, and API issues.", source: "operations/troubleshooting", sourceRefs: ["docs/operations.md"] },
     ],
   },

@@ -22,6 +22,7 @@ import (
 )
 
 const (
+	ledgerStatusCompleted = "COMPLETED"
 	// ClientCommandRetention is the replay window for client and random command identities.
 	ClientCommandRetention = 24 * time.Hour
 	// DefaultEventCommandRetention is the default replay window for deterministic event commands.
@@ -212,7 +213,7 @@ func Reserve(
 		recordOutcome(ctx, operation, "conflict")
 		return nil, status.Error(codes.AlreadyExists, "idempotency key was already used with a different request")
 	}
-	if storedStatus != "COMPLETED" {
+	if storedStatus != ledgerStatusCompleted {
 		recordOutcome(ctx, operation, "in_progress")
 		return nil, status.Error(codes.Aborted, "idempotency command is still processing")
 	}

@@ -357,18 +357,18 @@ func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, user
 }
 
 // UpdateContainerCleanup mocks base method.
-func (m *MockRepository) UpdateContainerCleanup(ctx context.Context, operation string, identity jobs.CleanupIdentity, generation int64, token, errorCode string, interrupted bool) (*jobs.CleanupAttempt, error) {
+func (m *MockRepository) UpdateContainerCleanup(ctx context.Context, operation string, identity jobs.CleanupIdentity, generation int64, token, errorCode string, interrupted bool, redrive jobs.CleanupRedrive) (*jobs.CleanupAttempt, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateContainerCleanup", ctx, operation, identity, generation, token, errorCode, interrupted)
+	ret := m.ctrl.Call(m, "UpdateContainerCleanup", ctx, operation, identity, generation, token, errorCode, interrupted, redrive)
 	ret0, _ := ret[0].(*jobs.CleanupAttempt)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateContainerCleanup indicates an expected call of UpdateContainerCleanup.
-func (mr *MockRepositoryMockRecorder) UpdateContainerCleanup(ctx, operation, identity, generation, token, errorCode, interrupted any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateContainerCleanup(ctx, operation, identity, generation, token, errorCode, interrupted, redrive any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateContainerCleanup", reflect.TypeOf((*MockRepository)(nil).UpdateContainerCleanup), ctx, operation, identity, generation, token, errorCode, interrupted)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateContainerCleanup", reflect.TypeOf((*MockRepository)(nil).UpdateContainerCleanup), ctx, operation, identity, generation, token, errorCode, interrupted, redrive)
 }
 
 // UpdateContainerIntent mocks base method.

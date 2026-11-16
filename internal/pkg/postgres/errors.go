@@ -7,6 +7,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+const (
+	sqlStateUniqueViolation           = "23505"
+	sqlStateInvalidTextRepresentation = "22P02"
+)
+
 // IsUniqueViolation reports whether err is a PostgreSQL unique violation.
 func (db *Postgres) IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
@@ -14,7 +19,7 @@ func (db *Postgres) IsUniqueViolation(err error) bool {
 		return false
 	}
 
-	return pgErr.Code == "23505"
+	return pgErr.Code == sqlStateUniqueViolation
 }
 
 // IsNoRows reports whether err means the query returned no rows.
@@ -29,5 +34,5 @@ func (db *Postgres) IsInvalidTextRepresentation(err error) bool {
 		return false
 	}
 
-	return pgErr.Code == "22P02"
+	return pgErr.Code == sqlStateInvalidTextRepresentation
 }

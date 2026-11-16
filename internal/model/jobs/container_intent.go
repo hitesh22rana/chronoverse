@@ -39,3 +39,24 @@ type CleanupIdentity struct {
 	RuntimeInstance string
 	IntentID        string
 }
+
+// Container intent operations are internal commands, not replayable mutation grants.
+const (
+	ContainerIntentOperationEnsure        = "ENSURE"
+	ContainerIntentOperationGet           = "GET"
+	ContainerIntentOperationReserveCreate = "RESERVE_CREATE"
+	ContainerIntentOperationReserveStart  = "RESERVE_START"
+	ContainerIntentOperationObserve       = "OBSERVE"
+	ContainerIntentOperationClose         = "CLOSE"
+	ContainerIntentOperationReport        = "REPORT"
+	ContainerIntentOperationRedrive       = "REDRIVE"
+	ContainerIntentOperationList          = "LIST"
+)
+
+// Container inspection outcomes are shared by discovery producers and validators.
+const (
+	ContainerInspectionAbsent      = "ABSENT"
+	ContainerInspectionObserved    = "OBSERVED"
+	ContainerInspectionError       = "ERROR"
+	ContainerInspectionInterrupted = "INTERRUPTED"
+)

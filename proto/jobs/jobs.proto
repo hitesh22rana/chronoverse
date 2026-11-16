@@ -356,6 +356,9 @@ message GetContainerCleanupReceiptResponse {
 message RecordContainerCleanupReceiptResponse {}
 
 // Cleanup generations are independent of workflow generations.
+// Every operation requires immutable job/container/runtime-instance/intent identity.
+// Redrive additionally requires a repair reason; its audit actor is the validated
+// admin JWT subject, never a caller-supplied field.
 message ContainerCleanupAttemptRequest {
   string job_id           = 1;
   string container_id     = 2;
@@ -365,6 +368,7 @@ message ContainerCleanupAttemptRequest {
   bool   interrupted      = 6; // Caller cancellation returns the attempt without spending its budget.
   string runtime_instance = 7;
   string intent_id        = 8;
+  string reason           = 9; // Redrive only: required operator repair reason (maximum 2048 bytes).
 }
 
 message ContainerCleanupAttemptResponse {

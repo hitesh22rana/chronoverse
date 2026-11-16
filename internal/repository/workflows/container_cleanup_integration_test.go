@@ -12,10 +12,9 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/repository/outboxrelay"
-
-	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 func TestIntegrationContainerCleanupSurvivesSettlementAndDeletion(t *testing.T) {
@@ -195,7 +194,7 @@ func assertCleanupReceiptPersistence(t *testing.T, receipts *jobsrepo.Repository
 		t.Fatalf("idempotent receipt count=%d err=%v", copies, err)
 	}
 	// A verified late materialization can finish after the source row is deleted.
-	if _, err := receipts.UpdateContainerIntent(ctx, "observe", &jobsmodel.ContainerIntentCommand{
+	if _, err := receipts.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, &jobsmodel.ContainerIntentCommand{
 		IntentID: identity.ID, JobID: job, ContainerID: "late-confirmed-container", RuntimeInstance: identity.RuntimeInstance,
 	}); err != nil {
 		t.Fatal(err)
@@ -247,23 +246,23 @@ func seedCleanupProvenance(ctx context.Context, t *testing.T, pg *postgres.Postg
 `, job).Scan(&req.LeaseToken, &req.Attempt, &req.WorkflowGeneration); err != nil {
 		t.Fatal(err)
 	}
-	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", req)
+	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.IntentID = ensured.Intent.ID
-	grant, err := repo.UpdateContainerIntent(ctx, "reserve_create", req)
+	grant, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, req)
 	if err != nil || !grant.Granted {
 		t.Fatalf("fixture Create grant: %+v %v", grant, err)
 	}
 	req.ContainerID = id
-	if _, err = repo.UpdateContainerIntent(ctx, "observe", req); err != nil {
+	if _, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, req); err != nil {
 		t.Fatal(err)
 	}
 	if err = repo.AttachJobContainer(ctx, job, req.LeaseToken, id, ensured.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	grant, err = repo.UpdateContainerIntent(ctx, "reserve_start", req)
+	grant, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, req)
 	if err != nil || !grant.Granted {
 		t.Fatalf("fixture Start grant: %+v %v", grant, err)
 	}

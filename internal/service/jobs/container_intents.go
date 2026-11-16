@@ -13,19 +13,7 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
-const (
-	intentOperationEnsure        = "ensure"
-	intentOperationGet           = "get"
-	intentOperationReserveCreate = "reserve_create"
-	intentOperationReserveStart  = "reserve_start"
-	intentOperationClose         = "close"
-	intentOperationObserve       = "observe"
-	intentOperationReport        = "report"
-	intentOperationRedrive       = "redrive"
-	intentOperationList          = "list"
-
-	intentExecutionSubject = "internal/executor"
-)
+const intentExecutionSubject = "internal/executor"
 
 func intentProto(i *jobsmodel.ContainerIntent) *jobspb.ContainerIntent {
 	if i == nil {
@@ -97,19 +85,19 @@ func validateIntentCommand(ctx context.Context, op string, req *jobspb.Container
 		return err
 	}
 	switch op {
-	case intentOperationEnsure:
+	case jobsmodel.ContainerIntentOperationEnsure:
 		return validateEnsureCommand(req)
-	case intentOperationReserveCreate, intentOperationReserveStart, intentOperationClose:
+	case jobsmodel.ContainerIntentOperationReserveCreate, jobsmodel.ContainerIntentOperationReserveStart, jobsmodel.ContainerIntentOperationClose:
 		return validateLiveAuthorityCommand(req)
-	case intentOperationGet:
+	case jobsmodel.ContainerIntentOperationGet:
 		return validateGetCommand(req)
-	case intentOperationObserve:
+	case jobsmodel.ContainerIntentOperationObserve:
 		return validateObserveCommand(req)
-	case intentOperationReport:
+	case jobsmodel.ContainerIntentOperationReport:
 		return validateReportCommand(req)
-	case intentOperationRedrive:
+	case jobsmodel.ContainerIntentOperationRedrive:
 		return validateRedriveCommand(req)
-	case intentOperationList:
+	case jobsmodel.ContainerIntentOperationList:
 		return nil
 	default:
 		return status.Error(codes.InvalidArgument, "unknown container intent operation")
@@ -183,7 +171,7 @@ func validateReportCommand(req *jobspb.ContainerIntentCommand) error {
 		return status.Error(codes.InvalidArgument, "discovery ownership required")
 	}
 	switch req.GetOutcome() {
-	case "ABSENT", "OBSERVED", "ERROR", "INTERRUPTED":
+	case jobsmodel.ContainerInspectionAbsent, jobsmodel.ContainerInspectionObserved, jobsmodel.ContainerInspectionError, jobsmodel.ContainerInspectionInterrupted:
 		return nil
 	default:
 		return status.Error(codes.InvalidArgument, "invalid discovery outcome")
@@ -228,45 +216,45 @@ func (s *Service) executeContainerIntent(ctx context.Context, op string, req *jo
 
 // EnsureContainerIntent creates or returns the lease-fenced intent for one execution attempt.
 func (s *Service) EnsureContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationEnsure, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 }
 
 // GetContainerIntent returns a container intent to internal administration.
 func (s *Service) GetContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	if err := validateIntentCommand(ctx, intentOperationGet, req); err != nil {
+	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationGet, req); err != nil {
 		return nil, err
 	}
-	return s.updateContainerIntent(ctx, intentOperationGet, intentCommand(req))
+	return s.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, intentCommand(req))
 }
 
 // ReserveContainerCreate grants at most one container creation for the held execution lease.
 func (s *Service) ReserveContainerCreate(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationReserveCreate, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, req)
 }
 
 // ObserveContainer records a verified materialization for the held execution lease.
 func (s *Service) ObserveContainer(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationObserve, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, req)
 }
 
 // ReserveContainerStart grants at most one start after the immutable container is attached.
 func (s *Service) ReserveContainerStart(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationReserveStart, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, req)
 }
 
 // CloseContainerIntent closes the intent with its outcome, diagnostics, and stage.
 func (s *Service) CloseContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationClose, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req)
 }
 
 // ReportContainerInspection settles a fenced discovery inspection and its diagnostics.
 func (s *Service) ReportContainerInspection(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	return s.executeContainerIntent(ctx, intentOperationReport, req)
+	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req)
 }
 
 // RedriveContainerIntent clears quarantine and audits the validated administrative principal.
 func (s *Service) RedriveContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
-	if err := validateIntentCommand(ctx, intentOperationRedrive, req); err != nil {
+	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationRedrive, req); err != nil {
 		return nil, err
 	}
 	actor, err := auth.ExtractSubjectFromContext(ctx)
@@ -275,7 +263,7 @@ func (s *Service) RedriveContainerIntent(ctx context.Context, req *jobspb.Contai
 	}
 	command := intentCommand(req)
 	command.Actor = actor
-	return s.updateContainerIntent(ctx, intentOperationRedrive, command)
+	return s.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationRedrive, command)
 }
 
 func (s *Service) listContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand, claim bool) (*jobspb.ListContainerIntentsResponse, error) {
@@ -292,7 +280,7 @@ func (s *Service) listContainerIntents(ctx context.Context, req *jobspb.Containe
 
 // ClaimContainerIntents leases due intents for the discovery execution principal.
 func (s *Service) ClaimContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error) {
-	if err := validateIntentCommand(ctx, intentOperationList, req); err != nil {
+	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationList, req); err != nil {
 		return nil, err
 	}
 	if err := requireExecutionPrincipal(ctx); err != nil {
@@ -303,7 +291,7 @@ func (s *Service) ClaimContainerIntents(ctx context.Context, req *jobspb.Contain
 
 // ListContainerIntents returns intents to internal administration without leasing them.
 func (s *Service) ListContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error) {
-	if err := validateIntentCommand(ctx, intentOperationList, req); err != nil {
+	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationList, req); err != nil {
 		return nil, err
 	}
 	return s.listContainerIntents(ctx, req, false)

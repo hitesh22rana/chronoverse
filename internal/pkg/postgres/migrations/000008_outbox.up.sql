@@ -26,6 +26,26 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     UNIQUE (topic, event_key)
 );
 
+-- Audit identity is retained independently of pruned outbox/source rows.
+CREATE TABLE container_cleanup_redrives (
+    event_key TEXT NOT NULL,
+    job_id UUID NOT NULL,
+    container_id VARCHAR(256) NOT NULL,
+    runtime_instance TEXT NOT NULL CHECK (btrim(runtime_instance) <> ''),
+    intent_id UUID NOT NULL,
+    expected_generation BIGINT NOT NULL CHECK (expected_generation > 0),
+    generation BIGINT NOT NULL CHECK (generation = expected_generation + 1),
+    actor TEXT NOT NULL CHECK (btrim(actor) <> '' AND octet_length(actor) <= 256),
+    reason TEXT NOT NULL CHECK (btrim(reason) <> '' AND octet_length(reason) <= 2048),
+    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'utc'),
+    PRIMARY KEY(event_key,generation)
+);
+
+-- Periodic backlog collection excludes ordinary and completed outbox traffic.
+CREATE INDEX idx_outbox_cleanup_outstanding ON outbox_events(cleanup_state)
+INCLUDE(status,created_at,cleanup_next_attempt_at,cleanup_lease_until)
+WHERE topic='workflows' AND cleanup_state IS NOT NULL AND cleanup_state<>'COMPLETED';
+
 CREATE INDEX IF NOT EXISTS idx_outbox_events_pending
 ON outbox_events (next_attempt_at, created_at)
 WHERE status = 'PENDING';

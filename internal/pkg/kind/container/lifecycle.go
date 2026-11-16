@@ -18,11 +18,19 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
+// Creation outcomes distinguish rejected input from uncertain mutations.
 const (
-	outcomeRejected = "REJECTED"
-	outcomeSystem   = "SYSTEM"
-	outcomeUnknown  = "UNKNOWN"
-	outcomeConflict = "CONFLICT"
+	CreationOutcomeRejected = "REJECTED"
+	CreationOutcomeSystem   = "SYSTEM"
+	CreationOutcomeUnknown  = "UNKNOWN"
+	CreationOutcomeConflict = "CONFLICT"
+)
+
+// Ownership label keys are part of the Docker materialization protocol.
+const (
+	IntentIDLabel = "chronoverse.intent_id"
+	JobIDLabel    = "chronoverse.job_id"
+	AttemptLabel  = "chronoverse.attempt"
 )
 
 // CreateRequest is a frozen, immutable container creation snapshot passed by value across the adapter boundary.
@@ -50,36 +58,36 @@ func CreationOutcome(err error) string {
 		return classified.outcome
 	}
 	if reason, ok := terminalreason.FromError(err); ok && reason != terminalreason.SystemError {
-		return outcomeRejected
+		return CreationOutcomeRejected
 	}
-	return outcomeSystem
+	return CreationOutcomeSystem
 }
 
 func lifecycleError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return &creationError{
-			outcome: outcomeUnknown,
+			outcome: CreationOutcomeUnknown,
 			err:     terminalreason.Wrap(terminalreason.SystemError, status.FromContextError(ctx.Err()).Err()),
 		}
 	}
 	if cerrdefs.IsConflict(err) {
 		return &creationError{
-			outcome: outcomeConflict,
+			outcome: CreationOutcomeConflict,
 			err:     terminalreason.Wrap(terminalreason.SystemError, status.Errorf(codes.AlreadyExists, "container name conflict: %v", err)),
 		}
 	}
 	if cerrdefs.IsInvalidArgument(err) {
 		return &creationError{
-			outcome: outcomeRejected,
+			outcome: CreationOutcomeRejected,
 			err:     status.Errorf(codes.InvalidArgument, "invalid container configuration: %v", err),
 		}
 	}
-	outcome := outcomeUnknown
+	outcome := CreationOutcomeUnknown
 	if cerrdefs.IsNotFound(err) || cerrdefs.IsUnauthorized(err) || cerrdefs.IsPermissionDenied(err) {
-		outcome = outcomeSystem
+		outcome = CreationOutcomeSystem
 	}
 	if client.IsErrConnectionFailed(err) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		outcome = outcomeUnknown
+		outcome = CreationOutcomeUnknown
 	}
 	return &creationError{
 		outcome: outcome,
@@ -105,16 +113,16 @@ func (w *DockerWorkflow) RuntimeInstance(ctx context.Context) (string, error) {
 func (w *DockerWorkflow) Create(ctx context.Context, req CreateRequest) (string, error) { //nolint:gocritic // hugeParam: CreateRequest is an immutable snapshot frozen at this boundary.
 	if req.Name == "" || req.IntentID == "" || req.JobID == "" || req.Attempt <= 0 || req.Image == "" || req.Timeout <= 0 {
 		return "", &creationError{
-			outcome: outcomeRejected,
+			outcome: CreationOutcomeRejected,
 			err:     status.Error(codes.InvalidArgument, "container identity and workload are required"),
 		}
 	}
 	if err := w.healthCheck(ctx); err != nil {
-		return "", &creationError{outcome: outcomeSystem, err: terminalreason.Wrap(terminalreason.SystemError, err)}
+		return "", &creationError{outcome: CreationOutcomeSystem, err: terminalreason.Wrap(terminalreason.SystemError, err)}
 	}
 	if err := w.ensureWorkloadNetwork(ctx); err != nil {
 		return "", &creationError{
-			outcome: outcomeSystem,
+			outcome: CreationOutcomeSystem,
 			err:     terminalreason.Wrap(terminalreason.SystemError, status.Errorf(codes.Unavailable, "workload network is not ready: %v", err)),
 		}
 	}
@@ -125,9 +133,9 @@ func (w *DockerWorkflow) Create(ctx context.Context, req CreateRequest) (string,
 		Env:         append([]string(nil), req.Env...),
 		StopTimeout: &timeout,
 		Labels: map[string]string{
-			"chronoverse.intent_id": req.IntentID,
-			"chronoverse.job_id":    req.JobID,
-			"chronoverse.attempt":   strconv.Itoa(int(req.Attempt)),
+			IntentIDLabel: req.IntentID,
+			JobIDLabel:    req.JobID,
+			AttemptLabel:  strconv.Itoa(int(req.Attempt)),
 		},
 	}
 	result, err := w.Client.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -140,7 +148,7 @@ func (w *DockerWorkflow) Create(ctx context.Context, req CreateRequest) (string,
 	}
 	if !fullContainerID.MatchString(result.ID) {
 		return "", &creationError{
-			outcome: outcomeUnknown,
+			outcome: CreationOutcomeUnknown,
 			err:     terminalreason.Wrap(terminalreason.SystemError, status.Error(codes.Unavailable, "docker returned no full immutable container id")),
 		}
 	}

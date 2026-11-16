@@ -20,7 +20,75 @@ Recovery scans for expired running jobs, invalidates old ownership, attempts con
 
 Generation, dispatch attempt, deterministic ID, and lease-token checks intentionally reject delayed work. A precondition failure can therefore indicate successful protection rather than a platform outage.
 
+## Container cleanup
+
+Container cleanup is durable work with an immutable job, full container ID,
+original runtime instance and creation-intent identity. It survives deletion of
+its source job, workflow or owner. A worker stops the container, replays retained
+logs when enabled, removes it, then records an exact-identity completion receipt.
+A replay failure retains the container for another attempt.
+
+Each cleanup generation permits three failed or abandoned attempts. An execution
+lease lasts four minutes around the three-minute cleanup budget. Failures back off
+for 30 seconds, then 60 seconds. Successfully reported caller cancellation refunds
+its attempt; repeated interruptions can postpone cleanup indefinitely. After
+exhaustion, persisted `QUARANTINED` lets the Kafka handler acknowledge that delivery
+while retaining the unfinished obligation. Publication `DEAD` is a separate state.
+
+### Administrative redrive
+
+Repair the original runtime or configuration first. Call the internal jobs-service
+`RedriveContainerCleanup` RPC over the deployment's authenticated TLS connection,
+using an admin JWT for the jobs-service audience. The request contains:
+
+```json
+{
+  "job_id": "<job UUID>",
+  "container_id": "<full container ID>",
+  "runtime_instance": "<original daemon ID>",
+  "intent_id": "<creation intent UUID>",
+  "generation": "1",
+  "reason": "original daemon connectivity restored"
+}
+```
+
+The generation is the observed **cleanup generation**, not workflow generation.
+The repair reason is required, cannot be whitespace-only and is limited to 2048
+bytes. The audit actor is derived from the validated JWT subject, never from
+request fields or caller metadata. A shared credential identifies its principal,
+not the individual human using it.
+
+An accepted redrive increments the generation, resets execution/publication budgets
+and requeues the original snapshot. It may override `READY`, `RETRY`, quarantined
+or expired-lease work, but refuses a live execution lease. Repeating an old generation
+returns `STALE` without another reset or audit entry. A completion receipt returns
+`COMPLETED` without requeueing. Redrive cannot retarget the original runtime or
+manufacture removal proof.
+
+The generation change and audit insert commit together. History retains the
+immutable identity, authenticated actor, reason, expected/new generation and database
+timestamp, independently of source rows or later outbox pruning:
+
+```sql
+SELECT job_id, container_id, runtime_instance, intent_id,
+       expected_generation, generation, actor, reason, created_at
+FROM container_cleanup_redrives
+ORDER BY created_at DESC, event_key, generation
+LIMIT 100;
+```
+
+See the [gRPC contract](/docs/internal/grpc-services#container-cleanup-rpcs) for
+attempt/receipt RPCs and [monitoring](/docs/operations/monitoring#container-cleanup-signals)
+for alert interpretation. Discovery inspection has its own `RedriveContainerIntent`
+operation and audit history; it does not reopen execution authority.
+
+<SourceLink path="docs/operations.md">Complete cleanup inspection and grpcurl runbook</SourceLink>
+
 ## Cleanup loops
 
-Workflow state, outbox rows, and analytics processed-event IDs use bounded cleanup. Retention windows must remain long enough for expected replay and investigation periods.
+Ordinary published outbox rows and processed-event records are pruned in bounded
+batches after retention. Published unfinished container cleanup remains retained
+until matching removal evidence exists, including after quarantine. Cleanup audit
+history and creation-name discovery tombstones have no automatic expiry policy.
+Age alone does not prove physical absence or authorize releasing a gate or hold.
 

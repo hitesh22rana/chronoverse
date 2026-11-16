@@ -4,6 +4,24 @@
 
 Stores users, workflows, jobs, runtime nodes, notification state, analytics aggregates, idempotency records, outbox rows, job leases, retry metadata, and processed-event identity.
 
+### Container lifecycle records
+
+Jobs-service owns the durable container protocol in PostgreSQL:
+
+| Record | Authority / retention |
+| --- | --- |
+| `container_creation_intents` | Per-attempt name, original routing/instance, single-use grants and monotonic closure; retained for late discovery |
+| `container_materializations` | Verified immutable IDs; one daemon/container identity cannot belong to multiple intents |
+| `runtime_capacity_holds` | Unresolved Start-reserved physical capacity; released only by matching removal proof |
+| `container_cleanup_receipts` | Exact original-instance completion evidence; repeated acknowledgment cannot release capacity twice |
+| `outbox_events` cleanup fields | Execution generation, token/lease, retry budget, backoff and quarantine on the retained cleanup intent |
+| `container_cleanup_redrives` | Accepted cleanup generation changes with authenticated actor, repair reason and timestamp; survives source/outbox pruning |
+| `container_intent_redrives` | Separate audit of administrative discovery-inspection redrive |
+
+Durable-state gauges read unfinished cleanup rather than counting deliveries.
+Audit retention is separate from outbox retention. Neither elapsed age nor an
+audit record replaces physical removal proof.
+
 ## ClickHouse
 
 Stores retained job logs optimized for high-volume ordered reads. It is not the authoritative workflow or job state store.

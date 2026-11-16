@@ -91,10 +91,10 @@ func waitForTasks(ctx context.Context, client meilisearch.ServiceManager, taskID
 				task := &tasks.Results[i]
 				//nolint:exhaustive // Non-terminal task statuses keep polling.
 				switch task.Status {
-				case "succeeded":
+				case meilisearch.TaskStatusSucceeded:
 					done++
 					continue
-				case "failed":
+				case meilisearch.TaskStatusFailed:
 					// Re-running against an already-provisioned database is a
 					// no-op, so treat "already exists" as success for this
 					// task and keep waiting for the remaining ones.
@@ -103,7 +103,7 @@ func waitForTasks(ctx context.Context, client meilisearch.ServiceManager, taskID
 						continue
 					}
 					return fmt.Errorf("meilisearch task %d failed: %v", task.UID, task.Error)
-				case "canceled":
+				case meilisearch.TaskStatusCanceled:
 					return fmt.Errorf("meilisearch task %d was canceled", task.UID)
 				}
 			}

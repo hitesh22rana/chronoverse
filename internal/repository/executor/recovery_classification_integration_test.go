@@ -123,7 +123,7 @@ func seedDurableRecovery(
 	claimed.Attempts = attempts
 	const runtimeInstance = "test-daemon"
 	containerID := strings.Repeat(strings.ReplaceAll(uuid.NewString(), "-", ""), 2)
-	ensured, err := jobs.UpdateContainerIntent(ctx, "ensure", &jobsmodel.ContainerIntentCommand{
+	ensured, err := jobs.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, &jobsmodel.ContainerIntentCommand{
 		JobID:      jobID,
 		LeaseToken: claimed.LeaseToken,
 		Attempt:    claimed.Attempts, WorkflowGeneration: 1,
@@ -134,13 +134,13 @@ func seedDurableRecovery(
 		t.Fatalf("ensure container intent: %v", err)
 	}
 	intentID := ensured.Intent.ID
-	create, err := jobs.UpdateContainerIntent(ctx, "reserve_create", &jobsmodel.ContainerIntentCommand{
+	create, err := jobs.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, &jobsmodel.ContainerIntentCommand{
 		JobID: jobID, LeaseToken: claimed.LeaseToken, Attempt: claimed.Attempts, IntentID: intentID,
 	})
 	if err != nil || !create.Granted {
 		t.Fatalf("reserve container create: %v granted=%v", err, create != nil && create.Granted)
 	}
-	if _, err = jobs.UpdateContainerIntent(ctx, "observe", &jobsmodel.ContainerIntentCommand{
+	if _, err = jobs.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, &jobsmodel.ContainerIntentCommand{
 		JobID: jobID, LeaseToken: claimed.LeaseToken, Attempt: claimed.Attempts, IntentID: intentID,
 		RuntimeInstance: runtimeInstance, ContainerID: containerID,
 	}); err != nil {
@@ -149,7 +149,7 @@ func seedDurableRecovery(
 	if attachErr := jobs.AttachJobContainer(ctx, jobID, claimed.LeaseToken, containerID, claimed.RuntimeNodeID.String, uuid.NewString()); attachErr != nil {
 		t.Fatal(attachErr)
 	}
-	start, err := jobs.UpdateContainerIntent(ctx, "reserve_start", &jobsmodel.ContainerIntentCommand{
+	start, err := jobs.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, &jobsmodel.ContainerIntentCommand{
 		JobID: jobID, LeaseToken: claimed.LeaseToken, Attempt: claimed.Attempts, IntentID: intentID, ContainerID: containerID,
 	})
 	if err != nil || !start.Granted {

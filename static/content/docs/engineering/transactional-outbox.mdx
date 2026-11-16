@@ -18,7 +18,21 @@ Relay replicas claim pending rows with a processing lease and worker identity. A
 
 ## Cleanup
 
-Published rows remain available for a configurable retention period, then cleanup removes them in bounded batches. Dead rows are not equivalent to published rows and require operational attention.
+Ordinary published rows remain available for a configurable retention period,
+then cleanup removes them in bounded batches. Unfinished container cleanup is an
+exception: publication or execution quarantine does not prove removal, so published
+cleanup remains retained until a matching original-instance completion receipt
+exists. The relay can republish unfinished work after lost delivery or Kafka
+retention expiry without granting a fresh cleanup failure budget.
+
+Administrative cleanup redrive resets/requeues the retained row under its expected
+generation and atomically writes an authenticated actor/reason audit. Repeated
+requests with an old generation do not duplicate that transition. The audit history
+survives later outbox pruning. Publication `DEAD` and cleanup execution `QUARANTINED`
+are distinct operational signals.
+
+See [cleanup recovery](/docs/operations/recovery#container-cleanup) and
+[cleanup metrics](/docs/operations/observability#durable-cleanup-metrics).
 
 ## Scaling guidance
 

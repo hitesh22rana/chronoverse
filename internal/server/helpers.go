@@ -18,6 +18,12 @@ import (
 )
 
 const (
+	cookieSameSiteLax     = "LAX"
+	cookieSameSiteStrict  = "STRICT"
+	cookieSameSiteNone    = "NONE"
+	urlSchemeHTTPS        = "https"
+	contentTypeJSON       = "application/json"
+	logStreamStderr       = "stderr"
 	serverShutdownTimeout = 10 * time.Second
 	csrfCookieName        = "csrf"
 	sessionCookieName     = "session"
@@ -75,7 +81,7 @@ func idempotencyKeyFromHeader(r *http.Request) (string, bool) {
 // which the allowlist denies, blocking login CSRF via simple text/plain forms.
 func decodeJSONRequest(r *http.Request, destination any) error {
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("Content-Type"), ";")[0]))
-	if contentType != "application/json" {
+	if contentType != contentTypeJSON {
 		return status.Error(codes.InvalidArgument, "content-type must be application/json")
 	}
 	return idempotency.DecodeUniqueJSON(r.Body, destination)
@@ -214,7 +220,7 @@ func getJobLogsStreamType(stream string) (jobspb.LogStream, error) {
 	switch stream {
 	case logStreamStdout:
 		return jobspb.LogStream_LOG_STREAM_STDOUT, nil
-	case "stderr":
+	case logStreamStderr:
 		return jobspb.LogStream_LOG_STREAM_STDERR, nil
 	case "":
 		return jobspb.LogStream_LOG_STREAM_ALL, nil

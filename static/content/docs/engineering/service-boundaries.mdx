@@ -14,7 +14,14 @@ Owns definitions, generations, build status, list filters, cleanup, termination,
 
 ## Jobs service
 
-Owns scheduling, job reads, status transitions, durable leases, recovery, retained log reads, search, downloads, and live log streams.
+Owns scheduling, job reads, status transitions, durable leases, recovery, retained
+log reads, search, downloads, and live log streams. It also owns container intent
+and materialization identity, cleanup attempt authority/receipts, physical capacity
+holds, durable cleanup metrics and administrative redrive audit. Workflow workers
+perform cleanup through jobs-service authority; they do not invent completion proof.
+
+Cleanup administration uses internal gRPC with an admin JWT and authenticated
+principal. It is not exposed through the public HTTP/OpenAPI surface.
 
 ## Notifications service
 

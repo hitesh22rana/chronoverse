@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -46,12 +47,12 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 		return cleanupRetryError(parentCtx, event, err)
 	}
 	switch attempt.GetState() {
-	case "COMPLETED", "STALE":
+	case jobsmodel.CleanupStateCompleted, jobsmodel.CleanupStateStale:
 		return nil
-	case "QUARANTINED":
+	case jobsmodel.CleanupStateQuarantined:
 		logCleanupQuarantine(parentCtx, event, attempt)
 		return nil
-	case "PROCESSING":
+	case jobsmodel.CleanupStateProcessing:
 		if attempt.GetToken() == "" {
 			return status.Error(codes.Unavailable, "cleanup attempt has no ownership token")
 		}
@@ -86,9 +87,9 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 		return cleanupRetryError(parentCtx, event, reportErr)
 	}
 	switch disposition.GetState() {
-	case "COMPLETED", "STALE":
+	case jobsmodel.CleanupStateCompleted, jobsmodel.CleanupStateStale:
 		return nil
-	case "QUARANTINED":
+	case jobsmodel.CleanupStateQuarantined:
 		logCleanupQuarantine(parentCtx, event, disposition)
 		return nil
 	default:

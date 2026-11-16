@@ -753,9 +753,12 @@ five-second collection deadline and no job, container, actor or runtime labels:
 `oldest_due` measures cleanup that can execute, not how late the next replay
 publication is. A record already in Kafka can run while `cleanup_replay_due_at`
 is still in the future. Replay pacing therefore does not pause or reset this
-age; it limits duplicate publication, not the cleanup latency target. A rising
-age can warrant investigation before the next scheduled replay. Active execution
-leases and execution retry backoff still suppress the due age.
+age; it controls republication cadence without gating a delivery already in
+Kafka. Active execution leases and execution retry backoff still suppress the
+due age. If no usable delivery remains, the next execution may depend on an
+eligible replay. Cross-check `cleanup_replay_due_at`, publication state and
+consumer progress when diagnosing overdue cleanup; publication `DEAD` still
+requires operator repair.
 
 These are backlog gauges, not delivery counters: duplicate records and worker or
 exporter restarts do not create additional work. Completion removes the row from

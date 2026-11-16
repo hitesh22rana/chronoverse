@@ -116,7 +116,9 @@ Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
 A delivery already in Kafka can execute while its next replay is scheduled for
 later. Replay pacing does not pause or reset this age; execution leases and
 execution retry backoff do. This keeps stalled cleanup visible during a long
-replay interval.
+replay interval. If no usable delivery remains in Kafka, execution may depend on
+the next eligible replay. Check its due time, publication state and consumer
+progress alongside this gauge when diagnosing overdue cleanup.
 
 These are gauges of retained work, not counts of deliveries or log lines.
 Duplicate delivery and exporter restarts do not increase the backlog. A matching

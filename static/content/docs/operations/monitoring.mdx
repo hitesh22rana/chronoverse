@@ -31,9 +31,10 @@ Choose age thresholds above normal delivery latency; five minutes overdue sustai
 for five minutes is an initial example to tune for the deployment. This threshold
 measures waiting execution, independently of the publisher's replay interval. A
 future replay deadline does not mean cleanup must wait: existing Kafka deliveries
-can still run. Investigate an overdue execution even when the next replay is not
-yet due; raising the replay cap does not extend the cleanup latency target.
-Missing telemetry is not a zero backlog.
+can still run. If no usable delivery remains, execution may depend on the next
+eligible replay. Cross-check `cleanup_replay_due_at`, publication state and
+consumer progress before diagnosing a stuck worker; `publication_dead` still
+requires operator repair. Missing telemetry is not a zero backlog.
 
 Quarantine does not prove removal and does not release a workflow admission gate
 or runtime capacity hold. Use the [cleanup recovery procedure](/docs/operations/recovery#container-cleanup)

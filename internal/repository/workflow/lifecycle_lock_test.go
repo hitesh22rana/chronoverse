@@ -146,7 +146,10 @@ func TestContainerCleanupStopsAfterOwnershipLoss(t *testing.T) {
 			return ownershipLossContainer{terminate: func(ctx context.Context, _ string) error { <-ctx.Done(); return nil }}, nil
 		}
 		err := repo.withLifecycleLock(t.Context(), "workflow:TERMINATE:one", 3*time.Second, func(ctx context.Context) error {
-			return repo.cleanupCanceledJobContainer(ctx, workflow, &jobspb.JobsResponse{ContainerId: "container", RuntimeEndpoint: "tcp://runtime:2376"})
+			return repo.cleanupCanceledJobContainer(ctx, workflow, &jobspb.JobsResponse{
+				RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+				ContainerId: "container", RuntimeEndpoint: "tcp://runtime:2376",
+			})
 		})
 		if status.Code(err) != codes.Aborted {
 			t.Fatalf("lost cleanup result = %v", err)
@@ -177,7 +180,10 @@ func TestCanceledCleanupDoesNotStartAnotherContainerOperation(t *testing.T) {
 				cancel()
 				repo.svc = nil
 			}
-			err := repo.cleanupCanceledJobContainer(ctx, workflow, &jobspb.JobsResponse{ContainerId: "container", RuntimeEndpoint: "tcp://runtime:2376"})
+			err := repo.cleanupCanceledJobContainer(ctx, workflow, &jobspb.JobsResponse{
+				RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+				ContainerId: "container", RuntimeEndpoint: "tcp://runtime:2376",
+			})
 			if status.Code(err) != codes.Canceled {
 				t.Fatalf("canceled cleanup = %v", err)
 			}
@@ -369,4 +375,8 @@ func TestLifecycleLockCompletionCancelsAndJoinsInFlightRenewal(t *testing.T) {
 		}
 		assertLockReleased(t, base, 1)
 	})
+}
+
+func (ownershipLossContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
 }

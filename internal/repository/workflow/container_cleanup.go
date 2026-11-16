@@ -21,7 +21,7 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 	if snapshot == nil {
 		return status.Error(codes.InvalidArgument, "container cleanup snapshot is required")
 	}
-	if slices.Contains([]string{snapshot.ContainerID, snapshot.RuntimeEndpoint, event.ID, event.UserID, event.JobID}, "") {
+	if slices.Contains([]string{snapshot.ContainerID, snapshot.RuntimeEndpoint, snapshot.RuntimeInstance, snapshot.IntentID, event.ID, event.UserID, event.JobID}, "") {
 		return status.Error(codes.InvalidArgument, "container cleanup snapshot is incomplete")
 	}
 	if event.CleanupGeneration <= 0 {
@@ -33,7 +33,13 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 		cancel()
 		return cleanupRetryError(parentCtx, event, err)
 	}
-	request := &jobspb.ContainerCleanupAttemptRequest{JobId: event.JobID, ContainerId: snapshot.ContainerID, Generation: event.CleanupGeneration}
+	request := &jobspb.ContainerCleanupAttemptRequest{
+		JobId:           event.JobID,
+		ContainerId:     snapshot.ContainerID,
+		Generation:      event.CleanupGeneration,
+		RuntimeInstance: snapshot.RuntimeInstance,
+		IntentId:        snapshot.IntentID,
+	}
 	attempt, err := r.svc.Jobs.BeginContainerCleanupAttempt(authCtx, request)
 	cancel()
 	if err != nil {
@@ -53,7 +59,15 @@ func (r *Repository) cleanupContainerEvent(parentCtx context.Context, event *wor
 		return status.Error(codes.Unavailable, "cleanup attempt has no executable disposition")
 	}
 	request.Token = attempt.GetToken()
-	job := &jobspb.JobsResponse{Id: event.JobID, ContainerId: snapshot.ContainerID, RuntimeNodeId: snapshot.RuntimeNodeID, RuntimeEndpoint: snapshot.RuntimeEndpoint, Attempts: snapshot.Attempts}
+	job := &jobspb.JobsResponse{
+		Id:              event.JobID,
+		ContainerId:     snapshot.ContainerID,
+		RuntimeNodeId:   snapshot.RuntimeNodeID,
+		RuntimeEndpoint: snapshot.RuntimeEndpoint,
+		Attempts:        snapshot.Attempts,
+		RuntimeInstance: snapshot.RuntimeInstance,
+		IntentId:        snapshot.IntentID,
+	}
 	workflow := &workflowspb.GetWorkflowByIDResponse{Id: event.ID, UserId: event.UserID, Kind: workflowsmodel.KindContainer.ToString(), LogRetention: snapshot.LogRetention}
 	err = r.cleanupCanceledJobContainer(parentCtx, workflow, job)
 	if err == nil {

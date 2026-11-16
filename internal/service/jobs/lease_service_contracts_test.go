@@ -55,9 +55,9 @@ func leaseServiceCases() []func() *leaseServiceContract {
 	}
 	return []func() *leaseServiceContract{
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
+			req := &jobspb.ContainerCleanupAttemptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
 			return &leaseServiceContract{
-				name: "BeginContainerCleanupAttempt", request: req, required: []string{"job_id", "container_id", "generation"},
+				name: "BeginContainerCleanupAttempt", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id", "generation"},
 				invalid: map[string]protoreflect.Value{
 					"job_id":       protoreflect.ValueOfString("bad-id"),
 					"container_id": protoreflect.ValueOfString(strings.Repeat("x", 257)),
@@ -67,8 +67,8 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.BeginContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "begin", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "begin", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
+						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -77,7 +77,11 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2, Token: "00000000-0000-4000-8000-000000000010", ErrorCode: "Unavailable"}
+			req := &jobspb.ContainerCleanupAttemptRequest{
+				RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID,
+				ContainerId: "container", Generation: 2, Token: "00000000-0000-4000-8000-000000000010",
+				ErrorCode: "Unavailable",
+			}
 			return &leaseServiceContract{
 				name: "FailContainerCleanupAttempt", request: req, required: []string{"job_id", "container_id", "generation", "token", "error_code"},
 				invalid: map[string]protoreflect.Value{
@@ -89,8 +93,8 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.FailContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "fail", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "fail", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
+						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -99,9 +103,9 @@ func leaseServiceCases() []func() *leaseServiceContract {
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupAttemptRequest{JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
+			req := &jobspb.ContainerCleanupAttemptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container", Generation: 2}
 			return &leaseServiceContract{
-				name: "RedriveContainerCleanup", request: req, required: []string{"job_id", "container_id", "generation"},
+				name: "RedriveContainerCleanup", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id", "generation"},
 				invalid: map[string]protoreflect.Value{
 					"job_id":       protoreflect.ValueOfString("bad-id"),
 					"container_id": protoreflect.ValueOfString(strings.Repeat("x", 257)),
@@ -111,8 +115,8 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.RedriveContainerCleanup(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "redrive", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "redrive", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
+						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -122,29 +126,34 @@ func leaseServiceCases() []func() *leaseServiceContract {
 		},
 
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"}
+			req := &jobspb.ContainerCleanupReceiptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container"}
 			return &leaseServiceContract{
-				name: "GetContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id"},
+				name: "GetContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id"},
 				invalid: map[string]protoreflect.Value{"job_id": protoreflect.ValueOfString("bad-id"), "container_id": protoreflect.ValueOfString(strings.Repeat("x", 257))},
 				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
 					return svc.GetContainerCleanupReceipt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().GetContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId).DoAndReturn(func(ctx context.Context, _, _ string) (bool, error) { check(ctx); return failure == nil, failure })
+					repo.EXPECT().GetContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId, req.RuntimeInstance, req.IntentId).
+						DoAndReturn(func(ctx context.Context, _, _ string, _ ...string) (bool, error) {
+							check(ctx)
+							return failure == nil, failure
+						})
 					return true
 				},
 			}
 		},
 		func() *leaseServiceContract {
-			req := &jobspb.ContainerCleanupReceiptRequest{JobId: leaseContractJobID, ContainerId: "container"}
+			req := &jobspb.ContainerCleanupReceiptRequest{RuntimeInstance: "test-daemon", IntentId: leaseContractJobID, JobId: leaseContractJobID, ContainerId: "container"}
 			return &leaseServiceContract{
-				name: "RecordContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id"},
+				name: "RecordContainerCleanupReceipt", request: req, required: []string{"job_id", "container_id", "runtime_instance", "intent_id"},
 				invalid: map[string]protoreflect.Value{"job_id": protoreflect.ValueOfString("bad-id"), "container_id": protoreflect.ValueOfString(strings.Repeat("x", 257))},
 				invoke: func(ctx context.Context, svc *jobs.Service) (any, error) {
 					return nil, svc.RecordContainerCleanupReceipt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId).DoAndReturn(func(ctx context.Context, _, _ string) error { check(ctx); return failure })
+					repo.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId, req.RuntimeInstance, req.IntentId).
+						DoAndReturn(func(ctx context.Context, _, _ string, _ ...string) error { check(ctx); return failure })
 					return nil
 				},
 			}

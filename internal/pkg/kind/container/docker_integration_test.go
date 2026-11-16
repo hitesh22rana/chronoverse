@@ -2,11 +2,11 @@ package container_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -115,7 +115,7 @@ func TestIntegrationDockerWorkflowExecute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			containerID, logs, errs, err := workflow.Execute(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
+			containerID, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), tt.timeout, tt.image, tt.cmd, tt.env)
 			cleanupDockerContainer(t, workflow, containerID)
 			if tt.executionError != nil {
 				require.Error(t, err)
@@ -301,7 +301,7 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Run("successful termination", func(t *testing.T) {
 		t.Parallel()
 
-		containerID, _, _, err := workflow.Execute(t.Context(), 10*time.Second, "alpine:3.24.2", []string{"sleep", "5"}, nil)
+		containerID, _, _, err := workflow.ExecuteTestFixture(t.Context(), 10*time.Second, "alpine:3.24.2", []string{"sleep", "5"}, nil)
 		cleanupDockerContainer(t, workflow, containerID)
 		require.NoError(t, err)
 		require.NotEmpty(t, containerID)
@@ -311,6 +311,6 @@ func TestIntegrationDockerWorkflowTerminate(t *testing.T) {
 	t.Run("missing container is already terminated", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, workflow.Terminate(t.Context(), "chronoverse-missing-"+uuid.NewString()))
+		require.NoError(t, workflow.Terminate(t.Context(), strings.Repeat("f", 64)))
 	})
 }

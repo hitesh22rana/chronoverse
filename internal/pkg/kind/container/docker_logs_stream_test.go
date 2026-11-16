@@ -439,7 +439,7 @@ func TestStreamContainerLogsOversizedLineDoesNotFailExecution(t *testing.T) {
 				},
 			})
 
-			_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"true"}, nil)
+			_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine:latest", []string{"true"}, nil)
 			if err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
@@ -925,7 +925,7 @@ func TestExecuteDoesNotCloseLogChannelsWhileStreamIsPublishing(t *testing.T) {
 		},
 	})
 
-	_, logs, errs, err := workflow.Execute(t.Context(), time.Second, "alpine:latest", []string{"sleep", "1"}, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Second, "alpine:latest", []string{"sleep", "1"}, nil)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -983,7 +983,7 @@ func TestExecuteTimeoutClosesChannelsWhenErrorConsumerAbandons(t *testing.T) {
 		},
 	})
 
-	_, logs, errs, err := workflow.Execute(t.Context(), 300*time.Millisecond, "alpine:latest", []string{"sleep", "1"}, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), 300*time.Millisecond, "alpine:latest", []string{"sleep", "1"}, nil)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -1041,7 +1041,7 @@ func TestExecuteReportsCallerCancellation(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
-	_, logs, errs, err := workflow.Execute(ctx, time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(ctx, time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -1099,7 +1099,7 @@ func TestExecuteReportsWaitFailureAsTerminalError(t *testing.T) {
 		wait: failWaitAfterStreamAttached(t, "wait aborted by the daemon", streamAttached),
 	})
 
-	_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -1146,7 +1146,7 @@ func TestExecutePublishesNothingWhenContainerIsGone(t *testing.T) {
 		wait: failWaitAfterStreamAttached(t, "No such container: "+dockerLogTestContainerID, streamAttached),
 	})
 
-	_, logs, errs, err := workflow.Execute(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

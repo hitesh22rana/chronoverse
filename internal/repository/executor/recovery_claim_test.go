@@ -110,6 +110,11 @@ func TestRecoverExpiredLeaseWithClaim(t *testing.T) {
 			settlement: commandReleaseRetry,
 			calls:      []string{"inspect:container-1"},
 		},
+		{
+			name: "created never started retries", receipt: true, settlement: commandReleaseRetry,
+			container: recoveryContainer{state: containerpkg.State{Status: "created"}},
+			calls:     []string{"inspect:container-1", "remove:container-1"},
+		},
 		{name: "inspect failure preserves lease", container: recoveryContainer{inspectErr: denied}, code: codes.PermissionDenied, calls: []string{"inspect:container-1"}},
 		{
 			name:      "terminate failure preserves lease",
@@ -135,11 +140,19 @@ func TestRecoverExpiredLeaseWithClaim(t *testing.T) {
 			settlement: commandReleaseRetry,
 			calls:      []string{"inspect:container-1", "terminate:container-1", "logs:container-1", "remove:container-1"},
 		},
-		{name: "stopped log failure preserves lease", container: recoveryContainer{logsErr: denied}, code: codes.PermissionDenied, calls: []string{"inspect:container-1", "logs:container-1"}},
-		{name: "clean exit completes", receipt: true, settlement: commandCompleteJob, calls: []string{"inspect:container-1", "logs:container-1", "remove:container-1"}},
+		{
+			name: "stopped log failure preserves lease", code: codes.PermissionDenied,
+			container: recoveryContainer{state: containerpkg.State{Status: "exited"}, logsErr: denied},
+			calls:     []string{"inspect:container-1", "logs:container-1"},
+		},
+		{
+			name: "clean exit completes", receipt: true, settlement: commandCompleteJob,
+			container: recoveryContainer{state: containerpkg.State{Status: "exited"}},
+			calls:     []string{"inspect:container-1", "logs:container-1", "remove:container-1"},
+		},
 		{
 			name: "nonzero exit fails", receipt: true,
-			container:   recoveryContainer{state: containerpkg.State{ExitCode: 17}},
+			container:   recoveryContainer{state: containerpkg.State{Status: "exited", ExitCode: 17}},
 			settlement:  commandFailJob,
 			code:        codes.Aborted,
 			failureKind: jobsmodel.FailureKindUser.ToString(),
@@ -214,7 +227,7 @@ func TestRecoveredLeaseSettlementRejectsStaleOwnership(t *testing.T) {
 				completeJob: func(context.Context, *jobspb.CompleteJobRequest) error { return fenced },
 				failJob:     func(context.Context, *jobspb.FailJobRequest) error { return fenced },
 			}
-			csvc := &recoveryContainer{}
+			csvc := &recoveryContainer{state: containerpkg.State{Status: "exited"}}
 			if fail {
 				csvc.state.ExitCode = 2
 			}

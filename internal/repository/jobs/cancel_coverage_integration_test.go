@@ -23,7 +23,10 @@ func TestIntegrationCancelJobFaultsRollback(t *testing.T) {
 		deferred                        bool
 	}{
 		{name: "job update", table: "jobs", condition: "NEW.status = 'CANCELED'", message: "failed to cancel job"},
-		{name: "runtime release", table: "runtime_nodes", condition: "TRUE", message: "decrement runtime slot"},
+		// The runtime release runs from the job-update trigger's transactional
+		// reconciliation, so its fault surfaces at the cancel boundary rather than
+		// a separate decrement step. The cause and rollback below are unchanged.
+		{name: "runtime release", table: "runtime_nodes", condition: "TRUE", message: "failed to cancel job"},
 		{name: "ledger completion", table: "command_idempotency_keys", condition: "NEW.status = 'COMPLETED'", message: "complete"},
 		{name: "commit", table: "jobs", condition: "NEW.status = 'CANCELED'", message: "failed to commit cancel command", deferred: true},
 	} {

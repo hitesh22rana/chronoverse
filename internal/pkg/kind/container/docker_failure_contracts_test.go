@@ -58,9 +58,9 @@ func TestDockerRemovalAndStopDaemonFailures(t *testing.T) {
 				defer cli.Close()
 				workflow := &DockerWorkflow{Client: cli}
 				if op == "remove" {
-					err = workflow.Remove(t.Context(), "contract")
+					err = workflow.Remove(t.Context(), strings.Repeat("a", 64))
 				} else {
-					err = workflow.Terminate(t.Context(), "contract")
+					err = workflow.Terminate(t.Context(), strings.Repeat("a", 64))
 				}
 				if status.Code(err) != tc.want || calls.Load() != 1 {
 					t.Fatalf("%s = %v, calls=%d", op, err, calls.Load())
@@ -235,9 +235,9 @@ func TestDockerUnavailableDaemonContracts(t *testing.T) {
 			workflow := &DockerWorkflow{Client: cli}
 			switch op {
 			case "remove":
-				err = workflow.Remove(t.Context(), "contract")
+				err = workflow.Remove(t.Context(), strings.Repeat("a", 64))
 			case "stop":
-				err = workflow.Terminate(t.Context(), "contract")
+				err = workflow.Terminate(t.Context(), strings.Repeat("a", 64))
 			case "build":
 				err = workflow.Build(t.Context(), "alpine")
 			case "exists":
@@ -255,7 +255,7 @@ func TestDockerUnavailableDaemonContracts(t *testing.T) {
 			case "healthy":
 				err = workflow.Healthy(t.Context())
 			case "execute":
-				_, _, _, err = workflow.Execute(t.Context(), time.Minute, "alpine", nil, nil)
+				_, _, _, err = workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine", nil, nil)
 			}
 			want := codes.Internal
 			if op == "remove" {
@@ -294,7 +294,7 @@ func TestTerminateDaemonDisappearsAfterHealthCheck(t *testing.T) {
 	}
 	defer cli.Close()
 	workflow := &DockerWorkflow{Client: cli}
-	if err := workflow.Terminate(t.Context(), "contract"); status.Code(err) != codes.Unavailable {
+	if err := workflow.Terminate(t.Context(), strings.Repeat("a", 64)); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Terminate = %v", err)
 	}
 }

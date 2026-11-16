@@ -426,17 +426,6 @@ func TestMapJobLeaseErrorsPreserveContextStatus(t *testing.T) {
 	}
 }
 
-func TestReleaseJobForRetryQueryCarriesPreviousRuntimeOwner(t *testing.T) {
-	query := releaseJobForRetryQuery()
-
-	assertContains(t, query, "SELECT id, runtime_node_id")
-	assertContains(t, query, "FOR UPDATE")
-	assertContains(t, query, "RETURNING target.runtime_node_id AS previous_runtime_node_id")
-	assertContains(t, query, "released.previous_runtime_node_id IS NOT NULL")
-	assertContains(t, query, "rn.id = released.previous_runtime_node_id")
-	assertContains(t, query, "terminal_reason_code = NULL")
-}
-
 func TestRecoverExpiredJobLeasesQueryPrefersStoredRuntimeEndpoint(t *testing.T) {
 	query := recoverExpiredJobLeasesQuery()
 

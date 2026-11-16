@@ -41,9 +41,11 @@ const (
 
 // Repository provides job related operations.
 type Repository interface {
-	UpdateContainerCleanup(ctx context.Context, operation, jobID, containerID string, generation int64, token, errorCode string, interrupted bool) (*jobsmodel.CleanupAttempt, error)
-	GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string) (bool, error)
-	RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string) error
+	UpdateContainerIntent(context.Context, string, *jobsmodel.ContainerIntentCommand) (*jobsmodel.ContainerIntentResult, error)
+	ListContainerIntents(context.Context, *jobsmodel.ContainerIntentCommand, bool) ([]*jobsmodel.ContainerIntent, error)
+	UpdateContainerCleanup(ctx context.Context, operation, jobID, containerID string, generation int64, token, errorCode string, interrupted bool, identity ...string) (*jobsmodel.CleanupAttempt, error)
+	GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string, identity ...string) (bool, error)
+	RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string, identity ...string) error
 	ScheduleJob(ctx context.Context, workflowID, userID, scheduledAt, trigger, idempotencyKey string, workflowGeneration int64) (string, error)
 	CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (*jobsmodel.CancelJobSnapshot, error)
 	ClaimJob(ctx context.Context, jobID, workflowID, workerID, processInstanceID, commandID string, leaseDuration time.Duration, dispatchAttempt int32) (*jobsmodel.ClaimedJob, bool, string, error)

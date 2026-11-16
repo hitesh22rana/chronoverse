@@ -15,7 +15,7 @@ import (
 )
 
 func recoveryReceiptJob() *jobspb.ExpiredJobLease {
-	return &jobspb.ExpiredJobLease{Id: claimedJobID, WorkflowId: claimedWorkflowID, ContainerId: "container-1", RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://runtime:2376"}
+	return &jobspb.ExpiredJobLease{Id: claimedJobID, WorkflowId: claimedWorkflowID, ContainerId: "container-1", RuntimeNodeId: "runtime-1", RuntimeEndpoint: "tcp://docker-proxy:2375"}
 }
 
 func TestRecoveryCleanupPreservesLeaseCancellation(t *testing.T) {

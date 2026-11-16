@@ -213,16 +213,4 @@ func (r *Repository) reconcileRunningJobsTx(ctx context.Context, tx pgx.Tx) erro
 	return err
 }
 
-func reconcileRunningJobsQuery() string {
-	return `
-        UPDATE runtime_nodes AS rn
-        SET running_jobs = (
-                SELECT COUNT(*)::int
-                FROM jobs AS j
-                WHERE j.status = 'RUNNING'
-                    AND j.runtime_node_id = rn.id
-            ),
-            updated_at = now() AT TIME ZONE 'utc'
-        WHERE rn.id = $1;
-    `
-}
+func reconcileRunningJobsQuery() string { return "SELECT reconcile_runtime_capacity($1)" }

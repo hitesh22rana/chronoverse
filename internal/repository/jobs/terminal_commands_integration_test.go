@@ -297,25 +297,41 @@ func mustClaimedRuntimeNode(ctx context.Context, t *testing.T, pg *postgres.Post
 }
 
 // occupySpareSlots adds spare occupied slots so a duplicate decrement cannot be
-// hidden by the GREATEST(0, running_jobs - 1) clamp, and returns the attributed
-// node plus the resulting occupancy. Cleanup restores only the slots added here.
+// hidden by the GREATEST(0, running_jobs - 1) clamp. The spare slots are real
+// RUNNING allocations on the same runtime, so heartbeat/reconciliation derives
+// the same occupancy the terminal command must release. Cleanup deletes only the
+// allocation rows this fixture created.
 func occupySpareSlots(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) (nodeID string, occupied int) {
 	t.Helper()
 
 	const spare = 2
 	nodeID = mustClaimedRuntimeNode(ctx, t, pg, jobID)
-	before := readRuntimeRunningJobs(ctx, t, pg, nodeID)
-	if _, err := pg.Exec(ctx, `UPDATE runtime_nodes SET running_jobs = running_jobs + $2 WHERE id = $1`, nodeID, spare); err != nil {
-		t.Fatalf("occupy spare runtime slots on %q: %v", nodeID, err)
+	var workflowID, userID string
+	if err := pg.QueryRow(ctx, `SELECT workflow_id,user_id FROM jobs WHERE id=$1`, jobID).Scan(&workflowID, &userID); err != nil {
+		t.Fatalf("read spare-slot owner: %v", err)
+	}
+	spareIDs := make([]string, 0, spare)
+	for range spare {
+		spareID := uuid.NewString()
+		if _, err := pg.Exec(ctx, `
+			INSERT INTO jobs (id, workflow_id, user_id, "trigger", scheduled_at, started_at, status, runtime_node_id, attempts, dispatch_attempts)
+			VALUES ($1, $2, $3, 'MANUAL', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc', 'RUNNING', $4, 1, 1)
+		`, spareID, workflowID, userID, nodeID); err != nil {
+			t.Fatalf("occupy spare runtime allocation on %q: %v", nodeID, err)
+		}
+		spareIDs = append(spareIDs, spareID)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 		defer cancel()
-		if _, err := pg.Exec(cleanupCtx, `UPDATE runtime_nodes SET running_jobs = GREATEST(0, running_jobs - $2) WHERE id = $1`, nodeID, spare); err != nil {
-			t.Errorf("restore spare runtime slots on %q: %v", nodeID, err)
+		if _, err := pg.Exec(cleanupCtx, `DELETE FROM jobs WHERE id = ANY($1)`, spareIDs); err != nil {
+			t.Errorf("delete spare runtime allocations on %q: %v", nodeID, err)
 		}
 	})
-	return nodeID, before + spare
+	if _, err := pg.Exec(ctx, `SELECT reconcile_runtime_capacity($1)`, nodeID); err != nil {
+		t.Fatalf("reconcile spare runtime allocations on %q: %v", nodeID, err)
+	}
+	return nodeID, readRuntimeRunningJobs(ctx, t, pg, nodeID)
 }
 
 // countTerminalOutboxEvents counts the outbox events whose deterministic keys a

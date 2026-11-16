@@ -88,6 +88,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
             FROM %s AS w
             WHERE w.build_status = 'COMPLETED'
                 AND w.terminated_at IS NULL
+                AND (w.kind<>'CONTAINER' OR NOT workflow_container_blocked(w.id))
                 AND NOT EXISTS (
                     SELECT 1
                     FROM %s AS active
@@ -182,6 +183,7 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
                     FROM %s AS w
                     WHERE w.id = j.workflow_id
                         AND w.terminated_at IS NULL
+                AND (w.kind<>'CONTAINER' OR NOT workflow_container_blocked(w.id))
                 )
             RETURNING j.id, j.workflow_id, j.scheduled_at, j.dispatch_attempts, selected.generation;
     `,

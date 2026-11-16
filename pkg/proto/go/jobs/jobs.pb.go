@@ -324,6 +324,8 @@ type CancelJobResponse struct {
 	RuntimeNodeId   string                 `protobuf:"bytes,4,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`
 	RuntimeEndpoint string                 `protobuf:"bytes,5,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`
 	Attempt         int32                  `protobuf:"varint,6,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	RuntimeInstance string                 `protobuf:"bytes,7,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	IntentId        string                 `protobuf:"bytes,8,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -398,6 +400,20 @@ func (x *CancelJobResponse) GetAttempt() int32 {
 		return x.Attempt
 	}
 	return 0
+}
+
+func (x *CancelJobResponse) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *CancelJobResponse) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
+	}
+	return ""
 }
 
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
@@ -2732,6 +2748,8 @@ type JobsResponse struct {
 	RuntimeEndpoint     string                 `protobuf:"bytes,13,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`               // Docker endpoint snapshot for the owning runtime node
 	StatusReasonCode    string                 `protobuf:"bytes,14,opt,name=status_reason_code,json=statusReasonCode,proto3" json:"status_reason_code,omitempty"`          // Safe terminal reason code (FAILED/CANCELED only)
 	StatusReasonMessage string                 `protobuf:"bytes,15,opt,name=status_reason_message,json=statusReasonMessage,proto3" json:"status_reason_message,omitempty"` // Safe terminal reason message (FAILED/CANCELED only)
+	RuntimeInstance     string                 `protobuf:"bytes,16,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	IntentId            string                 `protobuf:"bytes,17,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -2871,6 +2889,20 @@ func (x *JobsResponse) GetStatusReasonMessage() string {
 	return ""
 }
 
+func (x *JobsResponse) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *JobsResponse) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
+	}
+	return ""
+}
+
 type ListJobsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Jobs          []*JobsResponse        `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`     // List of jobs
@@ -2926,11 +2958,13 @@ func (x *ListJobsResponse) GetCursor() string {
 // JobsService handles job related operations.
 // ContainerCleanupReceiptRequest identifies one immutable job container.
 type ContainerCleanupReceiptRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ContainerId     string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	RuntimeInstance string                 `protobuf:"bytes,3,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	IntentId        string                 `protobuf:"bytes,4,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ContainerCleanupReceiptRequest) Reset() {
@@ -2973,6 +3007,20 @@ func (x *ContainerCleanupReceiptRequest) GetJobId() string {
 func (x *ContainerCleanupReceiptRequest) GetContainerId() string {
 	if x != nil {
 		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerCleanupReceiptRequest) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *ContainerCleanupReceiptRequest) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
 	}
 	return ""
 }
@@ -3059,15 +3107,17 @@ func (*RecordContainerCleanupReceiptResponse) Descriptor() ([]byte, []int) {
 
 // Cleanup generations are independent of workflow generations.
 type ContainerCleanupAttemptRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	ContainerId   string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
-	Generation    int64                  `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`               // Expected cleanup generation, not the workflow generation.
-	Token         string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`                          // Failure reports only: the token granted by Begin.
-	ErrorCode     string                 `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"` // Failure reports only: non-OK gRPC status name.
-	Interrupted   bool                   `protobuf:"varint,6,opt,name=interrupted,proto3" json:"interrupted,omitempty"`             // Caller cancellation returns the attempt without spending its budget.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ContainerId     string                 `protobuf:"bytes,2,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Generation      int64                  `protobuf:"varint,3,opt,name=generation,proto3" json:"generation,omitempty"`               // Expected cleanup generation, not the workflow generation.
+	Token           string                 `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`                          // Failure reports only: the token granted by Begin.
+	ErrorCode       string                 `protobuf:"bytes,5,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"` // Failure reports only: non-OK gRPC status name.
+	Interrupted     bool                   `protobuf:"varint,6,opt,name=interrupted,proto3" json:"interrupted,omitempty"`             // Caller cancellation returns the attempt without spending its budget.
+	RuntimeInstance string                 `protobuf:"bytes,7,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	IntentId        string                 `protobuf:"bytes,8,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ContainerCleanupAttemptRequest) Reset() {
@@ -3142,6 +3192,20 @@ func (x *ContainerCleanupAttemptRequest) GetInterrupted() bool {
 	return false
 }
 
+func (x *ContainerCleanupAttemptRequest) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *ContainerCleanupAttemptRequest) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
+	}
+	return ""
+}
+
 type ContainerCleanupAttemptResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
@@ -3210,6 +3274,543 @@ func (x *ContainerCleanupAttemptResponse) GetToken() string {
 	return ""
 }
 
+// Container intents are immutable per execution attempt and survive source deletion.
+type ContainerIntentCommand struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	JobId              string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	LeaseToken         string                 `protobuf:"bytes,2,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
+	IntentId           string                 `protobuf:"bytes,3,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	RuntimeInstance    string                 `protobuf:"bytes,4,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	RequestHash        string                 `protobuf:"bytes,5,opt,name=request_hash,json=requestHash,proto3" json:"request_hash,omitempty"`
+	ContainerId        string                 `protobuf:"bytes,6,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Outcome            string                 `protobuf:"bytes,7,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	ErrorCode          string                 `protobuf:"bytes,8,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage       string                 `protobuf:"bytes,9,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Token              string                 `protobuf:"bytes,10,opt,name=token,proto3" json:"token,omitempty"`
+	Reason             string                 `protobuf:"bytes,11,opt,name=reason,proto3" json:"reason,omitempty"`
+	Attempt            int32                  `protobuf:"varint,12,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	BatchSize          int32                  `protobuf:"varint,13,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
+	Generation         int64                  `protobuf:"varint,14,opt,name=generation,proto3" json:"generation,omitempty"`
+	Stage              string                 `protobuf:"bytes,15,opt,name=stage,proto3" json:"stage,omitempty"`
+	WorkflowGeneration int64                  `protobuf:"varint,16,opt,name=workflow_generation,json=workflowGeneration,proto3" json:"workflow_generation,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ContainerIntentCommand) Reset() {
+	*x = ContainerIntentCommand{}
+	mi := &file_jobs_jobs_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerIntentCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerIntentCommand) ProtoMessage() {}
+
+func (x *ContainerIntentCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerIntentCommand.ProtoReflect.Descriptor instead.
+func (*ContainerIntentCommand) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ContainerIntentCommand) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetLeaseToken() string {
+	if x != nil {
+		return x.LeaseToken
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetRequestHash() string {
+	if x != nil {
+		return x.RequestHash
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *ContainerIntentCommand) GetBatchSize() int32 {
+	if x != nil {
+		return x.BatchSize
+	}
+	return 0
+}
+
+func (x *ContainerIntentCommand) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ContainerIntentCommand) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *ContainerIntentCommand) GetWorkflowGeneration() int64 {
+	if x != nil {
+		return x.WorkflowGeneration
+	}
+	return 0
+}
+
+type ContainerIntent struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Id                     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	JobId                  string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	WorkflowId             string                 `protobuf:"bytes,3,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
+	UserId                 string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Name                   string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	RuntimeNodeId          string                 `protobuf:"bytes,6,opt,name=runtime_node_id,json=runtimeNodeId,proto3" json:"runtime_node_id,omitempty"`
+	RuntimeEndpoint        string                 `protobuf:"bytes,7,opt,name=runtime_endpoint,json=runtimeEndpoint,proto3" json:"runtime_endpoint,omitempty"`
+	RuntimeInstance        string                 `protobuf:"bytes,8,opt,name=runtime_instance,json=runtimeInstance,proto3" json:"runtime_instance,omitempty"`
+	RequestHash            string                 `protobuf:"bytes,9,opt,name=request_hash,json=requestHash,proto3" json:"request_hash,omitempty"`
+	ContainerId            string                 `protobuf:"bytes,10,opt,name=container_id,json=containerId,proto3" json:"container_id,omitempty"`
+	Outcome                string                 `protobuf:"bytes,11,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	ErrorCode              string                 `protobuf:"bytes,12,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ErrorMessage           string                 `protobuf:"bytes,13,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Token                  string                 `protobuf:"bytes,14,opt,name=token,proto3" json:"token,omitempty"`
+	NextInspectionAt       string                 `protobuf:"bytes,15,opt,name=next_inspection_at,json=nextInspectionAt,proto3" json:"next_inspection_at,omitempty"`
+	LastInspectionAt       string                 `protobuf:"bytes,16,opt,name=last_inspection_at,json=lastInspectionAt,proto3" json:"last_inspection_at,omitempty"`
+	Attempt                int32                  `protobuf:"varint,17,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Generation             int64                  `protobuf:"varint,18,opt,name=generation,proto3" json:"generation,omitempty"`
+	CreateReserved         bool                   `protobuf:"varint,19,opt,name=create_reserved,json=createReserved,proto3" json:"create_reserved,omitempty"`
+	StartReserved          bool                   `protobuf:"varint,20,opt,name=start_reserved,json=startReserved,proto3" json:"start_reserved,omitempty"`
+	Closed                 bool                   `protobuf:"varint,21,opt,name=closed,proto3" json:"closed,omitempty"`
+	LogRetention           bool                   `protobuf:"varint,22,opt,name=log_retention,json=logRetention,proto3" json:"log_retention,omitempty"`
+	Quarantined            bool                   `protobuf:"varint,23,opt,name=quarantined,proto3" json:"quarantined,omitempty"`
+	InspectionErrors       int32                  `protobuf:"varint,24,opt,name=inspection_errors,json=inspectionErrors,proto3" json:"inspection_errors,omitempty"`
+	HeldCapacity           bool                   `protobuf:"varint,25,opt,name=held_capacity,json=heldCapacity,proto3" json:"held_capacity,omitempty"`
+	Stage                  string                 `protobuf:"bytes,26,opt,name=stage,proto3" json:"stage,omitempty"`
+	InspectionErrorCode    string                 `protobuf:"bytes,27,opt,name=inspection_error_code,json=inspectionErrorCode,proto3" json:"inspection_error_code,omitempty"`
+	InspectionErrorMessage string                 `protobuf:"bytes,28,opt,name=inspection_error_message,json=inspectionErrorMessage,proto3" json:"inspection_error_message,omitempty"`
+	WorkflowGeneration     int64                  `protobuf:"varint,29,opt,name=workflow_generation,json=workflowGeneration,proto3" json:"workflow_generation,omitempty"`
+	ImageReference         string                 `protobuf:"bytes,30,opt,name=image_reference,json=imageReference,proto3" json:"image_reference,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *ContainerIntent) Reset() {
+	*x = ContainerIntent{}
+	mi := &file_jobs_jobs_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerIntent) ProtoMessage() {}
+
+func (x *ContainerIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerIntent.ProtoReflect.Descriptor instead.
+func (*ContainerIntent) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *ContainerIntent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetRuntimeNodeId() string {
+	if x != nil {
+		return x.RuntimeNodeId
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetRuntimeEndpoint() string {
+	if x != nil {
+		return x.RuntimeEndpoint
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetRuntimeInstance() string {
+	if x != nil {
+		return x.RuntimeInstance
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetRequestHash() string {
+	if x != nil {
+		return x.RequestHash
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetContainerId() string {
+	if x != nil {
+		return x.ContainerId
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetNextInspectionAt() string {
+	if x != nil {
+		return x.NextInspectionAt
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetLastInspectionAt() string {
+	if x != nil {
+		return x.LastInspectionAt
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *ContainerIntent) GetGeneration() int64 {
+	if x != nil {
+		return x.Generation
+	}
+	return 0
+}
+
+func (x *ContainerIntent) GetCreateReserved() bool {
+	if x != nil {
+		return x.CreateReserved
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetStartReserved() bool {
+	if x != nil {
+		return x.StartReserved
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetClosed() bool {
+	if x != nil {
+		return x.Closed
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetLogRetention() bool {
+	if x != nil {
+		return x.LogRetention
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetQuarantined() bool {
+	if x != nil {
+		return x.Quarantined
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetInspectionErrors() int32 {
+	if x != nil {
+		return x.InspectionErrors
+	}
+	return 0
+}
+
+func (x *ContainerIntent) GetHeldCapacity() bool {
+	if x != nil {
+		return x.HeldCapacity
+	}
+	return false
+}
+
+func (x *ContainerIntent) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetInspectionErrorCode() string {
+	if x != nil {
+		return x.InspectionErrorCode
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetInspectionErrorMessage() string {
+	if x != nil {
+		return x.InspectionErrorMessage
+	}
+	return ""
+}
+
+func (x *ContainerIntent) GetWorkflowGeneration() int64 {
+	if x != nil {
+		return x.WorkflowGeneration
+	}
+	return 0
+}
+
+func (x *ContainerIntent) GetImageReference() string {
+	if x != nil {
+		return x.ImageReference
+	}
+	return ""
+}
+
+type ContainerIntentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Intent        *ContainerIntent       `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
+	Granted       bool                   `protobuf:"varint,2,opt,name=granted,proto3" json:"granted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerIntentResponse) Reset() {
+	*x = ContainerIntentResponse{}
+	mi := &file_jobs_jobs_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerIntentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerIntentResponse) ProtoMessage() {}
+
+func (x *ContainerIntentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerIntentResponse.ProtoReflect.Descriptor instead.
+func (*ContainerIntentResponse) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ContainerIntentResponse) GetIntent() *ContainerIntent {
+	if x != nil {
+		return x.Intent
+	}
+	return nil
+}
+
+func (x *ContainerIntentResponse) GetGranted() bool {
+	if x != nil {
+		return x.Granted
+	}
+	return false
+}
+
+type ListContainerIntentsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Intents       []*ContainerIntent     `protobuf:"bytes,1,rep,name=intents,proto3" json:"intents,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListContainerIntentsResponse) Reset() {
+	*x = ListContainerIntentsResponse{}
+	mi := &file_jobs_jobs_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListContainerIntentsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListContainerIntentsResponse) ProtoMessage() {}
+
+func (x *ListContainerIntentsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jobs_jobs_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListContainerIntentsResponse.ProtoReflect.Descriptor instead.
+func (*ListContainerIntentsResponse) Descriptor() ([]byte, []int) {
+	return file_jobs_jobs_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *ListContainerIntentsResponse) GetIntents() []*ContainerIntent {
+	if x != nil {
+		return x.Intents
+	}
+	return nil
+}
+
 var File_jobs_jobs_proto protoreflect.FileDescriptor
 
 const file_jobs_jobs_proto_rawDesc = "" +
@@ -3229,14 +3830,16 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x02 \x01(\tR\tcommandId\x120\n" +
-	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\xdc\x01\n" +
+	"\x14terminal_reason_code\x18\x03 \x01(\tR\x12terminalReasonCode\"\xa4\x02\n" +
 	"\x11CancelJobResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x0fprevious_status\x18\x02 \x01(\tR\x0epreviousStatus\x12!\n" +
 	"\fcontainer_id\x18\x03 \x01(\tR\vcontainerId\x12&\n" +
 	"\x0fruntime_node_id\x18\x04 \x01(\tR\rruntimeNodeId\x12)\n" +
 	"\x10runtime_endpoint\x18\x05 \x01(\tR\x0fruntimeEndpoint\x12\x18\n" +
-	"\aattempt\x18\x06 \x01(\x05R\aattempt\"\x8f\x02\n" +
+	"\aattempt\x18\x06 \x01(\x05R\aattempt\x12)\n" +
+	"\x10runtime_instance\x18\a \x01(\tR\x0fruntimeInstance\x12\x1b\n" +
+	"\tintent_id\x18\b \x01(\tR\bintentId\"\x8f\x02\n" +
 	"\x0fClaimJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -3445,7 +4048,7 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x06cursor\x18\x03 \x01(\tR\x06cursor\x124\n" +
 	"\afilters\x18\x04 \x01(\v2\x15.jobs.ListJobsFiltersH\x00R\afilters\x88\x01\x01B\n" +
 	"\n" +
-	"\b_filters\"\x88\x04\n" +
+	"\b_filters\"\xd0\x04\n" +
 	"\fJobsResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vworkflow_id\x18\x02 \x01(\tR\n" +
@@ -3466,16 +4069,20 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x0fruntime_node_id\x18\f \x01(\tR\rruntimeNodeId\x12)\n" +
 	"\x10runtime_endpoint\x18\r \x01(\tR\x0fruntimeEndpoint\x12,\n" +
 	"\x12status_reason_code\x18\x0e \x01(\tR\x10statusReasonCode\x122\n" +
-	"\x15status_reason_message\x18\x0f \x01(\tR\x13statusReasonMessage\"R\n" +
+	"\x15status_reason_message\x18\x0f \x01(\tR\x13statusReasonMessage\x12)\n" +
+	"\x10runtime_instance\x18\x10 \x01(\tR\x0fruntimeInstance\x12\x1b\n" +
+	"\tintent_id\x18\x11 \x01(\tR\bintentId\"R\n" +
 	"\x10ListJobsResponse\x12&\n" +
 	"\x04jobs\x18\x01 \x03(\v2\x12.jobs.JobsResponseR\x04jobs\x12\x16\n" +
-	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"Z\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"\xa2\x01\n" +
 	"\x1eContainerCleanupReceiptRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
-	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\"B\n" +
+	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12)\n" +
+	"\x10runtime_instance\x18\x03 \x01(\tR\x0fruntimeInstance\x12\x1b\n" +
+	"\tintent_id\x18\x04 \x01(\tR\bintentId\"B\n" +
 	"\"GetContainerCleanupReceiptResponse\x12\x1c\n" +
 	"\tcompleted\x18\x01 \x01(\bR\tcompleted\"'\n" +
-	"%RecordContainerCleanupReceiptResponse\"\xd1\x01\n" +
+	"%RecordContainerCleanupReceiptResponse\"\x99\x02\n" +
 	"\x1eContainerCleanupAttemptRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12!\n" +
 	"\fcontainer_id\x18\x02 \x01(\tR\vcontainerId\x12\x1e\n" +
@@ -3485,14 +4092,80 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\x05token\x18\x04 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x05 \x01(\tR\terrorCode\x12 \n" +
-	"\vinterrupted\x18\x06 \x01(\bR\vinterrupted\"\x89\x01\n" +
+	"\vinterrupted\x18\x06 \x01(\bR\vinterrupted\x12)\n" +
+	"\x10runtime_instance\x18\a \x01(\tR\x0fruntimeInstance\x12\x1b\n" +
+	"\tintent_id\x18\b \x01(\tR\bintentId\"\x89\x01\n" +
 	"\x1fContainerCleanupAttemptResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x02 \x01(\x03R\n" +
 	"generation\x12\x1a\n" +
 	"\battempts\x18\x03 \x01(\x05R\battempts\x12\x14\n" +
-	"\x05token\x18\x04 \x01(\tR\x05token*i\n" +
+	"\x05token\x18\x04 \x01(\tR\x05token\"\x8a\x04\n" +
+	"\x16ContainerIntentCommand\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\vlease_token\x18\x02 \x01(\tR\n" +
+	"leaseToken\x12\x1b\n" +
+	"\tintent_id\x18\x03 \x01(\tR\bintentId\x12)\n" +
+	"\x10runtime_instance\x18\x04 \x01(\tR\x0fruntimeInstance\x12!\n" +
+	"\frequest_hash\x18\x05 \x01(\tR\vrequestHash\x12!\n" +
+	"\fcontainer_id\x18\x06 \x01(\tR\vcontainerId\x12\x18\n" +
+	"\aoutcome\x18\a \x01(\tR\aoutcome\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\b \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\t \x01(\tR\ferrorMessage\x12\x14\n" +
+	"\x05token\x18\n" +
+	" \x01(\tR\x05token\x12\x16\n" +
+	"\x06reason\x18\v \x01(\tR\x06reason\x12\x18\n" +
+	"\aattempt\x18\f \x01(\x05R\aattempt\x12\x1d\n" +
+	"\n" +
+	"batch_size\x18\r \x01(\x05R\tbatchSize\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x0e \x01(\x03R\n" +
+	"generation\x12\x14\n" +
+	"\x05stage\x18\x0f \x01(\tR\x05stage\x12/\n" +
+	"\x13workflow_generation\x18\x10 \x01(\x03R\x12workflowGeneration\"\xb3\b\n" +
+	"\x0fContainerIntent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\vworkflow_id\x18\x03 \x01(\tR\n" +
+	"workflowId\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x12&\n" +
+	"\x0fruntime_node_id\x18\x06 \x01(\tR\rruntimeNodeId\x12)\n" +
+	"\x10runtime_endpoint\x18\a \x01(\tR\x0fruntimeEndpoint\x12)\n" +
+	"\x10runtime_instance\x18\b \x01(\tR\x0fruntimeInstance\x12!\n" +
+	"\frequest_hash\x18\t \x01(\tR\vrequestHash\x12!\n" +
+	"\fcontainer_id\x18\n" +
+	" \x01(\tR\vcontainerId\x12\x18\n" +
+	"\aoutcome\x18\v \x01(\tR\aoutcome\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\f \x01(\tR\terrorCode\x12#\n" +
+	"\rerror_message\x18\r \x01(\tR\ferrorMessage\x12\x14\n" +
+	"\x05token\x18\x0e \x01(\tR\x05token\x12,\n" +
+	"\x12next_inspection_at\x18\x0f \x01(\tR\x10nextInspectionAt\x12,\n" +
+	"\x12last_inspection_at\x18\x10 \x01(\tR\x10lastInspectionAt\x12\x18\n" +
+	"\aattempt\x18\x11 \x01(\x05R\aattempt\x12\x1e\n" +
+	"\n" +
+	"generation\x18\x12 \x01(\x03R\n" +
+	"generation\x12'\n" +
+	"\x0fcreate_reserved\x18\x13 \x01(\bR\x0ecreateReserved\x12%\n" +
+	"\x0estart_reserved\x18\x14 \x01(\bR\rstartReserved\x12\x16\n" +
+	"\x06closed\x18\x15 \x01(\bR\x06closed\x12#\n" +
+	"\rlog_retention\x18\x16 \x01(\bR\flogRetention\x12 \n" +
+	"\vquarantined\x18\x17 \x01(\bR\vquarantined\x12+\n" +
+	"\x11inspection_errors\x18\x18 \x01(\x05R\x10inspectionErrors\x12#\n" +
+	"\rheld_capacity\x18\x19 \x01(\bR\fheldCapacity\x12\x14\n" +
+	"\x05stage\x18\x1a \x01(\tR\x05stage\x122\n" +
+	"\x15inspection_error_code\x18\x1b \x01(\tR\x13inspectionErrorCode\x128\n" +
+	"\x18inspection_error_message\x18\x1c \x01(\tR\x16inspectionErrorMessage\x12/\n" +
+	"\x13workflow_generation\x18\x1d \x01(\x03R\x12workflowGeneration\x12'\n" +
+	"\x0fimage_reference\x18\x1e \x01(\tR\x0eimageReference\"b\n" +
+	"\x17ContainerIntentResponse\x12-\n" +
+	"\x06intent\x18\x01 \x01(\v2\x15.jobs.ContainerIntentR\x06intent\x12\x18\n" +
+	"\agranted\x18\x02 \x01(\bR\agranted\"O\n" +
+	"\x1cListContainerIntentsResponse\x12/\n" +
+	"\aintents\x18\x01 \x03(\v2\x15.jobs.ContainerIntentR\aintents*i\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
@@ -3501,8 +4174,18 @@ const file_jobs_jobs_proto_rawDesc = "" +
 	"\fLogSortOrder\x12\x1e\n" +
 	"\x1aLOG_SORT_ORDER_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LOG_SORT_ORDER_DESC\x10\x01\x12\x16\n" +
-	"\x12LOG_SORT_ORDER_ASC\x10\x022\xff\x0e\n" +
-	"\vJobsService\x12m\n" +
+	"\x12LOG_SORT_ORDER_ASC\x10\x022\xf5\x15\n" +
+	"\vJobsService\x12V\n" +
+	"\x15EnsureContainerIntent\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12S\n" +
+	"\x12GetContainerIntent\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12W\n" +
+	"\x16ReserveContainerCreate\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12Q\n" +
+	"\x10ObserveContainer\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12V\n" +
+	"\x15ReserveContainerStart\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12U\n" +
+	"\x14CloseContainerIntent\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12[\n" +
+	"\x15ClaimContainerIntents\x12\x1c.jobs.ContainerIntentCommand\x1a\".jobs.ListContainerIntentsResponse\"\x00\x12Z\n" +
+	"\x19ReportContainerInspection\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12Z\n" +
+	"\x14ListContainerIntents\x12\x1c.jobs.ContainerIntentCommand\x1a\".jobs.ListContainerIntentsResponse\"\x00\x12W\n" +
+	"\x16RedriveContainerIntent\x12\x1c.jobs.ContainerIntentCommand\x1a\x1d.jobs.ContainerIntentResponse\"\x00\x12m\n" +
 	"\x1cBeginContainerCleanupAttempt\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12l\n" +
 	"\x1bFailContainerCleanupAttempt\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12h\n" +
 	"\x17RedriveContainerCleanup\x12$.jobs.ContainerCleanupAttemptRequest\x1a%.jobs.ContainerCleanupAttemptResponse\"\x00\x12n\n" +
@@ -3542,7 +4225,7 @@ func file_jobs_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_jobs_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_jobs_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_jobs_jobs_proto_goTypes = []any{
 	(LogStream)(0),                                // 0: jobs.LogStream
 	(LogSortOrder)(0),                             // 1: jobs.LogSortOrder
@@ -3591,6 +4274,10 @@ var file_jobs_jobs_proto_goTypes = []any{
 	(*RecordContainerCleanupReceiptResponse)(nil), // 44: jobs.RecordContainerCleanupReceiptResponse
 	(*ContainerCleanupAttemptRequest)(nil),        // 45: jobs.ContainerCleanupAttemptRequest
 	(*ContainerCleanupAttemptResponse)(nil),       // 46: jobs.ContainerCleanupAttemptResponse
+	(*ContainerIntentCommand)(nil),                // 47: jobs.ContainerIntentCommand
+	(*ContainerIntent)(nil),                       // 48: jobs.ContainerIntent
+	(*ContainerIntentResponse)(nil),               // 49: jobs.ContainerIntentResponse
+	(*ListContainerIntentsResponse)(nil),          // 50: jobs.ListContainerIntentsResponse
 }
 var file_jobs_jobs_proto_depIdxs = []int32{
 	9,  // 0: jobs.ListReadyRuntimeNodesResponse.nodes:type_name -> jobs.GetReadyRuntimeNodeResponse
@@ -3604,57 +4291,79 @@ var file_jobs_jobs_proto_depIdxs = []int32{
 	1,  // 8: jobs.SearchJobLogsRequest.sort_order:type_name -> jobs.LogSortOrder
 	38, // 9: jobs.ListJobsRequest.filters:type_name -> jobs.ListJobsFilters
 	40, // 10: jobs.ListJobsResponse.jobs:type_name -> jobs.JobsResponse
-	45, // 11: jobs.JobsService.BeginContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
-	45, // 12: jobs.JobsService.FailContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
-	45, // 13: jobs.JobsService.RedriveContainerCleanup:input_type -> jobs.ContainerCleanupAttemptRequest
-	42, // 14: jobs.JobsService.GetContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
-	42, // 15: jobs.JobsService.RecordContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
-	2,  // 16: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
-	4,  // 17: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
-	6,  // 18: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
-	8,  // 19: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
-	10, // 20: jobs.JobsService.ListReadyRuntimeNodes:input_type -> jobs.ListReadyRuntimeNodesRequest
-	12, // 21: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
-	14, // 22: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
-	16, // 23: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
-	18, // 24: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
-	20, // 25: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
-	22, // 26: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
-	25, // 27: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
-	27, // 28: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
-	29, // 29: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
-	32, // 30: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
-	35, // 31: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
-	37, // 32: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
-	39, // 33: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
-	46, // 34: jobs.JobsService.BeginContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
-	46, // 35: jobs.JobsService.FailContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
-	46, // 36: jobs.JobsService.RedriveContainerCleanup:output_type -> jobs.ContainerCleanupAttemptResponse
-	43, // 37: jobs.JobsService.GetContainerCleanupReceipt:output_type -> jobs.GetContainerCleanupReceiptResponse
-	44, // 38: jobs.JobsService.RecordContainerCleanupReceipt:output_type -> jobs.RecordContainerCleanupReceiptResponse
-	3,  // 39: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
-	5,  // 40: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
-	7,  // 41: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
-	9,  // 42: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
-	11, // 43: jobs.JobsService.ListReadyRuntimeNodes:output_type -> jobs.ListReadyRuntimeNodesResponse
-	13, // 44: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
-	15, // 45: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
-	17, // 46: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
-	19, // 47: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
-	21, // 48: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
-	23, // 49: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
-	26, // 50: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
-	28, // 51: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
-	30, // 52: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
-	34, // 53: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
-	33, // 54: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
-	34, // 55: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
-	41, // 56: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
-	34, // [34:57] is the sub-list for method output_type
-	11, // [11:34] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	48, // 11: jobs.ContainerIntentResponse.intent:type_name -> jobs.ContainerIntent
+	48, // 12: jobs.ListContainerIntentsResponse.intents:type_name -> jobs.ContainerIntent
+	47, // 13: jobs.JobsService.EnsureContainerIntent:input_type -> jobs.ContainerIntentCommand
+	47, // 14: jobs.JobsService.GetContainerIntent:input_type -> jobs.ContainerIntentCommand
+	47, // 15: jobs.JobsService.ReserveContainerCreate:input_type -> jobs.ContainerIntentCommand
+	47, // 16: jobs.JobsService.ObserveContainer:input_type -> jobs.ContainerIntentCommand
+	47, // 17: jobs.JobsService.ReserveContainerStart:input_type -> jobs.ContainerIntentCommand
+	47, // 18: jobs.JobsService.CloseContainerIntent:input_type -> jobs.ContainerIntentCommand
+	47, // 19: jobs.JobsService.ClaimContainerIntents:input_type -> jobs.ContainerIntentCommand
+	47, // 20: jobs.JobsService.ReportContainerInspection:input_type -> jobs.ContainerIntentCommand
+	47, // 21: jobs.JobsService.ListContainerIntents:input_type -> jobs.ContainerIntentCommand
+	47, // 22: jobs.JobsService.RedriveContainerIntent:input_type -> jobs.ContainerIntentCommand
+	45, // 23: jobs.JobsService.BeginContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
+	45, // 24: jobs.JobsService.FailContainerCleanupAttempt:input_type -> jobs.ContainerCleanupAttemptRequest
+	45, // 25: jobs.JobsService.RedriveContainerCleanup:input_type -> jobs.ContainerCleanupAttemptRequest
+	42, // 26: jobs.JobsService.GetContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
+	42, // 27: jobs.JobsService.RecordContainerCleanupReceipt:input_type -> jobs.ContainerCleanupReceiptRequest
+	2,  // 28: jobs.JobsService.ScheduleJob:input_type -> jobs.ScheduleJobRequest
+	4,  // 29: jobs.JobsService.CancelJob:input_type -> jobs.CancelJobRequest
+	6,  // 30: jobs.JobsService.ClaimJob:input_type -> jobs.ClaimJobRequest
+	8,  // 31: jobs.JobsService.GetReadyRuntimeNode:input_type -> jobs.GetReadyRuntimeNodeRequest
+	10, // 32: jobs.JobsService.ListReadyRuntimeNodes:input_type -> jobs.ListReadyRuntimeNodesRequest
+	12, // 33: jobs.JobsService.RenewJobLease:input_type -> jobs.RenewJobLeaseRequest
+	14, // 34: jobs.JobsService.AttachJobContainer:input_type -> jobs.AttachJobContainerRequest
+	16, // 35: jobs.JobsService.CompleteJob:input_type -> jobs.CompleteJobRequest
+	18, // 36: jobs.JobsService.FailJob:input_type -> jobs.FailJobRequest
+	20, // 37: jobs.JobsService.CancelClaimedJob:input_type -> jobs.CancelClaimedJobRequest
+	22, // 38: jobs.JobsService.ReleaseJobForRetry:input_type -> jobs.ReleaseJobForRetryRequest
+	25, // 39: jobs.JobsService.RecoverExpiredJobLeases:input_type -> jobs.RecoverExpiredJobLeasesRequest
+	27, // 40: jobs.JobsService.GetJob:input_type -> jobs.GetJobRequest
+	29, // 41: jobs.JobsService.GetJobByID:input_type -> jobs.GetJobByIDRequest
+	32, // 42: jobs.JobsService.GetJobLogs:input_type -> jobs.GetJobLogsRequest
+	35, // 43: jobs.JobsService.StreamJobLogs:input_type -> jobs.StreamJobLogsRequest
+	37, // 44: jobs.JobsService.SearchJobLogs:input_type -> jobs.SearchJobLogsRequest
+	39, // 45: jobs.JobsService.ListJobs:input_type -> jobs.ListJobsRequest
+	49, // 46: jobs.JobsService.EnsureContainerIntent:output_type -> jobs.ContainerIntentResponse
+	49, // 47: jobs.JobsService.GetContainerIntent:output_type -> jobs.ContainerIntentResponse
+	49, // 48: jobs.JobsService.ReserveContainerCreate:output_type -> jobs.ContainerIntentResponse
+	49, // 49: jobs.JobsService.ObserveContainer:output_type -> jobs.ContainerIntentResponse
+	49, // 50: jobs.JobsService.ReserveContainerStart:output_type -> jobs.ContainerIntentResponse
+	49, // 51: jobs.JobsService.CloseContainerIntent:output_type -> jobs.ContainerIntentResponse
+	50, // 52: jobs.JobsService.ClaimContainerIntents:output_type -> jobs.ListContainerIntentsResponse
+	49, // 53: jobs.JobsService.ReportContainerInspection:output_type -> jobs.ContainerIntentResponse
+	50, // 54: jobs.JobsService.ListContainerIntents:output_type -> jobs.ListContainerIntentsResponse
+	49, // 55: jobs.JobsService.RedriveContainerIntent:output_type -> jobs.ContainerIntentResponse
+	46, // 56: jobs.JobsService.BeginContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
+	46, // 57: jobs.JobsService.FailContainerCleanupAttempt:output_type -> jobs.ContainerCleanupAttemptResponse
+	46, // 58: jobs.JobsService.RedriveContainerCleanup:output_type -> jobs.ContainerCleanupAttemptResponse
+	43, // 59: jobs.JobsService.GetContainerCleanupReceipt:output_type -> jobs.GetContainerCleanupReceiptResponse
+	44, // 60: jobs.JobsService.RecordContainerCleanupReceipt:output_type -> jobs.RecordContainerCleanupReceiptResponse
+	3,  // 61: jobs.JobsService.ScheduleJob:output_type -> jobs.ScheduleJobResponse
+	5,  // 62: jobs.JobsService.CancelJob:output_type -> jobs.CancelJobResponse
+	7,  // 63: jobs.JobsService.ClaimJob:output_type -> jobs.ClaimJobResponse
+	9,  // 64: jobs.JobsService.GetReadyRuntimeNode:output_type -> jobs.GetReadyRuntimeNodeResponse
+	11, // 65: jobs.JobsService.ListReadyRuntimeNodes:output_type -> jobs.ListReadyRuntimeNodesResponse
+	13, // 66: jobs.JobsService.RenewJobLease:output_type -> jobs.RenewJobLeaseResponse
+	15, // 67: jobs.JobsService.AttachJobContainer:output_type -> jobs.AttachJobContainerResponse
+	17, // 68: jobs.JobsService.CompleteJob:output_type -> jobs.CompleteJobResponse
+	19, // 69: jobs.JobsService.FailJob:output_type -> jobs.FailJobResponse
+	21, // 70: jobs.JobsService.CancelClaimedJob:output_type -> jobs.CancelClaimedJobResponse
+	23, // 71: jobs.JobsService.ReleaseJobForRetry:output_type -> jobs.ReleaseJobForRetryResponse
+	26, // 72: jobs.JobsService.RecoverExpiredJobLeases:output_type -> jobs.RecoverExpiredJobLeasesResponse
+	28, // 73: jobs.JobsService.GetJob:output_type -> jobs.GetJobResponse
+	30, // 74: jobs.JobsService.GetJobByID:output_type -> jobs.GetJobByIDResponse
+	34, // 75: jobs.JobsService.GetJobLogs:output_type -> jobs.GetJobLogsResponse
+	33, // 76: jobs.JobsService.StreamJobLogs:output_type -> jobs.Log
+	34, // 77: jobs.JobsService.SearchJobLogs:output_type -> jobs.GetJobLogsResponse
+	41, // 78: jobs.JobsService.ListJobs:output_type -> jobs.ListJobsResponse
+	46, // [46:79] is the sub-list for method output_type
+	13, // [13:46] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_jobs_jobs_proto_init() }
@@ -3669,7 +4378,7 @@ func file_jobs_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_jobs_proto_rawDesc), len(file_jobs_jobs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   45,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

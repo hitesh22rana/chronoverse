@@ -399,6 +399,7 @@ func (s *blockingHeartbeatSvc) Execute(ctx context.Context, _ time.Duration, _ s
 // every build, execution and removal so a test can prove a container was never
 // started for a claim that must not execute.
 type observedContainerSvc struct {
+	intentTestLifecycle
 	mu       sync.Mutex
 	executes []string
 	removes  []string
@@ -443,8 +444,8 @@ func (*observedContainerSvc) Logs(
 	return nil, nil, nil
 }
 
-func (*observedContainerSvc) Inspect(context.Context, string) (*containerpkg.State, error) {
-	return &containerpkg.State{}, nil
+func (s *observedContainerSvc) Inspect(ctx context.Context, id string) (*containerpkg.State, error) {
+	return s.intentTestLifecycle.Inspect(ctx, id)
 }
 
 func (s *observedContainerSvc) Remove(_ context.Context, containerID string) error {
@@ -478,6 +479,7 @@ func (s *observedContainerSvc) removals() []string {
 // the non-zero exit with a bare gRPC code, which is what separates a user mistake
 // from a retryable runtime fault.
 type failingContainerSvc struct {
+	intentTestLifecycle
 	removeErr  error
 	executeErr error
 
@@ -532,8 +534,8 @@ func (*failingContainerSvc) Logs(
 	return nil, nil, nil
 }
 
-func (*failingContainerSvc) Inspect(context.Context, string) (*containerpkg.State, error) {
-	return &containerpkg.State{}, nil
+func (s *failingContainerSvc) Inspect(ctx context.Context, id string) (*containerpkg.State, error) {
+	return s.intentTestLifecycle.Inspect(ctx, id)
 }
 
 func (s *failingContainerSvc) Remove(_ context.Context, containerID string) error {

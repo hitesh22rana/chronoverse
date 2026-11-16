@@ -113,3 +113,18 @@ func (*FakeContainerSvc) Remove(context.Context, string) error {
 func (*FakeContainerSvc) Terminate(context.Context, string) error {
 	return status.Error(codes.Unimplemented, "not implemented")
 }
+
+// RuntimeInstance is not implemented by the double.
+func (*FakeContainerSvc) RuntimeInstance(context.Context) (string, error) {
+	return "", status.Error(codes.Unimplemented, "not implemented")
+}
+
+// Create is not implemented by the double.
+func (*FakeContainerSvc) Create(context.Context, containerpkg.CreateRequest) (string, error) {
+	return "", status.Error(codes.Unimplemented, "not implemented")
+}
+
+// Start is not implemented by the double.
+func (*FakeContainerSvc) Start(context.Context, time.Duration, string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+	return nil, nil, status.Error(codes.Unimplemented, "not implemented")
+}

@@ -273,7 +273,7 @@ func TestExecuteContainerWorkflowEnsuresResolvedImageBeforeExecute(t *testing.T)
 	close(csvc.logs)
 	close(csvc.errs)
 
-	repo := &Repository{cfg: defaultConfig()}
+	repo := &Repository{cfg: defaultConfig(), auth: fakeAuth{}, svc: &Services{Jobs: &scriptedJobsClient{log: &jobsCallLog{}}}}
 	workflow := &workflowspb.GetWorkflowByIDResponse{
 		Id:                  "workflow-1",
 		UserId:              "user-1",
@@ -286,8 +286,8 @@ func TestExecuteContainerWorkflowEnsuresResolvedImageBeforeExecute(t *testing.T)
 	if err != nil {
 		t.Fatalf("executeContainerWorkflow() error = %v", err)
 	}
-	if containerID != "" {
-		t.Fatalf("containerID = %q, want empty", containerID)
+	if containerID != "container-1" {
+		t.Fatalf("containerID = %q, want container-1", containerID)
 	}
 	if got, want := csvc.buildImage, "alpine@sha256:abc"; got != want {
 		t.Fatalf("Build image = %q, want %q", got, want)
@@ -696,6 +696,7 @@ func (c *batchRecoveryJobsClient) ReleaseJobForRetry(context.Context, *jobspb.Re
 }
 
 type blockingRecoveryContainerSvc struct {
+	intentTestLifecycle
 	replayCanFinish <-chan struct{}
 }
 
@@ -715,7 +716,7 @@ func (*blockingRecoveryContainerSvc) Execute(context.Context, time.Duration, str
 	return "", nil, nil, nil
 }
 
-func (c *blockingRecoveryContainerSvc) Logs(ctx context.Context, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *blockingRecoveryContainerSvc) Logs(ctx context.Context, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
 	logsCh := make(chan *jobsmodel.JobLog)
 	errsCh := make(chan error)
 	go func() {
@@ -723,7 +724,7 @@ func (c *blockingRecoveryContainerSvc) Logs(ctx context.Context, _ string) (logs
 		defer close(errsCh)
 
 		select {
-		case <-c.replayCanFinish:
+		case <-s.replayCanFinish:
 		case <-ctx.Done():
 		}
 	}()
@@ -744,6 +745,7 @@ func (*blockingRecoveryContainerSvc) Terminate(context.Context, string) error {
 }
 
 type recordingContainerSvc struct {
+	intentTestLifecycle
 	buildImage         string
 	executeImage       string
 	buildBeforeExecute bool
@@ -774,8 +776,8 @@ func (*recordingContainerSvc) Logs(context.Context, string) (logs <-chan *jobsmo
 	return nil, nil, nil
 }
 
-func (*recordingContainerSvc) Inspect(context.Context, string) (*containerpkg.State, error) {
-	return &containerpkg.State{}, nil
+func (s *recordingContainerSvc) Inspect(ctx context.Context, id string) (*containerpkg.State, error) {
+	return s.intentTestLifecycle.Inspect(ctx, id)
 }
 
 func (*recordingContainerSvc) Remove(context.Context, string) error {

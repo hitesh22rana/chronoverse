@@ -46,32 +46,15 @@ func (r *Repository) executeContainerWorkflow(
 		return "", err
 	}
 
-	containerID, logs, errs, workflowErr := csvc.Execute(
-		ctx,
-		details.TimeOut,
-		image,
-		details.Cmd,
-		details.Env,
-	)
-
-	if status.Code(workflowErr) == codes.FailedPrecondition {
-		return "", workflowErr
-	}
-
-	if containerID != "" {
-		if err := r.attachJobContainer(ctx, jobID, leaseToken, containerID, runtimeNodeID); err != nil {
-			return containerID, err
-		}
-	}
-
-	if workflowErr != nil {
-		return containerID, workflowErr
-	}
-
-	return containerID, r.processContainerExecution(ctx, jobID, attempts, workflow, logs, errs)
+	return r.executeContainerIntent(ctx, csvc, jobID, leaseToken, runtimeNodeID, attempts, workflow, container.CreateRequest{
+		Image: image, Cmd: append([]string(nil), details.Cmd...), Env: append([]string(nil), details.Env...), Timeout: details.TimeOut,
+	})
 }
 
 func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, containerID, runtimeNodeID string) error {
+	ctx, cancel := context.WithTimeout(ctx, containerControlTimeout)
+	defer cancel()
+
 	jobCtx, err := r.withAuthorization(ctx)
 	if err != nil {
 		return err
@@ -84,6 +67,10 @@ func (r *Repository) attachJobContainer(ctx context.Context, jobID, leaseToken, 
 		RuntimeNodeId: runtimeNodeID,
 		CommandId:     uuid.NewString(),
 	})
+	if ctx.Err() != nil {
+		return status.FromContextError(ctx.Err()).Err()
+	}
+
 	return err
 }
 

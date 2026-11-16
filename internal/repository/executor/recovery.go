@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -101,14 +102,16 @@ func (r *Repository) recoverClaimedExpiredLeases(ctx context.Context, jobs []*jo
 
 func (r *Repository) recoverExpiredLease(ctx context.Context, job *jobspb.ExpiredJobLease) error {
 	claim := &jobspb.ClaimJobResponse{
-		Claimed:     true,
-		Id:          job.GetId(),
-		WorkflowId:  job.GetWorkflowId(),
-		UserId:      job.GetUserId(),
-		Trigger:     job.GetTrigger(),
-		ScheduledAt: job.GetScheduledAt(),
-		Attempts:    job.GetAttempts(),
-		LeaseToken:  job.GetLeaseToken(),
+		Claimed:         true,
+		Id:              job.GetId(),
+		WorkflowId:      job.GetWorkflowId(),
+		UserId:          job.GetUserId(),
+		Trigger:         job.GetTrigger(),
+		ScheduledAt:     job.GetScheduledAt(),
+		Attempts:        job.GetAttempts(),
+		LeaseToken:      job.GetLeaseToken(),
+		RuntimeNodeId:   job.GetRuntimeNodeId(),
+		RuntimeEndpoint: job.GetRuntimeEndpoint(),
 	}
 
 	return r.withRecoveredLeaseRenewal(ctx, claim, func(recoveryCtx context.Context) error {
@@ -163,7 +166,6 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	defer func() { err = normalizeExecutionError(err) }()
-	workflowForLogs := workflowFromExpiredLease(job)
 	if job.GetRuntimeUnavailable() {
 		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "runtime node unavailable during lease recovery"))
 	}
@@ -177,7 +179,15 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 	if err != nil {
 		return err
 	}
-	request := &jobspb.ContainerCleanupReceiptRequest{JobId: claim.GetId(), ContainerId: job.GetContainerId()}
+	intentResult, err := r.svc.Jobs.GetContainerIntent(authCtx, &jobspb.ContainerIntentCommand{JobId: job.GetId(), ContainerId: job.GetContainerId()})
+	if err != nil {
+		return r.releaseOrFailRecoveredSystem(ctx, claim, err)
+	}
+	intent := intentResult.GetIntent()
+	if intent.GetRuntimeNodeId() != job.GetRuntimeNodeId() || intent.GetRuntimeEndpoint() != job.GetRuntimeEndpoint() {
+		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "recovery routing differs from creation intent"))
+	}
+	request := &jobspb.ContainerCleanupReceiptRequest{JobId: claim.GetId(), ContainerId: job.GetContainerId(), IntentId: intent.GetId(), RuntimeInstance: intent.GetRuntimeInstance()}
 	readCtx, stopRead := context.WithTimeout(authCtx, containerCleanupTimeout)
 	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(readCtx, request)
 	stopRead()
@@ -192,20 +202,40 @@ func (r *Repository) recoverExpiredLeaseWithClaim(
 		return r.releaseOrFailRecoveredSystem(ctx, claim, err)
 	}
 
-	state, err := csvc.Inspect(ctx, job.GetContainerId())
+	instance, err := containerInstance(ctx, csvc)
+	if err != nil {
+		return r.releaseOrFailRecoveredSystem(ctx, claim, err)
+	}
+	if instance != intent.GetRuntimeInstance() {
+		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "recovery runtime instance changed"))
+	}
+	state, err := r.inspectRecoveredContainer(ctx, csvc, request)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
-			writeCtx, stopWrite := context.WithTimeout(authCtx, containerCleanupTimeout)
-			_, receiptErr := r.svc.Jobs.RecordContainerCleanupReceipt(writeCtx, request)
-			stopWrite()
-			if receiptErr != nil {
-				return receiptErr
-			}
 			return r.releaseOrFailRecoveredSystem(ctx, claim, err)
 		}
 		return err
 	}
 
+	return r.settleRecoveredContainer(ctx, csvc, job, claim, intent, state)
+}
+
+func (r *Repository) settleRecoveredContainer(
+	ctx context.Context,
+	csvc ContainerSvc,
+	job *jobspb.ExpiredJobLease,
+	claim *jobspb.ClaimJobResponse,
+	intent *jobspb.ContainerIntent,
+	state *container.State,
+) error {
+	workflowForLogs := workflowFromExpiredLease(job)
+
+	if !intent.GetStartReserved() || state.Status == "created" || (!state.Running && state.Status != "exited") {
+		if cleanupErr := r.cleanupContainer(ctx, csvc, claim.GetId(), job.GetContainerId()); cleanupErr != nil {
+			return cleanupErr
+		}
+		return r.releaseOrFailRecoveredSystem(ctx, claim, status.Error(codes.Unavailable, "container execution was not proven by a reserved exited lifecycle"))
+	}
 	if state.Running {
 		return r.recoverRunningContainer(ctx, csvc, job, claim)
 	}
@@ -312,4 +342,38 @@ func workflowFromExpiredLease(job *jobspb.ExpiredJobLease) *workflowspb.GetWorkf
 		UserId:       job.GetUserId(),
 		LogRetention: job.GetLogRetention(),
 	}
+}
+
+func (r *Repository) inspectRecoveredContainer(
+	ctx context.Context,
+	csvc ContainerSvc,
+	request *jobspb.ContainerCleanupReceiptRequest,
+) (*container.State, error) {
+	authCtx, err := r.withAuthorization(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := csvc.Inspect(ctx, request.GetContainerId())
+	if err == nil {
+		if state == nil {
+			return nil, status.Error(codes.Unavailable, "runtime returned no container state")
+		}
+		return state, nil
+	}
+	if status.Code(err) != codes.NotFound {
+		return nil, err
+	}
+	confirmed, identityErr := containerInstance(ctx, csvc)
+	if identityErr != nil {
+		return nil, identityErr
+	}
+	if confirmed != request.GetRuntimeInstance() {
+		return nil, status.Error(codes.Unavailable, "runtime changed during absence observation")
+	}
+	writeCtx, stopWrite := context.WithTimeout(authCtx, containerCleanupTimeout)
+	defer stopWrite()
+	if _, receiptErr := r.svc.Jobs.RecordContainerCleanupReceipt(writeCtx, request); receiptErr != nil {
+		return nil, receiptErr
+	}
+	return nil, err
 }

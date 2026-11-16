@@ -107,7 +107,7 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 	if cfg.EventCommandRetention <= 0 {
 		cfg.EventCommandRetention = commandidempotency.DefaultEventCommandRetention
 	}
-	return &Repository{
+	r := &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
 		auth: auth,
@@ -117,6 +117,12 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 		ms:   ms,
 		svc:  svc,
 	}
+	if pg != nil {
+		if metricsErr := r.registerContainerIntentMetrics(otel.Meter("chronoverse/jobs/container-intents")); metricsErr != nil {
+			otel.Handle(metricsErr)
+		}
+	}
+	return r
 }
 
 // ScheduleJob schedules a job.
@@ -361,6 +367,9 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return nil, lockErr
+	}
 
 	// A string map always has a JSON representation.
 	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.

@@ -214,6 +214,9 @@ func ExtractRoleFromContext(ctx context.Context) (string, error) {
 	return roleFromContext(ctx)
 }
 
+// ExtractSubjectFromContext returns only the JWT-validated principal.
+func ExtractSubjectFromContext(ctx context.Context) (string, error) { return subjectFromContext(ctx) }
+
 // ExtractAudienceFromContext extracts the audience placed in the context by
 // ValidateToken (the only safe source for authenticated RPCs).
 func ExtractAudienceFromContext(ctx context.Context) (string, error) {

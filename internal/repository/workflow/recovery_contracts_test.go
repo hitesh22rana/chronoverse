@@ -45,7 +45,7 @@ func TestCanceledLogPublicationPreservesAttemptIdentityAndRetention(t *testing.T
 	synctest.Test(t, func(t *testing.T) {
 		workflow := buildContractWorkflow()
 		workflow.LogRetention = true
-		job := &jobspb.JobsResponse{Id: "job-recovery", Attempts: 4}
+		job := &jobspb.JobsResponse{RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015", Id: "job-recovery", Attempts: 4}
 		producer := &recoveryProducer{}
 		repo := &Repository{kfk: producer}
 		for _, stamp := range []time.Time{{}, time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC)} {
@@ -145,7 +145,10 @@ func TestCanceledLogReplayHandlesChannelFailuresAndDeadline(t *testing.T) {
 					return logs, errs, nil
 				}}
 				before := time.Now()
-				err := repo.replayCanceledJobContainerLogs(parent, container, buildContractWorkflow(), &jobspb.JobsResponse{Id: "job-recovery", ContainerId: "container-recovery"})
+				err := repo.replayCanceledJobContainerLogs(parent, container, buildContractWorkflow(), &jobspb.JobsResponse{
+					RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+					Id: "job-recovery", ContainerId: "container-recovery",
+				})
 				if status.Code(err) != tc.want {
 					t.Fatalf("replay=%v want %v", err, tc.want)
 				}
@@ -169,7 +172,7 @@ func TestWorkflowRoutingAndOccurrenceHelperContracts(t *testing.T) {
 	if _, err := repo.containerSvcForRuntime("node", "endpoint"); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("missing factory=%v", err)
 	}
-	if _, err := repo.containerSvcForJob(&jobspb.JobsResponse{}); status.Code(err) != codes.Unavailable {
+	if _, err := repo.containerSvcForJob(&jobspb.JobsResponse{RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015"}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("missing route=%v", err)
 	}
 	sentinel := errors.New("runtime factory failed")
@@ -181,7 +184,10 @@ func TestWorkflowRoutingAndOccurrenceHelperContracts(t *testing.T) {
 		}
 		return nil, sentinel
 	}
-	if _, err := repo.containerSvcForJob(&jobspb.JobsResponse{RuntimeNodeId: "node", RuntimeEndpoint: "tcp://runtime:2376"}); !errors.Is(err, sentinel) || calls != 1 {
+	if _, err := repo.containerSvcForJob(&jobspb.JobsResponse{
+		RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+		RuntimeNodeId: "node", RuntimeEndpoint: "tcp://runtime:2376",
+	}); !errors.Is(err, sentinel) || calls != 1 {
 		t.Fatalf("factory calls=%d error=%v", calls, err)
 	}
 	event := buildContractEvent()
@@ -493,7 +499,7 @@ func TestCleanupRetainsContainerForRetryAfterReplayFailure(t *testing.T) {
 		return nil, nil, status.Error(codes.Unavailable, "log stream unavailable")
 	}
 	repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: &testJobsClient{}, CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
-	job := &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}
+	job := &jobspb.JobsResponse{RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015", ContainerId: "container-recovery", RuntimeEndpoint: "tcp://runtime:2376"}
 	if err := repo.cleanupCanceledJobContainer(parent, workflow, job); status.Code(err) != codes.Unavailable || container.removed != 0 {
 		t.Fatalf("removed=%d error=%v", container.removed, err)
 	}
@@ -603,4 +609,8 @@ func assertReplayDeadline(ctx context.Context, t *testing.T) {
 	if !ok || !deadline.Equal(time.Now().Add(2*time.Minute)) {
 		t.Errorf("replay deadline=%v", deadline)
 	}
+}
+
+func (recoveryCleanupContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
 }

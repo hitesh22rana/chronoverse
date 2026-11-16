@@ -77,10 +77,12 @@ func TestContainerExecutionFailurePreservesAttachmentOrdering(t *testing.T) {
 				wantCode = codes.FailedPrecondition
 				wantID = ""
 				wantAttaches = 0
+				wantExecutes = 0
 			case "start failed after attach":
 				csvc.executeErr = status.Error(codes.Aborted, "failed to start container")
 				wantCode = codes.Aborted
 			case "attach failed":
+				wantExecutes = 0
 				attachErr = status.Error(codes.Aborted, "lease changed")
 				wantCode = codes.Aborted
 			case "fallback image":
@@ -113,8 +115,8 @@ func TestContainerLogsWaitForAttachment(t *testing.T) {
 	attached := make(chan struct{})
 	jobs := &scriptedJobsClient{attachJobContainer: func(_ context.Context, req *jobspb.AttachJobContainerRequest) error {
 		assertAttachedRuntime(t, req)
-		if csvc.executionCount() != 1 {
-			t.Error("container attached before execution created it")
+		if csvc.executionCount() != 0 {
+			t.Error("container started before attachment")
 		}
 		close(attached)
 		return nil

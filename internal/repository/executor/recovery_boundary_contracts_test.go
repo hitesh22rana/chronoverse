@@ -279,3 +279,11 @@ func assertExecutorReceiptEffects(t *testing.T, phase string, removes, writes in
 		}
 	}
 }
+
+func (stalledCleanupContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
+}
+
+func (receiptCleanupContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
+}

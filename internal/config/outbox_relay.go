@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
 )
 
 // OutboxRelay holds the outbox relay configuration.
@@ -27,6 +29,8 @@ type OutboxRelayConfig struct {
 	MaxAttempts                  int           `envconfig:"OUTBOX_RELAY_MAX_ATTEMPTS" default:"10"`
 	RetryBackoff                 time.Duration `envconfig:"OUTBOX_RELAY_RETRY_BACKOFF" default:"5s"`
 	ProcessingLease              time.Duration `envconfig:"OUTBOX_RELAY_PROCESSING_LEASE" default:"30s"`
+	ReplayInterval               time.Duration `envconfig:"OUTBOX_RELAY_REPLAY_INTERVAL" default:"5m"`
+	ReplayMaxInterval            time.Duration `envconfig:"OUTBOX_RELAY_REPLAY_MAX_INTERVAL" default:"1h"`
 	WorkerID                     string        `envconfig:"OUTBOX_RELAY_WORKER_ID" default:"outbox-relay"`
 	CleanupEnabled               bool          `envconfig:"OUTBOX_RELAY_CLEANUP_ENABLED" default:"true"`
 	CleanupInterval              time.Duration `envconfig:"OUTBOX_RELAY_CLEANUP_INTERVAL" default:"15m"`
@@ -50,6 +54,18 @@ func InitOutboxRelayConfig() (*OutboxRelay, error) {
 func (c *OutboxRelayConfig) validate() error {
 	if c.CleanupEnabled && c.IdempotencyCleanupMaxBatches <= 0 {
 		return errors.New("OUTBOX_RELAY_IDEMPOTENCY_CLEANUP_MAX_BATCHES must be positive when cleanup is enabled")
+	}
+	if c.WorkflowEnabled || c.JobsEnabled || c.AnalyticsEnabled {
+		if c.BatchSize <= 0 || c.MaxAttempts <= 0 || c.PollInterval <= 0 || c.ContextTimeout <= 0 || c.ProcessingLease < time.Millisecond || c.RetryBackoff < time.Millisecond {
+			return errors.New("OUTBOX_RELAY batch/attempt limits must be positive, poll/context positive and transport timing at least 1ms")
+		}
+	}
+	if c.WorkflowEnabled {
+		interval, maximum, err := outbox.NormalizeReplayIntervals(c.ReplayInterval, c.ReplayMaxInterval)
+		if err != nil {
+			return err
+		}
+		c.ReplayInterval, c.ReplayMaxInterval = interval, maximum
 	}
 	return nil
 }

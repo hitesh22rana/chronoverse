@@ -47,3 +47,15 @@ func TestRunCleanup(t *testing.T) {
 		t.Fatalf("expected one cleanup run, got %d", svc.total)
 	}
 }
+
+func TestRunRejectsInvalidPublicationTiming(t *testing.T) {
+	for _, cfg := range []outboxrelay.Config{
+		{WorkflowEnabled: true, ContextTimeout: time.Second},
+		{JobsEnabled: true, PollInterval: time.Second},
+		{AnalyticsEnabled: true, PollInterval: -time.Second, ContextTimeout: time.Second},
+	} {
+		if err := outboxrelay.New(t.Context(), &cfg, nil).Run(t.Context()); err == nil {
+			t.Fatal("invalid polling configuration accepted")
+		}
+	}
+}

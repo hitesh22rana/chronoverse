@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,28 +16,33 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/hitesh22rana/chronoverse/internal/pkg/kafka"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/outbox"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 )
 
 // Config represents the outbox relay repository configuration.
 type Config struct {
-	BatchSize       int
-	MaxAttempts     int
-	RetryBackoff    time.Duration
-	ProcessingLease time.Duration
-	WorkerID        string
+	BatchSize         int
+	MaxAttempts       int
+	RetryBackoff      time.Duration
+	ProcessingLease   time.Duration
+	WorkerID          string
+	ReplayInterval    time.Duration
+	ReplayMaxInterval time.Duration
 }
 
 // Event is a claimed outbox event ready to publish.
 type Event struct {
-	ID       string
-	Topic    string
-	KafkaKey string
-	EventKey string
-	Payload  []byte
-	Attempts int
-	Claim    string
+	ID          string
+	Topic       string
+	KafkaKey    string
+	EventKey    string
+	Payload     []byte
+	Attempts    int
+	Claim       string
+	ReplayRound int
 }
 
 // Repository publishes outbox events to Kafka.
@@ -49,9 +55,22 @@ type Repository struct {
 
 // New creates a new outbox relay repository.
 func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
+	normalized := *cfg
+	if normalized.BatchSize == 0 {
+		normalized.BatchSize = 100
+	}
+	if normalized.MaxAttempts == 0 {
+		normalized.MaxAttempts = 10
+	}
+	if normalized.RetryBackoff == 0 {
+		normalized.RetryBackoff = 5 * time.Second
+	}
+	if normalized.ProcessingLease == 0 {
+		normalized.ProcessingLease = 30 * time.Second
+	}
 	return &Repository{
 		tp:  otel.Tracer(svcpkg.Info().GetName()),
-		cfg: cfg,
+		cfg: &normalized,
 		pg:  pg,
 		kfk: kfk,
 	}
@@ -59,6 +78,14 @@ func New(cfg *Config, pg *postgres.Postgres, kfk *kgo.Client) *Repository {
 
 // PublishTopic claims pending events for a topic and publishes them to Kafka.
 func (r *Repository) PublishTopic(ctx context.Context, topic string, logger *zap.Logger) (int, error) {
+	if topic == kafka.TopicWorkflows {
+		if _, _, configErr := outbox.NormalizeReplayIntervals(r.cfg.ReplayInterval, r.cfg.ReplayMaxInterval); configErr != nil {
+			return 0, status.Error(codes.InvalidArgument, configErr.Error())
+		}
+	}
+	if r.cfg.BatchSize <= 0 || r.cfg.MaxAttempts <= 0 || r.cfg.RetryBackoff < time.Millisecond || r.cfg.ProcessingLease < time.Millisecond {
+		return 0, status.Error(codes.InvalidArgument, "outbox batch/attempt limits must be positive and transport timing at least one millisecond")
+	}
 	if err := r.requeueUnfinishedCleanup(ctx, topic); err != nil {
 		return 0, err
 	}
@@ -120,9 +147,25 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
+	var events []*Event
+	if topic == kafka.TopicWorkflows {
+		events, err = r.claimWorkflow(ctx, tx, topic, claimToken)
+	} else {
+		events, err = r.claimBatch(ctx, tx, topic, claimToken, r.cfg.BatchSize, nil, []string{})
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to commit outbox claim: %v", err)
+	}
+	return events, nil
+}
+
+func (r *Repository) claimBatch(ctx context.Context, tx pgx.Tx, topic, claimToken string, limit int, replay *bool, excluded []string) ([]*Event, error) {
 	query := fmt.Sprintf(`
         WITH picked AS (
-            SELECT e.id
+            SELECT e.id, e.created_at
             FROM %s AS e
             WHERE e.topic = $1
                 AND (
@@ -130,6 +173,8 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
                     OR (e.status = 'FAILED' AND e.next_attempt_at <= (now() AT TIME ZONE 'utc'))
                     OR (e.status = 'PROCESSING' AND e.locked_at <= (now() AT TIME ZONE 'utc') - $4::interval)
                 )
+                AND ($5::boolean IS NULL OR (e.cleanup_state IS NOT NULL AND e.cleanup_replay_round > 0) = $5)
+                AND NOT (e.id = ANY($6::uuid[]))
                 AND NOT EXISTS (
                     SELECT 1
                     FROM %s AS earlier
@@ -142,27 +187,27 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
             FOR UPDATE SKIP LOCKED
             LIMIT $2
         )
-        UPDATE %s e
+        , claimed AS (UPDATE %s e
         SET status = 'PROCESSING',
-            locked_at = now() AT TIME ZONE 'utc',
+            locked_at = statement_timestamp() AT TIME ZONE 'utc',
             locked_by = $3,
             attempts = attempts + 1
         FROM picked
         WHERE e.id = picked.id
-        RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts;
+        RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts, e.cleanup_replay_round
+        ) SELECT claimed.* FROM claimed JOIN picked USING(id) ORDER BY picked.created_at, picked.id;
     `, postgres.TableOutboxEvents, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
 
-	rows, err := tx.Query(ctx, query, topic, r.cfg.BatchSize, claimToken, postgresInterval(r.processingLease()))
+	rows, err := tx.Query(ctx, query, topic, limit, claimToken, postgresInterval(r.cfg.ProcessingLease), replay, excluded)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to claim outbox events: %v", err)
 	}
 	defer rows.Close()
-
-	events := make([]*Event, 0, r.cfg.BatchSize)
+	events := make([]*Event, 0, limit)
 	for rows.Next() {
 		var event Event
 		var payload string
-		if err = rows.Scan(&event.ID, &event.Topic, &event.KafkaKey, &event.EventKey, &payload, &event.Attempts); err != nil {
+		if err = rows.Scan(&event.ID, &event.Topic, &event.KafkaKey, &event.EventKey, &payload, &event.Attempts, &event.ReplayRound); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to scan outbox event: %v", err)
 		}
 		event.Payload = []byte(payload)
@@ -172,26 +217,30 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 	if err = rows.Err(); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to iterate outbox events: %v", err)
 	}
-
-	if err = tx.Commit(ctx); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to commit outbox claim: %v", err)
-	}
-
 	return events, nil
 }
 
 func (r *Repository) markPublished(ctx context.Context, event *Event) error {
+	delay := time.Duration(0)
+	if event.Topic == kafka.TopicWorkflows {
+		base, maximum, err := outbox.NormalizeReplayIntervals(r.cfg.ReplayInterval, r.cfg.ReplayMaxInterval)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+		delay = replayDelay(base, maximum, event.ReplayRound)
+	}
 	query := fmt.Sprintf(`
         UPDATE %s
         SET status = 'PUBLISHED',
             published_at = now() AT TIME ZONE 'utc',
+            cleanup_replay_due_at = CASE WHEN cleanup_state IN ('READY','RETRY','PROCESSING') THEN (now() AT TIME ZONE 'utc') + $3::interval ELSE NULL END,
             locked_at = NULL,
             locked_by = NULL
         WHERE id = $1
             AND status = 'PROCESSING'
             AND locked_by = $2;
     `, postgres.TableOutboxEvents)
-	ct, err := r.pg.Exec(ctx, query, event.ID, event.Claim)
+	ct, err := r.pg.Exec(ctx, query, event.ID, event.Claim, postgresInterval(delay))
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event published: %v", err)
 	}
@@ -217,7 +266,7 @@ func (r *Repository) markFailed(ctx context.Context, event *Event) error {
             AND status = 'PROCESSING'
             AND locked_by = $4;
     `, postgres.TableOutboxEvents)
-	ct, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.retryBackoff()), event.Claim)
+	ct, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.cfg.RetryBackoff), event.Claim)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event failed: %v", err)
 	}
@@ -225,22 +274,6 @@ func (r *Repository) markFailed(ctx context.Context, event *Event) error {
 		return status.Errorf(codes.Aborted, "outbox event %s is no longer held by claim", event.ID)
 	}
 	return nil
-}
-
-func (r *Repository) retryBackoff() time.Duration {
-	if r.cfg.RetryBackoff <= 0 {
-		return 5 * time.Second
-	}
-
-	return r.cfg.RetryBackoff
-}
-
-func (r *Repository) processingLease() time.Duration {
-	if r.cfg.ProcessingLease <= 0 {
-		return 30 * time.Second
-	}
-
-	return r.cfg.ProcessingLease
 }
 
 func postgresInterval(duration time.Duration) string {
@@ -258,4 +291,15 @@ func newClaimToken(workerID string) string {
 	rand.Read(token[:])
 
 	return fmt.Sprintf("%s:%d:%s", workerID, time.Now().UnixNano(), hex.EncodeToString(token[:]))
+}
+
+func replayDelay(base, maximum time.Duration, round int) time.Duration {
+	result := base
+	for range round {
+		if result > maximum/2 {
+			return maximum
+		}
+		result *= 2
+	}
+	return result
 }

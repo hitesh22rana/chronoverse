@@ -612,7 +612,15 @@ The domain transaction writes the resource change and an outbox row atomically. 
 
 ## Claiming
 
-Relay replicas claim pending rows with a processing lease and worker identity. A row cannot be actively published by every replica at once, and an abandoned claim becomes eligible after its lease expires.
+Relay replicas claim pending rows with a processing lease and worker identity. Database claim tokens prevent stale owners from changing publication state, and
+an abandoned claim becomes eligible after its lease expires. An already accepted
+Kafka send can still duplicate when its database acknowledgement is lost.
+
+Workflow claims share the total batch between initial delivery and replay, borrowing
+unused slots. A durable turn coordinates replicas, restarts and batch size one;
+explicit interleaving rotates first-send opportunities when batches are interrupted.
+The turn lock is released before broker I/O. Earlier unpublished same-key events,
+including dead or delayed failures, still block successors across both classes.
 
 ## Publication outcomes
 
@@ -629,11 +637,21 @@ cleanup remains retained until a matching original-instance completion receipt
 exists. The relay can republish unfinished work after lost delivery or Kafka
 retention expiry without granting a fresh cleanup failure budget.
 
+Successful initial cleanup publication schedules replay after
+`OUTBOX_RELAY_REPLAY_INTERVAL` (default `5m`). Successful replay waves double the
+next interval up to `OUTBOX_RELAY_REPLAY_MAX_INTERVAL` (default `1h`) and continue
+at the cap. Durable round/due metadata survives restarts. Both settings require
+whole milliseconds, `1ms <= interval <= maximum`; zero selects defaults.
+Transport retries stay within a wave, and lag data is not required. The cap
+bounds scheduled waiting after a successful publication, not delivery under
+overload, active leases/backoff, key blockers or outages. Failed database marks
+or crashes after Kafka acceptance can cause earlier duplicate sends.
+
 Administrative cleanup redrive resets/requeues the retained row under its expected
 generation and atomically writes an authenticated actor/reason audit. Repeated
 requests with an old generation do not duplicate that transition. The audit history
-survives later outbox pruning. Publication `DEAD` and cleanup execution `QUARANTINED`
-are distinct operational signals.
+survives later outbox pruning. Accepted redrive resets pacing for its new generation. Publication `DEAD` and cleanup execution `QUARANTINED`
+are distinct operational signals; both require operator repair and are excluded from automatic replay.
 
 See [cleanup recovery](./docs/operations/recovery#container-cleanup) and
 [cleanup metrics](./docs/operations/observability#durable-cleanup-metrics).
@@ -2576,8 +2594,13 @@ to distinguish execution failures from publication failures:
 
 Use max across jobs-service replicas because each reports the same durable state.
 Choose age thresholds above normal delivery latency; five minutes overdue sustained
-for five minutes is an initial example to tune for the deployment. Missing telemetry
-is not a zero backlog.
+for five minutes is an initial example to tune for the deployment. This threshold
+measures waiting execution, independently of the publisher's replay interval. A
+future replay deadline does not mean cleanup must wait: existing Kafka deliveries
+can still run. If no usable delivery remains, execution may depend on the next
+eligible replay. Cross-check `cleanup_replay_due_at`, publication state and
+consumer progress before diagnosing a stuck worker; `publication_dead` still
+requires operator repair. Missing telemetry is not a zero backlog.
 
 Quarantine does not prove removal and does not release a workflow admission gate
 or runtime capacity hold. Use the [cleanup recovery procedure](./docs/operations/recovery#container-cleanup)
@@ -2712,7 +2735,15 @@ Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
 | `chronoverse.container_cleanup.outstanding` | All unfinished container cleanup, including quarantined work and dead publication |
 | `chronoverse.container_cleanup.quarantined` | Execution quarantines requiring operator repair and redrive |
 | `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose outbox publication is `DEAD` |
-| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup, excluding active cleanup leases, future cleanup backoff and quarantined work |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for cleanup execution, excluding active cleanup leases, future execution backoff and quarantined work |
+
+`oldest_due` follows execution eligibility, not the next republication deadline.
+A delivery already in Kafka can execute while its next replay is scheduled for
+later. Replay pacing does not pause or reset this age; execution leases and
+execution retry backoff do. This keeps stalled cleanup visible during a long
+replay interval. If no usable delivery remains in Kafka, execution may depend on
+the next eligible replay. Check its due time, publication state and consumer
+progress alongside this gauge when diagnosing overdue cleanup.
 
 These are gauges of retained work, not counts of deliveries or log lines.
 Duplicate delivery and exporter restarts do not increase the backlog. A matching
@@ -2820,7 +2851,18 @@ lease lasts four minutes around the three-minute cleanup budget. Failures back o
 for 30 seconds, then 60 seconds. Successfully reported caller cancellation refunds
 its attempt; repeated interruptions can postpone cleanup indefinitely. After
 exhaustion, persisted `QUARANTINED` lets the Kafka handler acknowledge that delivery
-while retaining the unfinished obligation. Publication `DEAD` is a separate state.
+while retaining the unfinished obligation. Publication `DEAD` is a separate state requiring operator repair.
+
+Successful cleanup publication schedules replay after five minutes by default;
+successive successful waves wait ten, twenty, forty, then sixty minutes repeatedly.
+`OUTBOX_RELAY_REPLAY_INTERVAL` and `OUTBOX_RELAY_REPLAY_MAX_INTERVAL` configure
+these defaults with whole-millisecond precision. Durable pacing survives relay
+restarts, and publication capacity is shared fairly with initial deliveries.
+Consumer lag is not required. The cap is a scheduling interval, not a guaranteed
+delivery deadline during overload, key blocking, lease/backoff delays or outages.
+Ambiguous broker sends may still duplicate before that interval.
+
+[Replay scheduling and ordering](./docs/engineering/transactional-outbox#claiming)
 
 ### Administrative redrive
 
@@ -2846,7 +2888,7 @@ request fields or caller metadata. A shared credential identifies its principal,
 not the individual human using it.
 
 An accepted redrive increments the generation, resets execution/publication budgets
-and requeues the original snapshot. It may override `READY`, `RETRY`, quarantined
+and requeues the original snapshot with initial-wave pacing. It may override `READY`, `RETRY`, quarantined
 or expired-lease work, but refuses a live execution lease. Repeating an old generation
 returns `STALE` without another reset or audit entry. A completion receipt returns
 `COMPLETED` without requeueing. Redrive cannot retarget the original runtime or

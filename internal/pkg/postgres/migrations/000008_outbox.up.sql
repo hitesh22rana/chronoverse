@@ -23,8 +23,18 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     cleanup_next_attempt_at TIMESTAMP WITHOUT TIME ZONE,
     cleanup_error_code TEXT,
     cleanup_failed_at TIMESTAMP WITHOUT TIME ZONE,
+    -- Zero is this generation's initial-publication lane; positive rounds pace replay and saturate without ending recovery.
+    cleanup_replay_round INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_replay_round BETWEEN 0 AND 63),
+    cleanup_replay_due_at TIMESTAMP WITHOUT TIME ZONE,
     UNIQUE (topic, event_key)
 );
+
+-- Only short workflow claim transactions hold this scheduling turn, never Kafka I/O.
+CREATE TABLE outbox_relay_turns (
+    topic TEXT PRIMARY KEY CHECK (topic = 'workflows'),
+    next_replay BOOLEAN NOT NULL
+);
+INSERT INTO outbox_relay_turns(topic, next_replay) VALUES ('workflows', FALSE);
 
 -- Audit identity is retained independently of pruned outbox/source rows.
 CREATE TABLE container_cleanup_redrives (
@@ -62,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
 ON outbox_events (published_at)
 WHERE status = 'PUBLISHED';
 
-CREATE INDEX idx_outbox_cleanup_redrive ON outbox_events (topic,published_at,id)
+CREATE INDEX idx_outbox_cleanup_redrive ON outbox_events (topic,cleanup_replay_due_at,id)
 WHERE status='PUBLISHED' AND cleanup_state IN ('READY','RETRY','PROCESSING');
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_unpublished_key_order

@@ -110,7 +110,15 @@ Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
 | `chronoverse.container_cleanup.outstanding` | All unfinished container cleanup, including quarantined work and dead publication |
 | `chronoverse.container_cleanup.quarantined` | Execution quarantines requiring operator repair and redrive |
 | `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose outbox publication is `DEAD` |
-| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup, excluding active cleanup leases, future cleanup backoff and quarantined work |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for cleanup execution, excluding active cleanup leases, future execution backoff and quarantined work |
+
+`oldest_due` follows execution eligibility, not the next republication deadline.
+A delivery already in Kafka can execute while its next replay is scheduled for
+later. Replay pacing does not pause or reset this age; execution leases and
+execution retry backoff do. This keeps stalled cleanup visible during a long
+replay interval. If no usable delivery remains in Kafka, execution may depend on
+the next eligible replay. Check its due time, publication state and consumer
+progress alongside this gauge when diagnosing overdue cleanup.
 
 These are gauges of retained work, not counts of deliveries or log lines.
 Duplicate delivery and exporter restarts do not increase the backlog. A matching

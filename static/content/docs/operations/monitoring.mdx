@@ -28,8 +28,13 @@ to distinguish execution failures from publication failures:
 
 Use max across jobs-service replicas because each reports the same durable state.
 Choose age thresholds above normal delivery latency; five minutes overdue sustained
-for five minutes is an initial example to tune for the deployment. Missing telemetry
-is not a zero backlog.
+for five minutes is an initial example to tune for the deployment. This threshold
+measures waiting execution, independently of the publisher's replay interval. A
+future replay deadline does not mean cleanup must wait: existing Kafka deliveries
+can still run. If no usable delivery remains, execution may depend on the next
+eligible replay. Cross-check `cleanup_replay_due_at`, publication state and
+consumer progress before diagnosing a stuck worker; `publication_dead` still
+requires operator repair. Missing telemetry is not a zero backlog.
 
 Quarantine does not prove removal and does not release a workflow admission gate
 or runtime capacity hold. Use the [cleanup recovery procedure](/docs/operations/recovery#container-cleanup)

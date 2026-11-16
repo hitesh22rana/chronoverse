@@ -303,31 +303,36 @@ func killContainerCreationChild(t *testing.T, fixture *durableFixture, node stri
 	if err = child.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	cleanupChild := func() {
 		if child.ProcessState == nil {
 			if killErr := child.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
 				t.Error(killErr)
 			}
-			if waitErr := child.Wait(); waitErr == nil {
-				t.Error("crash child exited successfully during cleanup")
-			}
+			_ = child.Wait() //nolint:errcheck // The caller reports the failure; wait joins stderr copying.
 		}
-	}()
-	ready := make(chan bool, 1)
+	}
+	defer cleanupChild()
+	ready := make(chan error, 1)
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			if scanner.Text() == "CV015_CREATED" {
-				ready <- true
+				ready <- nil
 				return
 			}
 		}
-		ready <- false
+		if scanErr := scanner.Err(); scanErr != nil {
+			ready <- scanErr
+			return
+		}
+		ready <- errors.New("child exited before Create boundary")
 	}()
 	select {
-	case created := <-ready:
-		if !created {
-			t.Fatalf("child failed before Create boundary: %s", stderr.String())
+	case scanErr := <-ready:
+		if scanErr != nil {
+			// Wait joins stderr copying before reading its buffer.
+			cleanupChild()
+			t.Fatalf("child failed before Create boundary: %s (%v)", stderr.String(), scanErr)
 		}
 	case <-ctx.Done():
 		t.Fatal("child did not reach Create boundary")

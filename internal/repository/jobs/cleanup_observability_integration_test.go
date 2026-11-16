@@ -88,11 +88,14 @@ VALUES('workflows','ordinary','ordinary','{}','DEAD')`); err != nil {
 		}
 		return got
 	}
-	if _, err := repo.pg.Exec(t.Context(), "UPDATE outbox_events SET created_at=(clock_timestamp() AT TIME ZONE 'utc')-interval '2 hours' WHERE event_key=$1", fixture.Key); err != nil {
+	if _, err := repo.pg.Exec(t.Context(), `UPDATE outbox_events SET
+ created_at=(clock_timestamp() AT TIME ZONE 'utc')-interval '2 hours',
+ cleanup_replay_due_at=(clock_timestamp() AT TIME ZONE 'utc')+interval '1 hour'
+ WHERE event_key=$1`, fixture.Key); err != nil {
 		t.Fatal(err)
 	}
 	if got := check(1, 0, 0); got["chronoverse.container_cleanup.oldest_due"] < 7190 {
-		t.Fatalf("old cleanup age lost: %v", got)
+		t.Fatalf("future republication hid overdue execution: %v", got)
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		first, err := repo.UpdateContainerCleanup(t.Context(), jobsmodel.CleanupOperationBegin, identity, 1, "", "", false, jobsmodel.CleanupRedrive{})

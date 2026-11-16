@@ -748,7 +748,14 @@ five-second collection deadline and no job, container, actor or runtime labels:
 | `chronoverse.container_cleanup.outstanding` | Unfinished cleanup rows, including quarantined work and failed publication |
 | `chronoverse.container_cleanup.quarantined` | Current execution quarantines requiring repair/redrive |
 | `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose publication is `DEAD` |
-| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup; active cleanup leases, future cleanup backoff and quarantined work are excluded |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for cleanup execution; active cleanup leases, future execution backoff and quarantined work are excluded |
+
+`oldest_due` measures cleanup that can execute, not how late the next replay
+publication is. A record already in Kafka can run while `cleanup_replay_due_at`
+is still in the future. Replay pacing therefore does not pause or reset this
+age; it limits duplicate publication, not the cleanup latency target. A rising
+age can warrant investigation before the next scheduled replay. Active execution
+leases and execution retry backoff still suppress the due age.
 
 These are backlog gauges, not delivery counters: duplicate records and worker or
 exporter restarts do not create additional work. Completion removes the row from

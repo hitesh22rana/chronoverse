@@ -2594,8 +2594,12 @@ to distinguish execution failures from publication failures:
 
 Use max across jobs-service replicas because each reports the same durable state.
 Choose age thresholds above normal delivery latency; five minutes overdue sustained
-for five minutes is an initial example to tune for the deployment. Missing telemetry
-is not a zero backlog.
+for five minutes is an initial example to tune for the deployment. This threshold
+measures waiting execution, independently of the publisher's replay interval. A
+future replay deadline does not mean cleanup must wait: existing Kafka deliveries
+can still run. Investigate an overdue execution even when the next replay is not
+yet due; raising the replay cap does not extend the cleanup latency target.
+Missing telemetry is not a zero backlog.
 
 Quarantine does not prove removal and does not release a workflow admission gate
 or runtime capacity hold. Use the [cleanup recovery procedure](./docs/operations/recovery#container-cleanup)
@@ -2730,7 +2734,13 @@ Jobs-service exports cleanup backlog gauges from committed PostgreSQL state:
 | `chronoverse.container_cleanup.outstanding` | All unfinished container cleanup, including quarantined work and dead publication |
 | `chronoverse.container_cleanup.quarantined` | Execution quarantines requiring operator repair and redrive |
 | `chronoverse.container_cleanup.publication_dead` | Unfinished cleanup whose outbox publication is `DEAD` |
-| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for eligible cleanup, excluding active cleanup leases, future cleanup backoff and quarantined work |
+| `chronoverse.container_cleanup.oldest_due` | Seconds overdue for cleanup execution, excluding active cleanup leases, future execution backoff and quarantined work |
+
+`oldest_due` follows execution eligibility, not the next republication deadline.
+A delivery already in Kafka can execute while its next replay is scheduled for
+later. Replay pacing does not pause or reset this age; execution leases and
+execution retry backoff do. This keeps stalled cleanup visible during a long
+replay interval.
 
 These are gauges of retained work, not counts of deliveries or log lines.
 Duplicate delivery and exporter restarts do not increase the backlog. A matching

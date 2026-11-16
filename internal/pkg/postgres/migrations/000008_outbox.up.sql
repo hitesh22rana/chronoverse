@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     cleanup_next_attempt_at TIMESTAMP WITHOUT TIME ZONE,
     cleanup_error_code TEXT,
     cleanup_failed_at TIMESTAMP WITHOUT TIME ZONE,
+    -- Zero is this generation's initial-publication lane; positive rounds pace replay and saturate without ending recovery.
     cleanup_replay_round INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_replay_round BETWEEN 0 AND 63),
     cleanup_replay_due_at TIMESTAMP WITHOUT TIME ZONE,
     UNIQUE (topic, event_key)

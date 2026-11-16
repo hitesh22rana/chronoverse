@@ -108,6 +108,8 @@ INSERT INTO container_cleanup_redrives(
  status=CASE WHEN $8=$12 THEN 'PENDING'::OUTBOX_STATUS ELSE status END,
  attempts=CASE WHEN $8=$12 THEN 0 ELSE attempts END,
  next_attempt_at=CASE WHEN $8=$12 THEN $10 ELSE next_attempt_at END,
+ cleanup_replay_round=CASE WHEN $8=$12 THEN 0 ELSE cleanup_replay_round END,
+ cleanup_replay_due_at=CASE WHEN $8=$12 THEN NULL ELSE cleanup_replay_due_at END,
  published_at=CASE WHEN $8=$12 THEN NULL ELSE published_at END,
  locked_at=CASE WHEN $8=$12 THEN NULL ELSE locked_at END,
  locked_by=CASE WHEN $8=$12 THEN NULL ELSE locked_by END

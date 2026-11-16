@@ -697,6 +697,8 @@ func TestIntegrationClaimScanFailureSurfacesInternal(t *testing.T) {
 			payload JSONB NOT NULL,
 			status TEXT NOT NULL,
 			attempts NUMERIC NOT NULL DEFAULT 0,
+            cleanup_state TEXT,
+            cleanup_replay_round INTEGER NOT NULL DEFAULT 0,
 			next_attempt_at TIMESTAMP NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
 			locked_at TIMESTAMP,
 			locked_by TEXT,

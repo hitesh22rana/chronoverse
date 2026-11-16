@@ -2,6 +2,7 @@ package outboxrelay
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -50,6 +51,9 @@ func New(ctx context.Context, cfg *Config, svc Service) *OutboxRelay {
 
 // Run starts the enabled topic handlers until the context is canceled.
 func (o *OutboxRelay) Run(ctx context.Context) error {
+	if (o.cfg.WorkflowEnabled || o.cfg.JobsEnabled || o.cfg.AnalyticsEnabled) && (o.cfg.PollInterval <= 0 || o.cfg.ContextTimeout <= 0) {
+		return errors.New("outbox publication requires positive poll and context durations")
+	}
 	topics := make([]string, 0, 4)
 	if o.cfg.WorkflowEnabled {
 		topics = append(topics, kafka.TopicWorkflows)

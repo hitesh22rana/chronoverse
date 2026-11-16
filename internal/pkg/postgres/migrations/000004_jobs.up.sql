@@ -146,7 +146,8 @@ CREATE TABLE container_materializations (
     container_id VARCHAR(256) NOT NULL,
     runtime_instance TEXT NOT NULL,
     observed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'utc'),
-    PRIMARY KEY(intent_id,container_id,runtime_instance)
+    PRIMARY KEY(intent_id,container_id,runtime_instance),
+    UNIQUE(runtime_instance,container_id)
 );
 CREATE TABLE runtime_capacity_holds (
     intent_id UUID PRIMARY KEY REFERENCES container_creation_intents(id),

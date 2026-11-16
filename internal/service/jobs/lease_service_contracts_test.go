@@ -67,8 +67,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.BeginContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "begin", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "begin", jobsmodel.CleanupIdentity{
+						JobID:           req.JobId,
+						ContainerID:     req.ContainerId,
+						RuntimeInstance: req.RuntimeInstance,
+						IntentID:        req.IntentId,
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -93,8 +98,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.FailContainerCleanupAttempt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "fail", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "fail", jobsmodel.CleanupIdentity{
+						JobID:           req.JobId,
+						ContainerID:     req.ContainerId,
+						RuntimeInstance: req.RuntimeInstance,
+						IntentID:        req.IntentId,
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -115,8 +125,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.RedriveContainerCleanup(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "redrive", req.JobId, req.ContainerId, req.Generation, req.Token, req.ErrorCode, req.Interrupted, req.RuntimeInstance, req.IntentId).
-						DoAndReturn(func(ctx context.Context, _, _, _ string, _ int64, _, _ string, _ bool, _ ...string) (*jobsmodel.CleanupAttempt, error) {
+					repo.EXPECT().UpdateContainerCleanup(gomock.Any(), "redrive", jobsmodel.CleanupIdentity{
+						JobID:           req.JobId,
+						ContainerID:     req.ContainerId,
+						RuntimeInstance: req.RuntimeInstance,
+						IntentID:        req.IntentId,
+					}, req.Generation, req.Token, req.ErrorCode, req.Interrupted).
+						DoAndReturn(func(ctx context.Context, _ string, _ jobsmodel.CleanupIdentity, _ int64, _, _ string, _ bool) (*jobsmodel.CleanupAttempt, error) {
 							check(ctx)
 							return &jobsmodel.CleanupAttempt{State: "PROCESSING", Generation: 2, Attempts: 1, Token: "owner"}, failure
 						})
@@ -134,8 +149,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return svc.GetContainerCleanupReceipt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().GetContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId, req.RuntimeInstance, req.IntentId).
-						DoAndReturn(func(ctx context.Context, _, _ string, _ ...string) (bool, error) {
+					repo.EXPECT().GetContainerCleanupReceipt(gomock.Any(), jobsmodel.CleanupIdentity{
+						JobID:           req.JobId,
+						ContainerID:     req.ContainerId,
+						RuntimeInstance: req.RuntimeInstance,
+						IntentID:        req.IntentId,
+					}).
+						DoAndReturn(func(ctx context.Context, _ jobsmodel.CleanupIdentity) (bool, error) {
 							check(ctx)
 							return failure == nil, failure
 						})
@@ -152,8 +172,13 @@ func leaseServiceCases() []func() *leaseServiceContract {
 					return nil, svc.RecordContainerCleanupReceipt(ctx, req)
 				},
 				expect: func(repo *jobsmock.MockRepository, check func(context.Context), failure error) any {
-					repo.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), req.JobId, req.ContainerId, req.RuntimeInstance, req.IntentId).
-						DoAndReturn(func(ctx context.Context, _, _ string, _ ...string) error { check(ctx); return failure })
+					repo.EXPECT().RecordContainerCleanupReceipt(gomock.Any(), jobsmodel.CleanupIdentity{
+						JobID:           req.JobId,
+						ContainerID:     req.ContainerId,
+						RuntimeInstance: req.RuntimeInstance,
+						IntentID:        req.IntentId,
+					}).
+						DoAndReturn(func(ctx context.Context, _ jobsmodel.CleanupIdentity) error { check(ctx); return failure })
 					return nil
 				},
 			}

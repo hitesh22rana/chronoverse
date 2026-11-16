@@ -83,11 +83,21 @@ func TestIntegrationContainerIntentGrantsClosureAndCapacity(t *testing.T) {
 	if err = pg.QueryRow(ctx, "SELECT attempts FROM jobs WHERE id=$1", nextJob).Scan(&spent); err != nil || spent != 0 {
 		t.Fatalf("blocked job spent an attempt: %d %v", spent, err)
 	}
-	if err = repo.RecordContainerCleanupReceipt(ctx, job, command.ContainerID, "wrong-daemon", command.IntentID); err == nil {
+	if err = repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     command.ContainerID,
+		RuntimeInstance: "wrong-daemon",
+		IntentID:        command.IntentID,
+	}); err == nil {
 		t.Fatal("wrong runtime proof accepted")
 	}
 	for range 2 {
-		if err = repo.RecordContainerCleanupReceipt(ctx, job, command.ContainerID, command.RuntimeInstance, command.IntentID); err != nil {
+		if err = repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+			JobID:           job,
+			ContainerID:     command.ContainerID,
+			RuntimeInstance: command.RuntimeInstance,
+			IntentID:        command.IntentID,
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -251,7 +261,12 @@ func TestIntegrationRemovedContainerCannotAcquireStart(t *testing.T) {
 	if err = repo.AttachJobContainer(ctx, job, lease, command.ContainerID, ensured.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	if err = repo.RecordContainerCleanupReceipt(ctx, job, command.ContainerID, command.RuntimeInstance, command.IntentID); err != nil {
+	if err = repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     command.ContainerID,
+		RuntimeInstance: command.RuntimeInstance,
+		IntentID:        command.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	granted, err := repo.UpdateContainerIntent(ctx, "reserve_start", command)
@@ -372,7 +387,12 @@ func TestIntegrationRemovalReceiptSerializesWithStartReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	receiptCtx, cancel := context.WithTimeout(ctx, time.Second)
-	err = repo.RecordContainerCleanupReceipt(receiptCtx, job, id, identity.RuntimeInstance, identity.IntentID)
+	err = repo.RecordContainerCleanupReceipt(receiptCtx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     id,
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.IntentID,
+	})
 	cancel()
 	if status.Code(err) != codes.DeadlineExceeded {
 		t.Fatalf("receipt bypassed the Start authority row lock: %v", err)
@@ -380,7 +400,12 @@ func TestIntegrationRemovalReceiptSerializesWithStartReservation(t *testing.T) {
 	if err = lock.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	removed, err := repo.GetContainerCleanupReceipt(ctx, job, id, identity.RuntimeInstance, identity.IntentID)
+	removed, err := repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     id,
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.IntentID,
+	})
 	if err != nil || removed {
 		t.Fatalf("blocked receipt committed: completed=%v error=%v", removed, err)
 	}
@@ -392,7 +417,12 @@ func TestIntegrationRemovalReceiptSerializesWithStartReservation(t *testing.T) {
 	if err != nil || !grant.Granted {
 		t.Fatalf("Start after interrupted receipt: %+v %v", grant, err)
 	}
-	if err = repo.RecordContainerCleanupReceipt(ctx, job, id, identity.RuntimeInstance, identity.IntentID); err != nil {
+	if err = repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     id,
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	var held int

@@ -76,6 +76,7 @@ BEGIN
        OR EXISTS(SELECT 1 FROM container_cleanup_receipts r
         WHERE r.intent_id=i.id AND r.container_id=container AND r.runtime_instance=i.runtime_instance) THEN RETURN;
     END IF;
+    -- Keep this format aligned with cleanupEventKey in jobs/cleanup_receipts.go.
     cleanup_key := 'job:'||i.job_id||':container:'||container||':runtime:'||i.runtime_instance||':cleanup';
     INSERT INTO outbox_events(topic,kafka_key,event_key,cleanup_state,payload)
     VALUES('workflows',i.workflow_id::text,cleanup_key,'READY',jsonb_build_object(
@@ -139,6 +140,8 @@ BEGIN
     IF OLD.status='RUNNING' AND (NEW.status<>'RUNNING' OR NEW.attempts<>OLD.attempts) THEN
         PERFORM close_job_container_intents(OLD.id);
     END IF;
+    -- This trigger owns settlement/retry accounting, including cleared NEW routing.
+    -- Use OLD identity so closure and capacity transfer commit atomically.
     IF OLD.runtime_node_id IS NOT NULL AND NEW.status<>'RUNNING' THEN
         PERFORM reconcile_runtime_capacity(OLD.runtime_node_id);
     END IF;

@@ -201,11 +201,17 @@ func TestContainerIntentIdentityRefusalsDoNotNeedDatabaseMutation(t *testing.T) 
 	if _, err := (&Repository{}).ListContainerIntents(t.Context(), nil, false); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("nil listing accepted: %v", err)
 	}
-	for _, identity := range [][]string{nil, {"daemon"}, {"", "intent"}, {"daemon", ""}} {
-		if _, err := (&Repository{}).GetContainerCleanupReceipt(context.Background(), "job", "container", identity...); status.Code(err) != codes.InvalidArgument {
+	for _, identity := range []jobsmodel.CleanupIdentity{
+		{},
+		{JobID: "job", ContainerID: "container", RuntimeInstance: "daemon"},
+		{JobID: "job", ContainerID: "container", IntentID: "intent"},
+		{ContainerID: "container", RuntimeInstance: "daemon", IntentID: "intent"},
+		{JobID: "job", RuntimeInstance: "daemon", IntentID: "intent"},
+	} {
+		if _, err := (&Repository{}).GetContainerCleanupReceipt(context.Background(), identity); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("incomplete receipt read accepted: %v", err)
 		}
-		if err := (&Repository{}).RecordContainerCleanupReceipt(context.Background(), "job", "container", identity...); status.Code(err) != codes.InvalidArgument {
+		if err := (&Repository{}).RecordContainerCleanupReceipt(context.Background(), identity); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("incomplete receipt write accepted: %v", err)
 		}
 	}
@@ -337,9 +343,15 @@ func TestContainerIntentDispatchDoesNotExposePartiallyLoadedOrWrittenAuthority(t
 }
 
 func TestCleanupAttemptRequiresCompletePhysicalIdentity(t *testing.T) {
-	for _, identity := range [][]string{nil, {"daemon"}, {"", "intent"}, {"daemon", ""}} {
+	for _, identity := range []jobsmodel.CleanupIdentity{
+		{},
+		{JobID: "job", ContainerID: "container", RuntimeInstance: "daemon"},
+		{JobID: "job", ContainerID: "container", IntentID: "intent"},
+		{ContainerID: "container", RuntimeInstance: "daemon", IntentID: "intent"},
+		{JobID: "job", RuntimeInstance: "daemon", IntentID: "intent"},
+	} {
 		// No database is installed: invalid proof must be rejected before storage.
-		result, err := (&Repository{}).UpdateContainerCleanup(t.Context(), "begin", "job", "container", 1, "", "", false, identity...)
+		result, err := (&Repository{}).UpdateContainerCleanup(t.Context(), "begin", identity, 1, "", "", false)
 		if result != nil || status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("incomplete cleanup identity accepted: identity=%v result=%+v error=%v", identity, result, err)
 		}

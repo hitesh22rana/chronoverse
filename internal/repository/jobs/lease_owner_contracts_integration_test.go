@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -237,10 +239,20 @@ func TestIntegrationAttachedContainerFitsCleanupReceipt(t *testing.T) {
 	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RecordContainerCleanupReceipt(ctx, fixture.JobID, containerID, provenance.RuntimeInstance, provenance.IntentID); err != nil {
+	if err := repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     containerID,
+		RuntimeInstance: provenance.RuntimeInstance,
+		IntentID:        provenance.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if completed, err := repo.GetContainerCleanupReceipt(ctx, fixture.JobID, containerID, provenance.RuntimeInstance, provenance.IntentID); err != nil || !completed {
+	if completed, err := repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     containerID,
+		RuntimeInstance: provenance.RuntimeInstance,
+		IntentID:        provenance.IntentID,
+	}); err != nil || !completed {
 		t.Fatalf("accepted container cannot be receipted: completed=%v err=%v", completed, err)
 	}
 }

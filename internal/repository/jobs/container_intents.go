@@ -513,7 +513,7 @@ func recordContainerObservation(
 	if _, err := tx.Exec(ctx, `
 INSERT INTO container_materializations(intent_id,container_id,runtime_instance)
 VALUES($1,$2,$3)
-ON CONFLICT DO NOTHING`, intent.ID, req.ContainerID, req.RuntimeInstance); err != nil {
+ON CONFLICT (intent_id,container_id,runtime_instance) DO NOTHING`, intent.ID, req.ContainerID, req.RuntimeInstance); err != nil {
 		return err
 	}
 	if intent.ContainerID == "" && !intent.Closed {
@@ -570,7 +570,7 @@ SET inspection_token=NULL,
   inspection_until=NULL,
   last_inspection_at=clock_timestamp() AT TIME ZONE 'utc',
   inspection_errors=CASE WHEN $2='ERROR' THEN LEAST(3,inspection_errors+1) WHEN $2='INTERRUPTED' THEN inspection_errors ELSE 0 END,
-  quarantined=($2='ERROR' AND inspection_errors>=2),
+  quarantined=($2='ERROR' AND inspection_errors+1>=3),
   inspection_error_code=CASE WHEN $2='ERROR' THEN $3 WHEN $2='INTERRUPTED' THEN inspection_error_code ELSE '' END,
   inspection_error_message=CASE WHEN $2='ERROR' THEN $4 WHEN $2='INTERRUPTED' THEN inspection_error_message ELSE '' END,
   next_inspection_at=(clock_timestamp() AT TIME ZONE 'utc')+

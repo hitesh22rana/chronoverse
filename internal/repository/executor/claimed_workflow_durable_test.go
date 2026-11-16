@@ -151,7 +151,12 @@ func (c *durableJobsClient) CompleteJob(
 }
 
 func (c *durableJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
-	completed, err := c.repo.GetContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId(), req.GetRuntimeInstance(), req.GetIntentId())
+	completed, err := c.repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           req.GetJobId(),
+		ContainerID:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentID:        req.GetIntentId(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +168,12 @@ func (c *durableJobsClient) RecordContainerCleanupReceipt(
 	req *jobspb.ContainerCleanupReceiptRequest,
 	_ ...grpc.CallOption,
 ) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
-	if err := c.repo.RecordContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId(), req.GetRuntimeInstance(), req.GetIntentId()); err != nil {
+	if err := c.repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           req.GetJobId(),
+		ContainerID:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentID:        req.GetIntentId(),
+	}); err != nil {
 		return nil, err
 	}
 	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil

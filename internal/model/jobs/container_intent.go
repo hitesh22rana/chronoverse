@@ -31,3 +31,11 @@ type ContainerIntentResult struct {
 	Intent  *ContainerIntent
 	Granted bool
 }
+
+// CleanupIdentity names one verified physical container and its owning intent.
+type CleanupIdentity struct {
+	JobID           string
+	ContainerID     string
+	RuntimeInstance string
+	IntentID        string
+}

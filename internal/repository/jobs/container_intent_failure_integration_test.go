@@ -91,7 +91,12 @@ func TestIntegrationContainerIntentUnavailableStorageHasNoSuccess(t *testing.T) 
 	if result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, false); result != nil || status.Code(err) != codes.Internal {
 		t.Fatalf("closed pool returned listing: %+v %v", result, err)
 	}
-	if err := repo.RecordContainerCleanupReceipt(t.Context(), command.JobID, "container", command.RuntimeInstance, command.IntentID); err == nil {
+	if err := repo.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+		JobID:           command.JobID,
+		ContainerID:     "container",
+		RuntimeInstance: command.RuntimeInstance,
+		IntentID:        command.IntentID,
+	}); err == nil {
 		t.Fatal("closed pool recorded removal proof")
 	}
 }
@@ -145,11 +150,21 @@ BEGIN RAISE EXCEPTION 'runtime accounting unavailable'; END; $$`); err != nil {
 			default:
 				remove = scopedJobFaultTrigger(t.Context(), t, repo.pg, table, event, false, map[string]string{field: value})
 			}
-			if err = repo.RecordContainerCleanupReceipt(t.Context(), req.JobID, req.ContainerID, req.RuntimeInstance, req.IntentID); err == nil {
+			if err = repo.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+				JobID:           req.JobID,
+				ContainerID:     req.ContainerID,
+				RuntimeInstance: req.RuntimeInstance,
+				IntentID:        req.IntentID,
+			}); err == nil {
 				t.Fatal("partial removal proof was acknowledged")
 			}
 			remove()
-			completed, err := repo.GetContainerCleanupReceipt(t.Context(), req.JobID, req.ContainerID, req.RuntimeInstance, req.IntentID)
+			completed, err := repo.GetContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+				JobID:           req.JobID,
+				ContainerID:     req.ContainerID,
+				RuntimeInstance: req.RuntimeInstance,
+				IntentID:        req.IntentID,
+			})
 			if err != nil || completed {
 				t.Fatalf("failed cleanup persisted a receipt: completed=%v error=%v", completed, err)
 			}
@@ -275,7 +290,7 @@ func TestIntegrationContainerIntentMissingAndUnknownOperationsFailClosed(t *test
 	}
 }
 
-func TestIntegrationLateCapacityFailureRollsBackTerminalSettlement(t *testing.T) {
+func TestIntegrationCapacityFailureRollsBackTerminalSettlement(t *testing.T) {
 	for _, operation := range []struct {
 		name   string
 		invoke func(context.Context, *Repository, string, string, string) error
@@ -286,7 +301,7 @@ func TestIntegrationLateCapacityFailureRollsBackTerminalSettlement(t *testing.T)
 		{
 			"cancel command",
 			func(ctx context.Context, repo *Repository, job, _, command string) error {
-				_, err := repo.CancelJob(ctx, job, "WORKFLOW_TERMINATED", command)
+				_, err := repo.CancelJob(ctx, job, command, "WORKFLOW_TERMINATED")
 				return err
 			},
 		},
@@ -307,13 +322,13 @@ func TestIntegrationLateCapacityFailureRollsBackTerminalSettlement(t *testing.T)
 			if _, err := repo.pg.Exec(t.Context(), "CREATE SEQUENCE capacity_fault_call"); err != nil {
 				t.Fatal(err)
 			}
-			// The trigger's accounting succeeds; a later failure must still roll back
-			// the job, outbox and command ledger as one settlement.
+			// A failure after the trigger updates capacity must roll back the
+			// job, outbox and command ledger as one settlement.
 			if _, err := repo.pg.Exec(t.Context(), `CREATE OR REPLACE FUNCTION reconcile_runtime_capacity(node TEXT) RETURNS VOID
 LANGUAGE plpgsql AS $$
 BEGIN
  PERFORM saved_reconcile_runtime_capacity(node);
- IF nextval('capacity_fault_call') = 2 THEN
+ IF nextval('capacity_fault_call') = 1 THEN
   RAISE EXCEPTION 'late runtime accounting failure';
  END IF;
 END; $$`); err != nil {
@@ -339,5 +354,98 @@ END; $$`); err != nil {
 				t.Fatalf("same-command retry failed: %v", err)
 			}
 		})
+	}
+}
+
+//nolint:gocyclo // One durable identity exercises response replay, conflicting observation and physical-proof ownership.
+func TestIntegrationContainerIdentityProducersAndConflicts(t *testing.T) {
+	repo := isolatedContainerIntentRepository(t)
+	repo.cfg.FetchLimit = 10
+	ctx := t.Context()
+	first := seedIntentFailureFixture(t, repo)
+	if _, err := repo.UpdateContainerIntent(ctx, "reserve_create", first); err != nil {
+		t.Fatal(err)
+	}
+	first.ContainerID = strings.Repeat("c", 64)
+	if _, err := repo.UpdateContainerIntent(ctx, "observe", first); err != nil {
+		t.Fatal(err)
+	}
+	intent, err := repo.UpdateContainerIntent(ctx, "get", first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repo.AttachJobContainer(ctx, first.JobID, first.LeaseToken, first.ContainerID, intent.Intent.RuntimeNodeID, uuid.NewString()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = repo.UpdateContainerIntent(ctx, "reserve_start", first); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := repo.ListJobs(ctx, intent.Intent.WorkflowID, intent.Intent.UserID, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Jobs) != 1 {
+		t.Fatalf("unexpected listed jobs: %+v", listed)
+	}
+	job := listed.ToProto(true).GetJobs()[0]
+	if job.GetRuntimeInstance() != first.RuntimeInstance || job.GetIntentId() != first.IntentID {
+		t.Fatalf("list omitted provenance: %+v", job)
+	}
+	public := listed.ToProto(false).GetJobs()[0]
+	if public.GetRuntimeInstance() != "" || public.GetIntentId() != "" {
+		t.Fatal("public list exposed internal provenance")
+	}
+	second := seedIntentFailureFixture(t, repo)
+	if _, err = repo.UpdateContainerIntent(ctx, "reserve_create", second); err != nil {
+		t.Fatal(err)
+	}
+	second.ContainerID = first.ContainerID
+	result, observeErr := repo.UpdateContainerIntent(ctx, "observe", second)
+	if observeErr == nil || result != nil {
+		t.Fatalf("cross-intent physical ID accepted: %+v %v", result, observeErr)
+	}
+	lookup := *second
+	lookup.ContainerID = ""
+	untouched, err := repo.UpdateContainerIntent(ctx, "get", &lookup)
+	if err != nil || untouched.Intent.ContainerID != "" {
+		t.Fatalf("failed observation changed identity: %+v %v", untouched, err)
+	}
+	command := uuid.NewString()
+	for range 2 {
+		canceled, err := repo.CancelJob(ctx, first.JobID, command, "WORKFLOW_TERMINATED")
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot := canceled.ToProto()
+		if snapshot.GetRuntimeInstance() != first.RuntimeInstance || snapshot.GetIntentId() != first.IntentID || snapshot.GetContainerId() != first.ContainerID {
+			t.Fatalf("cancel/replay omitted provenance: %+v", snapshot)
+		}
+	}
+	// An inconsistent pre-existing receipt cannot acknowledge another intent's hold.
+	if _, err := repo.pg.Exec(ctx, `
+INSERT INTO container_cleanup_receipts(job_id,container_id,runtime_instance,intent_id)
+VALUES($1,$2,$3,$4)`, first.JobID, first.ContainerID, first.RuntimeInstance, second.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	identity := jobsmodel.CleanupIdentity{
+		JobID:           first.JobID,
+		ContainerID:     first.ContainerID,
+		RuntimeInstance: first.RuntimeInstance,
+		IntentID:        first.IntentID,
+	}
+	if err := repo.RecordContainerCleanupReceipt(ctx, identity); err == nil {
+		t.Fatal("conflicting receipt released authority")
+	}
+	var held bool
+	if err := repo.pg.QueryRow(ctx, "SELECT released_at IS NULL FROM runtime_capacity_holds WHERE intent_id=$1", first.IntentID).Scan(&held); err != nil || !held {
+		t.Fatalf("conflicting receipt released hold: held=%v error=%v", held, err)
+	}
+	if _, err := repo.pg.Exec(ctx, "DELETE FROM container_cleanup_receipts WHERE job_id=$1", first.JobID); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := repo.RecordContainerCleanupReceipt(ctx, identity); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

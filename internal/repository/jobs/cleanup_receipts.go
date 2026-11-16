@@ -5,18 +5,20 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 )
 
-func cleanupReceiptIdentity(identity []string) (instance, intent string, err error) {
-	if len(identity) != 2 || identity[0] == "" || identity[1] == "" {
-		return "", "", status.Error(codes.InvalidArgument, "runtime instance and intent are required")
+func validateCleanupIdentity(identity jobsmodel.CleanupIdentity) error {
+	if identity.JobID == "" || identity.ContainerID == "" || identity.RuntimeInstance == "" || identity.IntentID == "" {
+		return status.Error(codes.InvalidArgument, "job, container, runtime instance and intent are required")
 	}
-	return identity[0], identity[1], nil
+	return nil
 }
 
 // GetContainerCleanupReceipt reads proof for one immutable daemon/container identity.
-func (r *Repository) GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string, identity ...string) (bool, error) {
-	instance, intent, err := cleanupReceiptIdentity(identity)
+func (r *Repository) GetContainerCleanupReceipt(ctx context.Context, identity jobsmodel.CleanupIdentity) (bool, error) {
+	err := validateCleanupIdentity(identity)
 	if err != nil {
 		return false, err
 	}
@@ -28,13 +30,13 @@ WHERE job_id=$1
 AND container_id=$2
 AND runtime_instance=$3
 AND intent_id=$4)
-`, jobID, containerID, instance, intent).Scan(&completed)
+`, identity.JobID, identity.ContainerID, identity.RuntimeInstance, identity.IntentID).Scan(&completed)
 	return completed, r.mapJobLeaseReadError(err, "get container cleanup receipt")
 }
 
 // RecordContainerCleanupReceipt releases only the capacity held for the verified identity.
-func (r *Repository) RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string, identity ...string) error {
-	instance, intent, err := cleanupReceiptIdentity(identity)
+func (r *Repository) RecordContainerCleanupReceipt(ctx context.Context, identity jobsmodel.CleanupIdentity) error {
+	err := validateCleanupIdentity(identity)
 	if err != nil {
 		return err
 	}
@@ -55,15 +57,19 @@ AND m.container_id=$3
 AND m.runtime_instance=$4
 AND i.runtime_instance=$4
 FOR UPDATE OF i
-`, intent, jobID, containerID, instance).Scan(&node)
+`, identity.IntentID, identity.JobID, identity.ContainerID, identity.RuntimeInstance).Scan(&node)
 	if err != nil {
 		return r.mapJobLeaseReadError(err, "validate cleanup provenance")
 	}
-	_, err = tx.Exec(ctx, `
-INSERT INTO container_cleanup_receipts(job_id,container_id,runtime_instance,intent_id)
+	var recorded bool
+	err = tx.QueryRow(ctx, `
+INSERT INTO container_cleanup_receipts AS receipt(job_id,container_id,runtime_instance,intent_id)
 VALUES ($1,$2,$3,$4)
-ON CONFLICT DO NOTHING
-`, jobID, containerID, instance, intent)
+ON CONFLICT (job_id,container_id,runtime_instance) DO UPDATE
+ SET intent_id=receipt.intent_id
+ WHERE receipt.intent_id=EXCLUDED.intent_id
+RETURNING true
+`, identity.JobID, identity.ContainerID, identity.RuntimeInstance, identity.IntentID).Scan(&recorded)
 	if err != nil {
 		return err
 	}
@@ -73,7 +79,7 @@ SET cleanup_state='COMPLETED',cleanup_token=NULL,cleanup_lease_until=NULL,cleanu
 WHERE topic='workflows'
 AND event_key=$1
 AND cleanup_state IS NOT NULL
-`, cleanupEventKey(jobID, containerID, instance))
+`, cleanupEventKey(identity.JobID, identity.ContainerID, identity.RuntimeInstance))
 	if err != nil {
 		return err
 	}
@@ -86,7 +92,7 @@ SET released_at=COALESCE(released_at,clock_timestamp() AT TIME ZONE 'utc')
 WHERE intent_id=$1
 AND container_id=$2
 AND runtime_instance=$3
-`, intent, containerID, instance); err != nil {
+`, identity.IntentID, identity.ContainerID, identity.RuntimeInstance); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, "SELECT reconcile_runtime_capacity($1)", node); err != nil {
@@ -95,6 +101,7 @@ AND runtime_instance=$3
 	return tx.Commit(ctx)
 }
 
+// Keep this format aligned with enqueue_intent_container_cleanup in 000008_outbox.up.sql.
 func cleanupEventKey(jobID, containerID, instance string) string {
 	return "job:" + jobID + ":container:" + containerID + ":runtime:" + instance + ":cleanup"
 }

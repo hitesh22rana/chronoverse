@@ -238,7 +238,12 @@ func testContainerCreationFault(t *testing.T, daemon *containerpkg.DockerWorkflo
 	if err = repo.cleanupContainer(ctx, runtime, fixture.JobID, runtime.id); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := jobs.GetContainerCleanupReceipt(ctx, fixture.JobID, runtime.id, intent.RuntimeInstance, intent.ID)
+	completed, err := jobs.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     runtime.id,
+		RuntimeInstance: intent.RuntimeInstance,
+		IntentID:        intent.ID,
+	})
 	if err != nil || !completed {
 		t.Fatalf("physical removal lost proof: completed=%v error=%v", completed, err)
 	}

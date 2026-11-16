@@ -58,7 +58,12 @@ func TestIntegrationRecoveryPreservesSystemClassificationAtExhaustion(t *testing
 				if state.Attempts != attempts {
 					t.Fatalf("settlement changed attempt count: %d", state.Attempts)
 				}
-				completed, receiptErr := jobs.GetContainerCleanupReceipt(t.Context(), fixture.JobID, fixture.ContainerID, fixture.RuntimeInstance, fixture.IntentID)
+				completed, receiptErr := jobs.GetContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+					JobID:           fixture.JobID,
+					ContainerID:     fixture.ContainerID,
+					RuntimeInstance: fixture.RuntimeInstance,
+					IntentID:        fixture.IntentID,
+				})
 				wantReceipt := tc.name == "missing container" || tc.name == "already cleaned" || tc.name == "created never started" || tc.userReason != ""
 				if receiptErr != nil || completed != wantReceipt {
 					t.Fatalf("cleanup evidence=%v/%v want %v", completed, receiptErr, wantReceipt)
@@ -199,7 +204,12 @@ func configureDurableRecoveryRuntime(
 		container.inspectErr = status.Error(codes.NotFound, "container disappeared before its outcome was observed")
 	}
 	if name == "already cleaned" {
-		if err := jobs.RecordContainerCleanupReceipt(t.Context(), expired.GetId(), expired.GetContainerId(), fixture.RuntimeInstance, fixture.IntentID); err != nil {
+		if err := jobs.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+			JobID:           expired.GetId(),
+			ContainerID:     expired.GetContainerId(),
+			RuntimeInstance: fixture.RuntimeInstance,
+			IntentID:        fixture.IntentID,
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}

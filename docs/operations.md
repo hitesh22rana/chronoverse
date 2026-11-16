@@ -527,8 +527,10 @@ mutations through a backend that does not retry accepted requests.
 
 A Create timeout is an unknown outcome, not proof that no container exists.
 Execution workers resolve the intent name using verified ownership labels and
-persist each observed ID. Closed intents remain discoverable after job, workflow
-and owner deletion. A later materialization is cleanup-only and receives its own
+persist each observed ID. Jobs-service trusts the authenticated execution role to
+verify ownership labels; PostgreSQL also prevents one daemon/container identity
+from belonging to multiple intents. Closed intents remain discoverable after job,
+workflow and owner deletion. A later materialization is cleanup-only and receives its own
 immutable cleanup obligation; a receipt for another ID does not cover it.
 
 Expired-lease recovery never completes a `created` container from its zero exit
@@ -546,7 +548,13 @@ lacks original-instance removal evidence, even if the prior job is terminal.
 The scheduler defers blocked jobs without spending execution attempts or creating
 repeated dispatches. Runtime occupancy includes durable unresolved capacity holds;
 heartbeats cannot erase them, and duplicate receipts cannot release capacity twice.
-HTTP workflows and unrelated workflow lifecycle events remain independent.
+HTTP workflows do not acquire the container admission gate. Admission, attachment
+and settlement transactions lock the workflow row before job, intent and runtime
+rows, serializing those transactions within that workflow. Settlement triggers close intents and recompute the node’s
+occupancy before committing; runtime heartbeats use the same accounting model.
+High job turnover on one workflow or runtime can contend on these locks and
+repeat node-wide counts. Measure that contention before increasing concurrency.
+Unrelated workflows retain independent workflow locks.
 
 Discovery has one reserved worker, separate from expired-lease recovery. Each
 recovery cycle processes at most ten discovery items, bounded by
@@ -555,8 +563,11 @@ its inspection, with a 45-second ownership lease. Inspection work has a 30-secon
 operation budget and failure reporting a detached five-second budget; daemon
 identity reads are capped at five seconds. Healthy absence reschedules discovery
 after five minutes with jitter. Inspection errors back off and quarantine after
-three consecutive reported failures. Worker shutdown releases the inspection lease
-without spending or resetting that budget; repeated interruptions can postpone
+three consecutive reported failures. Quarantined intents are excluded from
+automatic discovery claims until administrative redrive; quarantine does not
+release workflow admission gates or capacity holds. Redrive retains the last
+inspection diagnostic until an inspection reports success or a new failure.
+Worker shutdown releases the inspection lease without spending or resetting that budget; repeated interruptions can postpone
 discovery indefinitely. Redrive does not reopen execution authority.
 
 Use the internal-admin `ListContainerIntents` and `GetContainerIntent` RPCs to
@@ -585,10 +596,14 @@ FROM container_creation_intents
 WHERE closed_at IS NOT NULL
 GROUP BY quarantined;
 
-SELECT runtime_node_id, runtime_instance, count(*) AS held_slots
-FROM runtime_capacity_holds
-WHERE released_at IS NULL
-GROUP BY runtime_node_id, runtime_instance;
+SELECT h.runtime_node_id, h.runtime_instance, h.intent_id, h.job_id,
+       i.start_reserved_at,
+       (clock_timestamp() AT TIME ZONE 'utc') - i.start_reserved_at AS hold_age,
+       i.closed_at, i.quarantined
+FROM runtime_capacity_holds h
+JOIN container_creation_intents i ON i.id = h.intent_id
+WHERE h.released_at IS NULL
+ORDER BY i.start_reserved_at;
 
 SELECT intent_id, expected_generation, generation, actor, reason, created_at
 FROM container_intent_redrives

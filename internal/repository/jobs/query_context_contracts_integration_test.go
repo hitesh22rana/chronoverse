@@ -149,7 +149,7 @@ func TestIntegrationCancelSnapshotQueryFailureRollsBackReservation(t *testing.T)
 	before := readTerminalJobState(t.Context(), t, pg, fixture.JobID)
 	slots := readRuntimeRunningJobs(t.Context(), t, pg, before.RuntimeNodeID.String)
 	command := "cancel-snapshot-query-" + fixtureTag()
-	ctx, target := cancelAtQueryContext(t, "SELECT", "SELECT id, status, container_id, runtime_node_id, runtime_endpoint, attempts")
+	ctx, target := cancelAtQueryContext(t, "SELECT", "SELECT j.id, j.status, j.container_id, j.runtime_node_id, j.runtime_endpoint, j.attempts")
 	result, err := repo.CancelJob(ctx, fixture.JobID, command, "OPERATOR_REQUEST")
 	if !target.fired.Load() || ctx.Err() != context.Canceled || result != nil || status.Code(err) != codes.Internal ||
 		!strings.Contains(err.Error(), "failed to read cancellation snapshot") || !strings.Contains(err.Error(), "context canceled") {

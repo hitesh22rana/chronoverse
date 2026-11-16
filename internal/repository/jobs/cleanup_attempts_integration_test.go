@@ -91,7 +91,12 @@ func TestIntegrationCleanupQuarantineRedriveSurvivesRestart(t *testing.T) {
 	repo := newTestRepository(t)
 	update := func(op string, generation int64, token string, interrupted bool) *jobsmodel.CleanupAttempt {
 		t.Helper()
-		result, err := newTestRepository(t).UpdateContainerCleanup(t.Context(), op, fixture.JobID, fixture.ContainerID, generation, token, "Unavailable", interrupted, fixture.Instance, fixture.IntentID)
+		result, err := newTestRepository(t).UpdateContainerCleanup(t.Context(), op, jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, generation, token, "Unavailable", interrupted)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,12 +107,21 @@ func TestIntegrationCleanupQuarantineRedriveSurvivesRestart(t *testing.T) {
 		t.Fatalf("bad authority: %+v", first)
 	}
 	for _, op := range []string{"begin", "redrive"} {
-		if _, err := repo.UpdateContainerCleanup(t.Context(), op, fixture.JobID, fixture.ContainerID, 1, "", "", false, fixture.Instance, fixture.IntentID); status.Code(err) != codes.Aborted {
+		if _, err := repo.UpdateContainerCleanup(t.Context(), op, jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, 1, "", "", false); status.Code(err) != codes.Aborted {
 			t.Fatalf("active %s accepted: %v", op, err)
 		}
 	}
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", fixture.JobID, fixture.ContainerID, 1,
-		uuid.NewString(), "Unavailable", false, fixture.Instance, fixture.IntentID); status.Code(err) != codes.Aborted {
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     fixture.ContainerID,
+		RuntimeInstance: fixture.Instance,
+		IntentID:        fixture.IntentID,
+	}, 1, uuid.NewString(), "Unavailable", false); status.Code(err) != codes.Aborted {
 		t.Fatalf("wrong owner accepted: %v", err)
 	}
 	interrupted := update("fail", 1, first.Token, true)
@@ -145,7 +159,12 @@ func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, fixture *retai
 			t.Fatalf("duplicate failure=%+v", again)
 		}
 		if attempt < 3 {
-			if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", fixture.JobID, fixture.ContainerID, 1, "", "", false, fixture.Instance, fixture.IntentID); status.Code(err) != codes.Aborted {
+			if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, "", "", false); status.Code(err) != codes.Aborted {
 				t.Fatalf("backoff bypassed: %v", err)
 			}
 			var seconds float64
@@ -198,7 +217,12 @@ func verifyCleanupCompletion(t *testing.T, update cleanupUpdate, fixture *retain
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 	var state string
-	if err := repo.RecordContainerCleanupReceipt(t.Context(), fixture.JobID, fixture.ContainerID, fixture.Instance, fixture.IntentID); err != nil {
+	if err := repo.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     fixture.ContainerID,
+		RuntimeInstance: fixture.Instance,
+		IntentID:        fixture.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, op := range []string{"begin", "fail", "redrive"} {
@@ -227,7 +251,12 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 	repo := newTestRepository(t)
 	var oldToken string
 	for attempt := int32(1); attempt <= 4; attempt++ {
-		result, err := repo.UpdateContainerCleanup(t.Context(), "begin", fixture.JobID, fixture.ContainerID, 1, "", "", false, fixture.Instance, fixture.IntentID)
+		result, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, 1, "", "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -241,8 +270,12 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 			t.Fatalf("authority=%+v", result)
 		}
 		if oldToken != "" {
-			if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", fixture.JobID, fixture.ContainerID, 1,
-				oldToken, "Unavailable", false, fixture.Instance, fixture.IntentID); status.Code(err) != codes.Aborted {
+			if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, oldToken, "Unavailable", false); status.Code(err) != codes.Aborted {
 				t.Fatalf("expired owner changed successor: %v", err)
 			}
 		}
@@ -252,11 +285,21 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 		}
 		repo = newTestRepository(t)
 	}
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", uuid.NewString(), "absent", 1, "", "", false, "daemon-"+fixtureTag(), uuid.NewString()); status.Code(err) != codes.Unavailable {
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+		JobID:           uuid.NewString(),
+		ContainerID:     "absent",
+		RuntimeInstance: "daemon-" + fixtureTag(),
+		IntentID:        uuid.NewString(),
+	}, 1, "", "", false); status.Code(err) != codes.Unavailable {
 		t.Fatalf("missing intent accepted: %v", err)
 	}
 	fresh := seedRetainedCleanup(t)
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "unknown", fresh.JobID, fresh.ContainerID, 1, "", "", false, fresh.Instance, fresh.IntentID); status.Code(err) != codes.InvalidArgument {
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "unknown", jobsmodel.CleanupIdentity{
+		JobID:           fresh.JobID,
+		ContainerID:     fresh.ContainerID,
+		RuntimeInstance: fresh.Instance,
+		IntentID:        fresh.IntentID,
+	}, 1, "", "", false); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unsupported transition accepted: %v", err)
 	}
 }
@@ -268,7 +311,12 @@ func TestIntegrationCleanupStorageFailuresDoNotGrantAuthority(t *testing.T) {
 			repo := newTestRepository(t)
 			pg := testkit.Postgres(t)
 			ctx, want := cleanupStorageFailureContext(t, phase)
-			result, err := repo.UpdateContainerCleanup(ctx, "begin", fixture.JobID, fixture.ContainerID, 1, "", "", false, fixture.Instance, fixture.IntentID)
+			result, err := repo.UpdateContainerCleanup(ctx, "begin", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, "", "", false)
 			if result != nil || status.Code(err) != want {
 				t.Fatalf("%s granted authority: %+v / %v", phase, result, err)
 			}
@@ -355,7 +403,12 @@ func TestIntegrationCleanupConcurrentDeliveryAndRedrive(t *testing.T) {
 			for range 2 {
 				go func() {
 					<-start
-					result, err := repo.UpdateContainerCleanup(t.Context(), operation, fixture.JobID, fixture.ContainerID, 1, "", "", false, fixture.Instance, fixture.IntentID)
+					result, err := repo.UpdateContainerCleanup(t.Context(), operation, jobsmodel.CleanupIdentity{
+						JobID:           fixture.JobID,
+						ContainerID:     fixture.ContainerID,
+						RuntimeInstance: fixture.Instance,
+						IntentID:        fixture.IntentID,
+					}, 1, "", "", false)
 					results <- outcome{result, err}
 				}()
 			}

@@ -119,7 +119,12 @@ func TestIntegrationCleanupReceiptSurvivesPruningAndDeletion(t *testing.T) {
 	if _, err := pg.Exec(ctx, "UPDATE jobs SET status='COMPLETED',lease_token=NULL,lease_expires_at=NULL WHERE id=$1", job); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := receipts.GetContainerCleanupReceipt(ctx, job, "receipt-container", identity.RuntimeInstance, identity.ID)
+	completed, err := receipts.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     "receipt-container",
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.ID,
+	})
 	if err != nil || completed {
 		t.Fatalf("unconfirmed cleanup has receipt: %v %v", completed, err)
 	}
@@ -127,7 +132,12 @@ func TestIntegrationCleanupReceiptSurvivesPruningAndDeletion(t *testing.T) {
 		t.Fatalf("unfinished cleanup snapshot pruned: remaining=%d", remaining)
 	}
 	for range 2 {
-		if err := receipts.RecordContainerCleanupReceipt(ctx, job, "receipt-container", identity.RuntimeInstance, identity.ID); err != nil {
+		if err := receipts.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+			JobID:           job,
+			ContainerID:     "receipt-container",
+			RuntimeInstance: identity.RuntimeInstance,
+			IntentID:        identity.ID,
+		}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -170,7 +180,12 @@ func assertCleanupReceiptPersistence(t *testing.T, receipts *jobsrepo.Repository
 		{job, "successor-container", false},
 		{uuid.NewString(), "receipt-container", false},
 	} {
-		completed, err := receipts.GetContainerCleanupReceipt(ctx, check.job, check.container, identity.RuntimeInstance, identity.ID)
+		completed, err := receipts.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+			JobID:           check.job,
+			ContainerID:     check.container,
+			RuntimeInstance: identity.RuntimeInstance,
+			IntentID:        identity.ID,
+		})
 		if err != nil || completed != check.want {
 			t.Fatalf("receipt %s/%s=%v err=%v", check.job, check.container, completed, err)
 		}
@@ -185,10 +200,20 @@ func assertCleanupReceiptPersistence(t *testing.T, receipts *jobsrepo.Repository
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := receipts.RecordContainerCleanupReceipt(ctx, job, "late-confirmed-container", identity.RuntimeInstance, identity.ID); err != nil {
+	if err := receipts.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     "late-confirmed-container",
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.ID,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if completed, err := receipts.GetContainerCleanupReceipt(ctx, job, "late-confirmed-container", identity.RuntimeInstance, identity.ID); err != nil || !completed {
+	if completed, err := receipts.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           job,
+		ContainerID:     "late-confirmed-container",
+		RuntimeInstance: identity.RuntimeInstance,
+		IntentID:        identity.ID,
+	}); err != nil || !completed {
 		t.Fatalf("late completion after deletion=%v err=%v", completed, err)
 	}
 }

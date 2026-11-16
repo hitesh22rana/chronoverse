@@ -533,9 +533,6 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 	if outboxErr := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobCompleted, "", "", ""); outboxErr != nil {
 		return outboxErr
 	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
-	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobComplete, commandID, requestHash); completeErr != nil {
 		return completeErr
 	}
@@ -607,9 +604,6 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	if outboxErr := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobFailed, failureKind, errorCode, truncatedMessage); outboxErr != nil {
 		return outboxErr
 	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
-	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobFail, commandID, requestHash); completeErr != nil {
 		return completeErr
 	}
@@ -672,9 +666,6 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	}
 	if ct.RowsAffected() == 0 {
 		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "cancel claimed job")
-	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
 	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobCancelClaimed, commandID, requestHash); completeErr != nil {
 		return completeErr
@@ -749,7 +740,6 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	}
 
 	var releasedCount int
-	var decrementedCount int
 	err = tx.QueryRow(
 		ctx,
 		releaseJobForRetryQuery(),
@@ -759,7 +749,7 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		jobsmodel.FailureKindSystem.ToString(),
 		errorCode,
 		truncateJobError(errorMessage),
-	).Scan(&releasedCount, &decrementedCount)
+	).Scan(&releasedCount)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "release job for retry")
 	}
@@ -910,7 +900,7 @@ func renewRecoveryReplayQuery() string {
 func releaseJobForRetryQuery() string {
 	return fmt.Sprintf(`
         WITH target AS (
-            SELECT id, runtime_node_id
+            SELECT id
             FROM %s
             WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
             FOR UPDATE
@@ -936,16 +926,10 @@ func releaseJobForRetryQuery() string {
                 last_error_message = $6
             FROM target
             WHERE j.id = target.id
-            RETURNING target.runtime_node_id AS previous_runtime_node_id
-        ),
-        decrement_runtime AS (
-            SELECT rn.id FROM %s rn JOIN released
-            ON rn.id=released.previous_runtime_node_id
+            RETURNING j.id
         )
-        SELECT
-            (SELECT COUNT(*) FROM released),
-            (SELECT COUNT(*) FROM decrement_runtime);
-    `, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
+        SELECT COUNT(*) FROM released;
+    `, postgres.TableJobs, postgres.TableJobs)
 }
 
 func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID string) (bool, error) {
@@ -991,7 +975,7 @@ func (r *Repository) cancelTerminatedRelease(ctx context.Context, tx pgx.Tx, job
 	if ct.RowsAffected() == 0 {
 		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "cancel terminated release")
 	}
-	return r.decrementRuntimeSlotForJob(ctx, tx, jobID)
+	return nil
 }
 
 func reserveJobCommand(
@@ -1105,11 +1089,6 @@ func queuedContainerJobMissingRuntimeQuery() string {
                 )
         );
     `, postgres.TableJobs, postgres.TableWorkflows, postgres.TableRuntimeNodes)
-}
-
-func (r *Repository) decrementRuntimeSlotForJob(ctx context.Context, tx pgx.Tx, jobID string) error {
-	_, err := tx.Exec(ctx, "SELECT reconcile_runtime_capacity(runtime_node_id) FROM jobs WHERE id=$1 AND runtime_node_id IS NOT NULL", jobID)
-	return r.mapJobLeaseWriteError(err, "reconcile settled runtime capacity")
 }
 
 func (r *Repository) scanTerminalJobSnapshot(

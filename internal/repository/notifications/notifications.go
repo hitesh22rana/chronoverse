@@ -16,15 +16,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
+	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/paginate"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 const (
@@ -317,14 +317,14 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	var notificationsPreferences []string
 	filterByKind := true
 	switch user.GetNotificationPreference() {
-	case "ALL":
+	case usersmodel.NotificationPreferenceAll:
 		// Every kind matches, so skip the kind predicate entirely.
 		filterByKind = false
-	case "ALERTS":
+	case usersmodel.NotificationPreferenceAlerts:
 		notificationsPreferences = []string{
 			notificationsmodel.KindWebAlert.ToString(),
 		}
-	case "NONE":
+	case usersmodel.NotificationPreferenceNone:
 		return &notificationsmodel.ListNotificationsResponse{
 			Notifications: nil,
 			Cursor:        "",

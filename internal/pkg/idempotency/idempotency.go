@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 )
 
@@ -56,10 +57,10 @@ func ContainerBuildHash(payload string) (string, error) {
 
 // WorkflowBuildHash returns the build hash for the workflow kind and payload.
 func WorkflowBuildHash(kind, payload string) (string, error) {
-	switch kind {
-	case "CONTAINER":
+	switch workflowsmodel.Kind(kind) {
+	case workflowsmodel.KindContainer:
 		return ContainerBuildHash(payload)
-	case "HEARTBEAT":
+	case workflowsmodel.KindHeartbeat:
 		return "", nil
 	default:
 		return "", status.Errorf(codes.InvalidArgument, "invalid kind: %s", kind)

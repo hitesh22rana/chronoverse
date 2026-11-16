@@ -134,17 +134,22 @@ func FromError(err error) (Code, bool) {
 	return reasonErr.reason, true
 }
 
+const (
+	failedJobStatus   = "FAILED"
+	canceledJobStatus = "CANCELED"
+)
+
 // Resolve returns the safe terminal reason fields for a job response.
 func Resolve(jobStatus, persistedCode string) (Code, string, bool) {
 	switch jobStatus {
-	case "FAILED":
+	case failedJobStatus:
 		code := Code(persistedCode)
 		if _, ok := failureCodes[code]; !ok {
 			code = FailureReasonUnavailable
 		}
 		message, _ := Message(code)
 		return code, message, true
-	case "CANCELED":
+	case canceledJobStatus:
 		code := Code(persistedCode)
 		if _, ok := cancellationCodes[code]; !ok {
 			code = CancellationReasonUnavailable

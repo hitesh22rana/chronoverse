@@ -13,18 +13,17 @@ import (
 
 	"go.uber.org/zap"
 
-	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
-	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-	workflowpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
+	workflowpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 // Server implements the HTTP server.
@@ -103,11 +102,11 @@ func New(
 
 	var sameSite http.SameSite
 	switch cfg.SameSiteMode {
-	case "LAX":
+	case cookieSameSiteLax:
 		sameSite = http.SameSiteLaxMode
-	case "STRICT":
+	case cookieSameSiteStrict:
 		sameSite = http.SameSiteStrictMode
-	case "NONE":
+	case cookieSameSiteNone:
 		sameSite = http.SameSiteNoneMode
 	}
 
@@ -131,7 +130,7 @@ func New(
 		hostConfig: &HostConfig{
 			URL:          cfg.HostURL,
 			Host:         host.Hostname(),
-			Secure:       host.Scheme == "https",
+			Secure:       host.Scheme == urlSchemeHTTPS,
 			SameSite:     sameSite,
 			CookieDomain: cfg.CookieDomain,
 		},

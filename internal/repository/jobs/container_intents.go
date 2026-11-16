@@ -604,7 +604,7 @@ WHERE id=$1 AND inspection_until IS NOT NULL`, intent.ID).Scan(&busy)
 	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO container_intent_redrives(intent_id,expected_generation,generation,actor,reason)
-VALUES($1,$2,$2+1,$3,$4)`, intent.ID, intent.Generation, req.Actor, req.Reason)
+VALUES($1,$2::bigint,$2::bigint+1,$3,$4)`, intent.ID, intent.Generation, req.Actor, req.Reason)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "audit container intent redrive")
 	}

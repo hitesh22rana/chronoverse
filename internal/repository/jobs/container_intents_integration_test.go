@@ -400,3 +400,94 @@ func TestIntegrationRemovalReceiptSerializesWithStartReservation(t *testing.T) {
 		t.Fatalf("receipt left capacity held: %d %v", held, err)
 	}
 }
+
+//nolint:gocyclo // One persisted inspection generation proves quarantine, fencing and audited repair together.
+func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) {
+	ctx := t.Context()
+	pg := testkit.Postgres(t)
+	repo := newTestRepository(t)
+	user, workflow := seedUserWorkflow(ctx, t, pg)
+	job, lease := seedRunningJob(ctx, t, pg, repo, workflow, user, t.Name())
+	req := &jobsmodel.ContainerIntentCommand{
+		JobID: job, LeaseToken: lease, Attempt: 1, WorkflowGeneration: 1, RuntimeInstance: "original-daemon", RequestHash: "frozen",
+	}
+	ensured, err := repo.UpdateContainerIntent(ctx, "ensure", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.IntentID = ensured.Intent.ID
+	req.Outcome, req.ErrorCode, req.ErrorMessage = "UNKNOWN", "Unavailable", "original Create diagnostic"
+	if _, err = repo.UpdateContainerIntent(ctx, "close", req); err != nil {
+		t.Fatal(err)
+	}
+	redrive := &jobsmodel.ContainerIntentCommand{IntentID: req.IntentID, Actor: "internal/operator", Reason: "original daemon restored", Generation: ensured.Intent.Generation}
+	var staleToken string
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, err = pg.Exec(ctx, "UPDATE container_creation_intents SET next_inspection_at='1970-01-01' WHERE id=$1", req.IntentID); err != nil {
+			t.Fatal(err)
+		}
+		batch, claimErr := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+		if claimErr != nil || len(batch) != 1 || batch[0].ID != req.IntentID {
+			t.Fatalf("claim inspection: %+v %v", batch, claimErr)
+		}
+		if attempt == 1 {
+			if _, err = repo.UpdateContainerIntent(ctx, "redrive", redrive); status.Code(err) != codes.Aborted {
+				t.Fatalf("live inspection was redriven: %v", err)
+			}
+		}
+		staleToken = batch[0].Token
+		result, reportErr := repo.UpdateContainerIntent(ctx, "report", &jobsmodel.ContainerIntentCommand{
+			IntentID: req.IntentID, Token: staleToken, Generation: batch[0].Generation, Outcome: "ERROR", ErrorCode: "Unavailable", ErrorMessage: "inspection unreachable",
+		})
+		if reportErr != nil {
+			t.Fatal(reportErr)
+		}
+		if result.Intent.InspectionErrors != int32(attempt) || result.Intent.Quarantined != (attempt == 3) || result.Intent.ErrorMessage != "original Create diagnostic" {
+			t.Fatalf("inspection damaged durable outcome/budget: %+v", result.Intent)
+		}
+	}
+	if _, err = pg.Exec(ctx, "UPDATE container_creation_intents SET next_inspection_at='1970-01-01' WHERE id=$1", req.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch) > 0 && batch[0].ID == req.IntentID {
+		t.Fatal("quarantined intent was automatically reclaimed")
+	}
+	repaired, err := repo.UpdateContainerIntent(ctx, "redrive", redrive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repaired.Intent.Closed || repaired.Intent.Quarantined || repaired.Intent.Generation != ensured.Intent.Generation+1 || repaired.Intent.ErrorMessage != "original Create diagnostic" {
+		t.Fatalf("redrive reopened or rewrote execution: %+v", repaired.Intent)
+	}
+	var actor, reason string
+	var oldGeneration, newGeneration int64
+	if err = pg.QueryRow(ctx, `
+ SELECT actor,reason,expected_generation,generation
+ FROM container_intent_redrives WHERE intent_id=$1
+`, req.IntentID).Scan(&actor, &reason, &oldGeneration, &newGeneration); err != nil {
+		t.Fatal(err)
+	}
+	if actor != redrive.Actor || reason != redrive.Reason || oldGeneration != redrive.Generation || newGeneration != repaired.Intent.Generation {
+		t.Fatalf("redrive lost audit identity: %q %q %d/%d", actor, reason, oldGeneration, newGeneration)
+	}
+	if _, err = repo.UpdateContainerIntent(ctx, "redrive", redrive); status.Code(err) != codes.Aborted {
+		t.Fatalf("stale redrive accepted: %v", err)
+	}
+	if _, err = repo.UpdateContainerIntent(ctx, "report", &jobsmodel.ContainerIntentCommand{
+		IntentID: req.IntentID, Token: staleToken, Generation: redrive.Generation, Outcome: "ABSENT",
+	}); status.Code(err) != codes.Aborted {
+		t.Fatalf("old-generation report accepted: %v", err)
+	}
+	grant, err := repo.UpdateContainerIntent(ctx, "reserve_create", req)
+	if err != nil || grant.Granted {
+		t.Fatalf("administrative redrive created execution authority: %+v %v", grant, err)
+	}
+	var audits int
+	if err = pg.QueryRow(ctx, "SELECT count(*) FROM container_intent_redrives WHERE intent_id=$1", req.IntentID).Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("redrive replay duplicated audit: %d %v", audits, err)
+	}
+}

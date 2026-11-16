@@ -363,7 +363,10 @@ func TestTerminateWorkflowCancelsAllStatusesBeforeCleanupAndReplays(t *testing.T
 		if req.GetTerminalReasonCode() != "WORKFLOW_TERMINATED" || req.GetCommandId() != idempotency.JobCancelCommandID(req.GetId()) {
 			t.Fatalf("cancel=%v", req)
 		}
-		return &jobspb.CancelJobResponse{Id: req.GetId(), PreviousStatus: state, ContainerId: "container-" + state, RuntimeEndpoint: "runtime"}, nil
+		return &jobspb.CancelJobResponse{
+			RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+			Id: req.GetId(), PreviousStatus: state, ContainerId: "container-" + state, RuntimeEndpoint: "runtime",
+		}, nil
 	}}
 	r.svc.CsvcForEndpoint = func(string, string) (ContainerSvc, error) {
 		return &testContainerSvc{events: events, targets: targets}, nil
@@ -505,6 +508,7 @@ func TestTerminateWorkflowSkipsInactiveCancelSnapshot(t *testing.T) {
 				cancel: func(_ context.Context, req *jobspb.CancelJobRequest) (*jobspb.CancelJobResponse, error) {
 					canceled = append(canceled, req.GetId())
 					return &jobspb.CancelJobResponse{
+						RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
 						Id:              req.GetId(),
 						PreviousStatus:  previousStatus,
 						ContainerId:     "container-1",

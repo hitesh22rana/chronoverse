@@ -79,6 +79,14 @@ func (r *Repository) ClaimJob(
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
 
+	// A separate statement gives the admission query a fresh snapshot after a
+	// competing reservation/closure releases the workflow lock.
+	var lockedWorkflow string
+	lockErr := tx.QueryRow(ctx, "SELECT id::text FROM workflows WHERE id=$1 FOR UPDATE", workflowID).Scan(&lockedWorkflow)
+	if lockErr != nil && !errors.Is(lockErr, pgx.ErrNoRows) {
+		return nil, false, "", r.mapJobLeaseReadError(lockErr, "lock workflow before claim")
+	}
+
 	// These command fields contain only strings and integers.
 	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
 	requestHash, _ := idempotency.HashCanonical(map[string]any{
@@ -161,6 +169,12 @@ func claimJobQuery() string {
             SELECT kind
             FROM %s
             WHERE id = $2
+            FOR UPDATE
+        ),
+        target_job AS (
+            SELECT id FROM %s WHERE id=$1 AND workflow_id=$2
+              AND EXISTS(SELECT 1 FROM workflow)
+            FOR UPDATE
         ),
         selected_runtime AS (
             SELECT rn.id, rn.docker_endpoint
@@ -169,6 +183,7 @@ func claimJobQuery() string {
                 AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($7::int * interval '1 second')
                 AND rn.running_jobs < rn.max_concurrency
                 AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')
+                AND EXISTS (SELECT 1 FROM target_job)
             ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC
             FOR UPDATE
             LIMIT 1
@@ -217,13 +232,13 @@ func claimJobQuery() string {
         )
 		SELECT id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint, lease_expires_at
         FROM claimed;
-	`, postgres.TableWorkflows, postgres.TableRuntimeNodes, postgres.TableJobs, blockedExpression, postgres.TableRuntimeNodes)
+	`, postgres.TableWorkflows, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs, blockedExpression, postgres.TableRuntimeNodes)
 }
 
 func deferBlockedJobQuery() string {
 	return fmt.Sprintf(`
 		UPDATE %s AS j
-		SET status = 'PENDING', queued_at = NULL
+		SET status = 'PENDING', queued_at = NULL, next_attempt_at=(clock_timestamp() AT TIME ZONE 'utc')+interval '30 seconds'
 		WHERE j.id = $1
 		  AND j.status = 'QUEUED'
 		  AND %s;
@@ -232,6 +247,7 @@ func deferBlockedJobQuery() string {
 
 func workflowClaimBlockedExpression(jobAlias string) string {
 	return fmt.Sprintf(`(
+        workflow_container_blocked(%[3]s.workflow_id) OR
 		EXISTS (
 			SELECT 1
 			FROM %[1]s AS active
@@ -404,6 +420,9 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return lockErr
+	}
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobAttachContainer, commandID, map[string]any{
 		leaseTokenField: leaseToken, "container_id": containerID, "runtime_node_id": runtimeNodeID,
 	})
@@ -420,7 +439,19 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
         WHERE id = $1
             AND lease_token = $2
             AND status = 'RUNNING'
-            AND COALESCE(runtime_node_id, '') = $4;
+            AND lease_expires_at > (clock_timestamp() AT TIME ZONE 'utc')
+            AND (container_id IS NULL OR container_id=$3)
+            AND COALESCE(runtime_node_id, '') = $4
+            AND EXISTS(SELECT 1 FROM container_creation_intents i
+                JOIN container_materializations m ON m.intent_id=i.id
+                WHERE i.job_id=$1 AND i.attempt=jobs.attempts
+                  AND i.container_id=$3 AND m.container_id=$3
+                  AND i.closed_at IS NULL
+                  AND i.process_instance_id=jobs.lease_process_instance_id
+                  AND i.original_lease_hash=encode(sha256(convert_to(jobs.lease_token,'UTF8')),'hex')
+                  AND i.runtime_node_id=jobs.runtime_node_id
+                  AND i.runtime_endpoint=jobs.runtime_endpoint
+                  AND i.workflow_generation=(SELECT generation FROM workflows WHERE id=jobs.workflow_id));
     `, postgres.TableJobs)
 
 	ct, err := tx.Exec(ctx, query, jobID, leaseToken, containerID, runtimeNodeID)
@@ -470,6 +501,9 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 	}
 	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return lockErr
+	}
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobComplete, commandID, map[string]any{leaseTokenField: leaseToken})
 	if err != nil {
 		return err
@@ -498,9 +532,6 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 
 	if outboxErr := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobCompleted, "", "", ""); outboxErr != nil {
 		return outboxErr
-	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
 	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobComplete, commandID, requestHash); completeErr != nil {
 		return completeErr
@@ -533,6 +564,9 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	}
 	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return lockErr
+	}
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobFail, commandID, map[string]any{
 		leaseTokenField: leaseToken, "failure_kind": failureKind, "error_code": errorCode,
 		"error_message": truncateJobError(errorMessage), terminalReasonCodeField: terminalReasonCode,
@@ -570,9 +604,6 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	if outboxErr := r.insertTerminalJobOutboxEvents(ctx, tx, snapshot, workflowsmodel.ActionJobFailed, failureKind, errorCode, truncatedMessage); outboxErr != nil {
 		return outboxErr
 	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
-	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobFail, commandID, requestHash); completeErr != nil {
 		return completeErr
 	}
@@ -604,6 +635,9 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	}
 	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return lockErr
+	}
 	requestHash, replay, err := reserveJobCommand(ctx, tx, jobID, commandidempotency.OperationJobCancelClaimed, commandID, map[string]any{
 		leaseTokenField: leaseToken, terminalReasonCodeField: terminalReasonCode,
 	})
@@ -632,9 +666,6 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	}
 	if ct.RowsAffected() == 0 {
 		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "cancel claimed job")
-	}
-	if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-		return decrementErr
 	}
 	if completeErr := completeJobCommand(ctx, tx, jobID, commandidempotency.OperationJobCancelClaimed, commandID, requestHash); completeErr != nil {
 		return completeErr
@@ -674,6 +705,9 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	}
 	//nolint:errcheck // Successful paths commit; failed paths retain their original error.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return lockErr
+	}
 	// Hashing the normalized instant rather than the supplied text keeps one retry one
 	// request: the stored next_attempt_at is UTC either way, so two spellings of the same
 	// instant must not reserve two command identities or reject the second as a mismatch.
@@ -706,7 +740,6 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 	}
 
 	var releasedCount int
-	var decrementedCount int
 	err = tx.QueryRow(
 		ctx,
 		releaseJobForRetryQuery(),
@@ -716,7 +749,7 @@ func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, 
 		jobsmodel.FailureKindSystem.ToString(),
 		errorCode,
 		truncateJobError(errorMessage),
-	).Scan(&releasedCount, &decrementedCount)
+	).Scan(&releasedCount)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "release job for retry")
 	}
@@ -867,7 +900,7 @@ func renewRecoveryReplayQuery() string {
 func releaseJobForRetryQuery() string {
 	return fmt.Sprintf(`
         WITH target AS (
-            SELECT id, runtime_node_id
+            SELECT id
             FROM %s
             WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
             FOR UPDATE
@@ -893,21 +926,10 @@ func releaseJobForRetryQuery() string {
                 last_error_message = $6
             FROM target
             WHERE j.id = target.id
-            RETURNING target.runtime_node_id AS previous_runtime_node_id
-        ),
-        decrement_runtime AS (
-            UPDATE %s AS rn
-            SET running_jobs = GREATEST(0, running_jobs - 1),
-                updated_at = now() AT TIME ZONE 'utc'
-            FROM released
-            WHERE released.previous_runtime_node_id IS NOT NULL
-                AND rn.id = released.previous_runtime_node_id
-            RETURNING rn.id
+            RETURNING j.id
         )
-        SELECT
-            (SELECT COUNT(*) FROM released),
-            (SELECT COUNT(*) FROM decrement_runtime);
-    `, postgres.TableJobs, postgres.TableJobs, postgres.TableRuntimeNodes)
+        SELECT COUNT(*) FROM released;
+    `, postgres.TableJobs, postgres.TableJobs)
 }
 
 func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID string) (bool, error) {
@@ -953,7 +975,7 @@ func (r *Repository) cancelTerminatedRelease(ctx context.Context, tx pgx.Tx, job
 	if ct.RowsAffected() == 0 {
 		return status.Errorf(grpccodes.FailedPrecondition, "%s: job lease not held", "cancel terminated release")
 	}
-	return r.decrementRuntimeSlotForJob(ctx, tx, jobID)
+	return nil
 }
 
 func reserveJobCommand(
@@ -1067,22 +1089,6 @@ func queuedContainerJobMissingRuntimeQuery() string {
                 )
         );
     `, postgres.TableJobs, postgres.TableWorkflows, postgres.TableRuntimeNodes)
-}
-
-func (r *Repository) decrementRuntimeSlotForJob(ctx context.Context, tx pgx.Tx, jobID string) error {
-	query := fmt.Sprintf(`
-        UPDATE %s AS rn
-        SET running_jobs = GREATEST(0, running_jobs - 1),
-            updated_at = now() AT TIME ZONE 'utc'
-        FROM %s AS j
-        WHERE j.id = $1
-            AND j.runtime_node_id IS NOT NULL
-            AND rn.id = j.runtime_node_id;
-    `, postgres.TableRuntimeNodes, postgres.TableJobs)
-	if _, err := tx.Exec(ctx, query, jobID); err != nil {
-		return r.mapJobLeaseWriteError(err, "decrement runtime slot")
-	}
-	return nil
 }
 
 func (r *Repository) scanTerminalJobSnapshot(
@@ -1427,4 +1433,13 @@ func (r *Repository) completeExpiredRecovery(
 		return nil, r.mapJobLeaseWriteError(err, "commit recovery command")
 	}
 	return jobs, nil
+}
+
+func (r *Repository) lockJobWorkflow(ctx context.Context, tx pgx.Tx, jobID string) error {
+	var id string
+	err := tx.QueryRow(ctx, "SELECT w.id::text FROM workflows w JOIN jobs j ON j.workflow_id=w.id WHERE j.id=$1 FOR UPDATE OF w", jobID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	return r.mapJobLeaseReadError(err, "lock job workflow")
 }

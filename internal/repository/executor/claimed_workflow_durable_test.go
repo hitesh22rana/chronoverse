@@ -151,7 +151,12 @@ func (c *durableJobsClient) CompleteJob(
 }
 
 func (c *durableJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
-	completed, err := c.repo.GetContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId())
+	completed, err := c.repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           req.GetJobId(),
+		ContainerID:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentID:        req.GetIntentId(),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -163,10 +168,109 @@ func (c *durableJobsClient) RecordContainerCleanupReceipt(
 	req *jobspb.ContainerCleanupReceiptRequest,
 	_ ...grpc.CallOption,
 ) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
-	if err := c.repo.RecordContainerCleanupReceipt(ctx, req.GetJobId(), req.GetContainerId()); err != nil {
+	if err := c.repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           req.GetJobId(),
+		ContainerID:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentID:        req.GetIntentId(),
+	}); err != nil {
 		return nil, err
 	}
 	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
+}
+
+// containerIntentCommand converts the service request into the repository
+// command so the durable tests exercise the same persistence path as the service.
+func containerIntentCommand(req *jobspb.ContainerIntentCommand) *jobsmodel.ContainerIntentCommand {
+	return &jobsmodel.ContainerIntentCommand{
+		WorkflowGeneration: req.GetWorkflowGeneration(), Stage: req.GetStage(),
+		JobID:           req.GetJobId(),
+		LeaseToken:      req.GetLeaseToken(),
+		IntentID:        req.GetIntentId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		RequestHash:     req.GetRequestHash(),
+		ContainerID:     req.GetContainerId(),
+		Outcome:         req.GetOutcome(),
+		ErrorCode:       req.GetErrorCode(),
+		ErrorMessage:    req.GetErrorMessage(),
+		Token:           req.GetToken(),
+		Reason:          req.GetReason(),
+		Attempt:         req.GetAttempt(),
+		BatchSize:       req.GetBatchSize(),
+		Generation:      req.GetGeneration(),
+	}
+}
+
+func containerIntentProto(intent *jobsmodel.ContainerIntent) *jobspb.ContainerIntent {
+	if intent == nil {
+		return nil
+	}
+	return &jobspb.ContainerIntent{
+		WorkflowGeneration: intent.WorkflowGeneration, Id: intent.ID,
+		JobId:                  intent.JobID,
+		WorkflowId:             intent.WorkflowID,
+		UserId:                 intent.UserID,
+		Name:                   intent.Name,
+		RuntimeNodeId:          intent.RuntimeNodeID,
+		RuntimeEndpoint:        intent.RuntimeEndpoint,
+		RuntimeInstance:        intent.RuntimeInstance,
+		RequestHash:            intent.RequestHash,
+		ContainerId:            intent.ContainerID,
+		Outcome:                intent.Outcome,
+		ErrorCode:              intent.ErrorCode,
+		ErrorMessage:           intent.ErrorMessage,
+		Token:                  intent.Token,
+		NextInspectionAt:       intent.NextInspectionAt,
+		LastInspectionAt:       intent.LastInspectionAt,
+		Attempt:                intent.Attempt,
+		Generation:             intent.Generation,
+		CreateReserved:         intent.CreateReserved,
+		StartReserved:          intent.StartReserved,
+		Closed:                 intent.Closed,
+		LogRetention:           intent.LogRetention,
+		Stage:                  intent.Stage,
+		InspectionErrorCode:    intent.InspectionErrorCode,
+		InspectionErrorMessage: intent.InspectionErrorMessage,
+		Quarantined:            intent.Quarantined,
+		InspectionErrors:       intent.InspectionErrors,
+		HeldCapacity:           intent.HeldCapacity,
+	}
+}
+
+func (c *durableJobsClient) updateContainerIntent(
+	ctx context.Context,
+	operation string,
+	req *jobspb.ContainerIntentCommand,
+) (*jobspb.ContainerIntentResponse, error) {
+	result, err := c.repo.UpdateContainerIntent(ctx, operation, containerIntentCommand(req))
+	if err != nil {
+		return nil, err
+	}
+	return &jobspb.ContainerIntentResponse{Intent: containerIntentProto(result.Intent), Granted: result.Granted}, nil
+}
+
+func (c *durableJobsClient) EnsureContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "ensure", req)
+}
+
+func (c *durableJobsClient) GetContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "get", req)
+}
+
+func (c *durableJobsClient) ReserveContainerCreate(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "reserve_create", req)
+}
+
+func (c *durableJobsClient) ObserveContainer(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "observe", req)
+}
+
+func (c *durableJobsClient) ReserveContainerStart(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "reserve_start", req)
+}
+
+func (c *durableJobsClient) CloseContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+	return c.updateContainerIntent(ctx, "close", req)
 }
 
 // AttachJobContainer is unreachable: claimed-run fixtures execute heartbeats,
@@ -244,6 +348,9 @@ type durableFixture struct {
 	WorkflowID      string
 	JobID           string
 	LeaseToken      string
+	ContainerID     string
+	IntentID        string
+	RuntimeInstance string
 	Generation      int64
 	Interval        int32
 	LastScheduledAt time.Time

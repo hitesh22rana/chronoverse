@@ -226,6 +226,7 @@ func TestIntegrationScheduleAndQueryJob(t *testing.T) {
 	}
 
 	// Attaching the container persists it against the held lease.
+	seedContainerProvenance(ctx, t, pg, repo, jobID, claimed.LeaseToken, "container-1")
 	if attachErr := repo.AttachJobContainer(
 		ctx, jobID, claimed.LeaseToken, "container-1", nodeID, "attach-"+t.Name(),
 	); attachErr != nil {

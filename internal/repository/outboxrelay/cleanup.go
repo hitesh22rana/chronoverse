@@ -32,6 +32,8 @@ func (r *Repository) CleanupPublishedEvents(ctx context.Context, retention time.
                             THEN (events.payload->>'JobID')::uuid
                         END
                         AND receipt.container_id = events.payload->'ContainerCleanup'->>'ContainerID'
+                        AND receipt.runtime_instance = events.payload->'ContainerCleanup'->>'RuntimeInstance'
+                        AND receipt.intent_id::text = events.payload->'ContainerCleanup'->>'IntentID'
                     )
                 )
 			ORDER BY published_at

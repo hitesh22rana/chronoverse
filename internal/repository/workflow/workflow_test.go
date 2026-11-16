@@ -476,6 +476,7 @@ func TestCleanupCanceledJobContainerRetainsContainerWhenLogPublishFails(t *testi
 			Kind: workflowsmodel.KindContainer.ToString(),
 		},
 		&jobspb.JobsResponse{
+			RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
 			Id:              "job-1",
 			ContainerId:     "container-1",
 			RuntimeEndpoint: "tcp://docker-proxy:2375",
@@ -512,6 +513,7 @@ func TestCleanupCanceledJobContainerRejectsContainerWithoutRuntimeEndpoint(t *te
 			Kind: workflowsmodel.KindContainer.ToString(),
 		},
 		&jobspb.JobsResponse{
+			RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
 			Id:          "job-1",
 			ContainerId: "container-1",
 		},
@@ -818,7 +820,14 @@ func (c *testJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJo
 
 func (c *testJobsClient) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest, _ ...grpc.CallOption) (*jobspb.ListJobsResponse, error) {
 	if c.listJobs != nil {
-		return c.listJobs(ctx, req)
+		result, err := c.listJobs(ctx, req)
+		if result != nil {
+			for _, job := range result.Jobs {
+				job.RuntimeInstance = "test-daemon"
+				job.IntentId = "00000000-0000-4000-8000-000000000015"
+			}
+		}
+		return result, err
 	}
 	return &jobspb.ListJobsResponse{}, nil
 }
@@ -1037,3 +1046,5 @@ func (c *testJobsClient) FailContainerCleanupAttempt(ctx context.Context, req *j
 	}
 	return &jobspb.ContainerCleanupAttemptResponse{State: state, Generation: req.Generation, Attempts: 1}, nil
 }
+
+func (*testContainerSvc) RuntimeInstance(context.Context) (string, error) { return "test-daemon", nil }

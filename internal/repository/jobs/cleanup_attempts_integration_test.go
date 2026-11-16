@@ -15,40 +15,88 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
-func seedRetainedCleanup(t *testing.T) (jobID, key string) {
+// retainedCleanupFixture is a standalone cleanup intent whose source job and
+// workflow rows are intentionally absent: quarantine, redrive and completion
+// must survive that deletion.
+type retainedCleanupFixture struct {
+	JobID       string
+	Key         string
+	ContainerID string
+	Instance    string
+	IntentID    string
+}
+
+func seedRetainedCleanup(t *testing.T) retainedCleanupFixture {
 	t.Helper()
-	jobID = uuid.NewString()
-	key = "job:" + jobID + ":container:old-container:cleanup"
+	pg := testkit.Postgres(t)
+	nodeID := "retired-" + fixtureTag()
+	fixture := retainedCleanupFixture{
+		JobID:       uuid.NewString(),
+		ContainerID: "old-container",
+		Instance:    "daemon-" + fixtureTag(),
+		IntentID:    uuid.NewString(),
+	}
+	fixture.Key = cleanupEventKey(fixture.JobID, fixture.ContainerID, fixture.Instance)
+	if _, err := pg.Exec(t.Context(), `INSERT INTO container_creation_intents(`+
+		`id,job_id,workflow_id,user_id,attempt,workflow_generation,process_instance_id,`+
+		`runtime_node_id,runtime_endpoint,runtime_instance,request_hash,name,log_retention)
+ VALUES($1,$2,$3,$4,1,1,$5,$6,'tcp://retired:2376',$7,$8,$9,false)`,
+		fixture.IntentID, fixture.JobID, uuid.NewString(), uuid.NewString(), uuid.NewString(),
+		nodeID, fixture.Instance, "request-"+fixtureTag(), "cv-"+fixtureTag()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.Exec(t.Context(), `INSERT INTO container_materializations(intent_id,container_id,runtime_instance) VALUES($1,$2,$3)`,
+		fixture.IntentID, fixture.ContainerID, fixture.Instance); err != nil {
+		t.Fatal(err)
+	}
 	payload, err := json.Marshal(map[string]any{
-		"EventKey": key, "ID": uuid.NewString(), "UserID": uuid.NewString(), "JobID": jobID,
+		"EventKey": fixture.Key, "ID": uuid.NewString(), "UserID": uuid.NewString(), "JobID": fixture.JobID,
 		"Action": "CONTAINER_CLEANUP", "CleanupGeneration": 1,
-		"ContainerCleanup": map[string]any{"ContainerID": "old-container", "RuntimeEndpoint": "tcp://retired:2376"},
+		"ContainerCleanup": map[string]any{
+			"ContainerID": fixture.ContainerID, "RuntimeNodeID": nodeID,
+			"RuntimeEndpoint": "tcp://retired:2376", "RuntimeInstance": fixture.Instance,
+			"IntentID": fixture.IntentID,
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pg := testkit.Postgres(t)
 	if _, err := pg.Exec(t.Context(), `INSERT INTO outbox_events(topic,kafka_key,event_key,payload,status,published_at,cleanup_state)
  VALUES('workflows',$1,$2,$3,'PUBLISHED',now() AT TIME ZONE 'utc','READY')`,
-		uuid.NewString(), key, payload); err != nil {
+		uuid.NewString(), fixture.Key, payload); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, err := pg.Exec(ctx, `DELETE FROM outbox_events WHERE event_key=$1;`, key); err != nil {
+		for _, statement := range []string{
+			`DELETE FROM container_cleanup_receipts WHERE intent_id=$1`,
+			`DELETE FROM runtime_capacity_holds WHERE intent_id=$1`,
+			`DELETE FROM container_materializations WHERE intent_id=$1`,
+			`DELETE FROM container_creation_intents WHERE id=$1`,
+		} {
+			if _, cleanupErr := pg.Exec(ctx, statement, fixture.IntentID); cleanupErr != nil {
+				t.Error(cleanupErr)
+			}
+		}
+		if _, err := pg.Exec(ctx, `DELETE FROM outbox_events WHERE event_key=$1;`, fixture.Key); err != nil {
 			t.Error(err)
 		}
 	})
-	return jobID, key
+	return fixture
 }
 
 func TestIntegrationCleanupQuarantineRedriveSurvivesRestart(t *testing.T) {
-	jobID, key := seedRetainedCleanup(t)
+	fixture := seedRetainedCleanup(t)
 	repo := newTestRepository(t)
 	update := func(op string, generation int64, token string, interrupted bool) *jobsmodel.CleanupAttempt {
 		t.Helper()
-		result, err := newTestRepository(t).UpdateContainerCleanup(t.Context(), op, jobID, "old-container", generation, token, "Unavailable", interrupted)
+		result, err := newTestRepository(t).UpdateContainerCleanup(t.Context(), op, jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, generation, token, "Unavailable", interrupted)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -59,11 +107,21 @@ func TestIntegrationCleanupQuarantineRedriveSurvivesRestart(t *testing.T) {
 		t.Fatalf("bad authority: %+v", first)
 	}
 	for _, op := range []string{"begin", "redrive"} {
-		if _, err := repo.UpdateContainerCleanup(t.Context(), op, jobID, "old-container", 1, "", "", false); status.Code(err) != codes.Aborted {
+		if _, err := repo.UpdateContainerCleanup(t.Context(), op, jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, 1, "", "", false); status.Code(err) != codes.Aborted {
 			t.Fatalf("active %s accepted: %v", op, err)
 		}
 	}
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobID, "old-container", 1, uuid.NewString(), "Unavailable", false); status.Code(err) != codes.Aborted {
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     fixture.ContainerID,
+		RuntimeInstance: fixture.Instance,
+		IntentID:        fixture.IntentID,
+	}, 1, uuid.NewString(), "Unavailable", false); status.Code(err) != codes.Aborted {
 		t.Fatalf("wrong owner accepted: %v", err)
 	}
 	interrupted := update("fail", 1, first.Token, true)
@@ -74,13 +132,13 @@ func TestIntegrationCleanupQuarantineRedriveSurvivesRestart(t *testing.T) {
 	if again := update("fail", 1, first.Token, true); again.Attempts != 0 {
 		t.Fatalf("duplicate refund: %+v", again)
 	}
-	exhaustCleanupGeneration(t, update, jobID, key, first.Token)
-	verifyCleanupRedrive(t, update, jobID, key, first.Token)
+	exhaustCleanupGeneration(t, update, &fixture, first.Token)
+	verifyCleanupRedrive(t, update, &fixture, first.Token)
 }
 
 type cleanupUpdate func(string, int64, string, bool) *jobsmodel.CleanupAttempt
 
-func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, jobID, key, oldToken string) {
+func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, fixture *retainedCleanupFixture, oldToken string) {
 	t.Helper()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
@@ -101,18 +159,23 @@ func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, jobID, key, ol
 			t.Fatalf("duplicate failure=%+v", again)
 		}
 		if attempt < 3 {
-			if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobID, "old-container", 1, "", "", false); status.Code(err) != codes.Aborted {
+			if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, "", "", false); status.Code(err) != codes.Aborted {
 				t.Fatalf("backoff bypassed: %v", err)
 			}
 			var seconds float64
-			if err := pg.QueryRow(t.Context(), `SELECT EXTRACT(EPOCH FROM cleanup_next_attempt_at-cleanup_failed_at) FROM outbox_events WHERE event_key=$1`, key).Scan(&seconds); err != nil {
+			if err := pg.QueryRow(t.Context(), `SELECT EXTRACT(EPOCH FROM cleanup_next_attempt_at-cleanup_failed_at) FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&seconds); err != nil {
 				t.Fatal(err)
 			}
 			wait := time.Duration(seconds) * time.Second
 			if wait != time.Duration(attempt)*30*time.Second {
 				t.Fatalf("retry delay=%v", wait)
 			}
-			if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_next_attempt_at=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, key); err != nil {
+			if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_next_attempt_at=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, fixture.Key); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -122,7 +185,7 @@ func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, jobID, key, ol
 	}
 }
 
-func verifyCleanupRedrive(t *testing.T, update cleanupUpdate, jobID, key, oldToken string) {
+func verifyCleanupRedrive(t *testing.T, update cleanupUpdate, fixture *retainedCleanupFixture, oldToken string) {
 	t.Helper()
 	pg := testkit.Postgres(t)
 	redrive := update("redrive", 1, "", false)
@@ -131,7 +194,7 @@ func verifyCleanupRedrive(t *testing.T, update cleanupUpdate, jobID, key, oldTok
 	}
 	var state string
 	var generation int64
-	if err := pg.QueryRow(t.Context(), `SELECT status,(payload->>'CleanupGeneration')::bigint FROM outbox_events WHERE event_key=$1`, key).Scan(&state, &generation); err != nil {
+	if err := pg.QueryRow(t.Context(), `SELECT status,(payload->>'CleanupGeneration')::bigint FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&state, &generation); err != nil {
 		t.Fatal(err)
 	}
 	if state != "PENDING" || generation != 2 {
@@ -146,15 +209,20 @@ func verifyCleanupRedrive(t *testing.T, update cleanupUpdate, jobID, key, oldTok
 	if current.Attempts != 1 {
 		t.Fatalf("new budget=%+v", current)
 	}
-	verifyCleanupCompletion(t, update, jobID, key, current.Token)
+	verifyCleanupCompletion(t, update, fixture, current.Token)
 }
 
-func verifyCleanupCompletion(t *testing.T, update cleanupUpdate, jobID, key, currentToken string) {
+func verifyCleanupCompletion(t *testing.T, update cleanupUpdate, fixture *retainedCleanupFixture, currentToken string) {
 	t.Helper()
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 	var state string
-	if err := repo.RecordContainerCleanupReceipt(t.Context(), jobID, "old-container"); err != nil {
+	if err := repo.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     fixture.ContainerID,
+		RuntimeInstance: fixture.Instance,
+		IntentID:        fixture.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	for _, op := range []string{"begin", "fail", "redrive"} {
@@ -163,13 +231,13 @@ func verifyCleanupCompletion(t *testing.T, update cleanupUpdate, jobID, key, cur
 		}
 	}
 	var token *string
-	if err := pg.QueryRow(t.Context(), `SELECT cleanup_state,cleanup_token::text FROM outbox_events WHERE event_key=$1`, key).Scan(&state, &token); err != nil {
+	if err := pg.QueryRow(t.Context(), `SELECT cleanup_state,cleanup_token::text FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&state, &token); err != nil {
 		t.Fatal(err)
 	}
 	if state != "COMPLETED" || token != nil {
 		t.Fatalf("receipt didn't retire authority: %s/%v", state, token)
 	}
-	if _, err := pg.Exec(t.Context(), `DELETE FROM outbox_events WHERE event_key=$1`, key); err != nil {
+	if _, err := pg.Exec(t.Context(), `DELETE FROM outbox_events WHERE event_key=$1`, fixture.Key); err != nil {
 		t.Fatal(err)
 	}
 	if result := update("begin", 2, "", false); result.State != "COMPLETED" {
@@ -178,12 +246,17 @@ func verifyCleanupCompletion(t *testing.T, update cleanupUpdate, jobID, key, cur
 }
 
 func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
-	jobID, key := seedRetainedCleanup(t)
+	fixture := seedRetainedCleanup(t)
 	pg := testkit.Postgres(t)
 	repo := newTestRepository(t)
 	var oldToken string
 	for attempt := int32(1); attempt <= 4; attempt++ {
-		result, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobID, "old-container", 1, "", "", false)
+		result, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+			JobID:           fixture.JobID,
+			ContainerID:     fixture.ContainerID,
+			RuntimeInstance: fixture.Instance,
+			IntentID:        fixture.IntentID,
+		}, 1, "", "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -197,21 +270,36 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 			t.Fatalf("authority=%+v", result)
 		}
 		if oldToken != "" {
-			if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobID, "old-container", 1, oldToken, "Unavailable", false); status.Code(err) != codes.Aborted {
+			if _, err := repo.UpdateContainerCleanup(t.Context(), "fail", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, oldToken, "Unavailable", false); status.Code(err) != codes.Aborted {
 				t.Fatalf("expired owner changed successor: %v", err)
 			}
 		}
 		oldToken = result.Token
-		if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_lease_until=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, key); err != nil {
+		if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_lease_until=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, fixture.Key); err != nil {
 			t.Fatal(err)
 		}
 		repo = newTestRepository(t)
 	}
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", uuid.NewString(), "absent", 1, "", "", false); status.Code(err) != codes.Unavailable {
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "begin", jobsmodel.CleanupIdentity{
+		JobID:           uuid.NewString(),
+		ContainerID:     "absent",
+		RuntimeInstance: "daemon-" + fixtureTag(),
+		IntentID:        uuid.NewString(),
+	}, 1, "", "", false); status.Code(err) != codes.Unavailable {
 		t.Fatalf("missing intent accepted: %v", err)
 	}
-	freshJob, _ := seedRetainedCleanup(t)
-	if _, err := repo.UpdateContainerCleanup(t.Context(), "unknown", freshJob, "old-container", 1, "", "", false); status.Code(err) != codes.InvalidArgument {
+	fresh := seedRetainedCleanup(t)
+	if _, err := repo.UpdateContainerCleanup(t.Context(), "unknown", jobsmodel.CleanupIdentity{
+		JobID:           fresh.JobID,
+		ContainerID:     fresh.ContainerID,
+		RuntimeInstance: fresh.Instance,
+		IntentID:        fresh.IntentID,
+	}, 1, "", "", false); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unsupported transition accepted: %v", err)
 	}
 }
@@ -219,11 +307,16 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 func TestIntegrationCleanupStorageFailuresDoNotGrantAuthority(t *testing.T) {
 	for _, phase := range []string{"canceled", "read intent", "read receipt", "write", "commit"} {
 		t.Run(phase, func(t *testing.T) {
-			jobID, key := seedRetainedCleanup(t)
+			fixture := seedRetainedCleanup(t)
 			repo := newTestRepository(t)
 			pg := testkit.Postgres(t)
 			ctx, want := cleanupStorageFailureContext(t, phase)
-			result, err := repo.UpdateContainerCleanup(ctx, "begin", jobID, "old-container", 1, "", "", false)
+			result, err := repo.UpdateContainerCleanup(ctx, "begin", jobsmodel.CleanupIdentity{
+				JobID:           fixture.JobID,
+				ContainerID:     fixture.ContainerID,
+				RuntimeInstance: fixture.Instance,
+				IntentID:        fixture.IntentID,
+			}, 1, "", "", false)
 			if result != nil || status.Code(err) != want {
 				t.Fatalf("%s granted authority: %+v / %v", phase, result, err)
 			}
@@ -231,7 +324,7 @@ func TestIntegrationCleanupStorageFailuresDoNotGrantAuthority(t *testing.T) {
 			if phase != "read intent" && phase != "read receipt" {
 				var state string
 				var attempts int
-				if err := pg.QueryRow(t.Context(), `SELECT cleanup_state,cleanup_attempts FROM outbox_events WHERE event_key=$1`, key).Scan(&state, &attempts); err != nil {
+				if err := pg.QueryRow(t.Context(), `SELECT cleanup_state,cleanup_attempts FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&state, &attempts); err != nil {
 					t.Fatal(err)
 				}
 				if state != "READY" || attempts != 0 {
@@ -299,7 +392,7 @@ func cleanupStorageFailureContext(t *testing.T, phase string) (context.Context, 
 func TestIntegrationCleanupConcurrentDeliveryAndRedrive(t *testing.T) {
 	for _, operation := range []string{"begin", "redrive"} {
 		t.Run(operation, func(t *testing.T) {
-			jobID, _ := seedRetainedCleanup(t)
+			fixture := seedRetainedCleanup(t)
 			repo := newTestRepository(t)
 			type outcome struct {
 				attempt *jobsmodel.CleanupAttempt
@@ -310,7 +403,12 @@ func TestIntegrationCleanupConcurrentDeliveryAndRedrive(t *testing.T) {
 			for range 2 {
 				go func() {
 					<-start
-					result, err := repo.UpdateContainerCleanup(t.Context(), operation, jobID, "old-container", 1, "", "", false)
+					result, err := repo.UpdateContainerCleanup(t.Context(), operation, jobsmodel.CleanupIdentity{
+						JobID:           fixture.JobID,
+						ContainerID:     fixture.ContainerID,
+						RuntimeInstance: fixture.Instance,
+						IntentID:        fixture.IntentID,
+					}, 1, "", "", false)
 					results <- outcome{result, err}
 				}()
 			}

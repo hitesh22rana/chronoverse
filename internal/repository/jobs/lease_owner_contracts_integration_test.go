@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -98,6 +100,7 @@ func TestIntegrationAttachContainerRejectsUnownedCommands(t *testing.T) {
 	}
 	const containerID = "owner-contract-container"
 	command := "attach-" + fixtureTag()
+	seedContainerProvenance(ctx, t, pg, repo, fixture.JobID, fixture.LeaseToken, containerID)
 	for _, rejection := range []string{"stale token", "different runtime", "canceled caller"} {
 		t.Run(rejection, func(t *testing.T) {
 			callCtx, cancel := context.WithCancel(ctx)
@@ -143,6 +146,7 @@ func TestIntegrationAttachContainerReplaysOriginalCommand(t *testing.T) {
 	}
 	const containerID = "replay-contract-container"
 	command := "attach-" + fixtureTag()
+	seedContainerProvenance(ctx, t, pg, repo, fixture.JobID, fixture.LeaseToken, containerID)
 	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +197,7 @@ func TestIntegrationAttachContainerFaultsRollBackAndAllowRetry(t *testing.T) {
 			}
 			const containerID = "fault-container"
 			command := "attach-fault-" + fixtureTag()
+			seedContainerProvenance(ctx, t, pg, repo, fixture.JobID, fixture.LeaseToken, containerID)
 			remove := scheduleFaultTrigger(ctx, t, pg, tc.table, "UPDATE", false)
 			err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command)
 			remove()
@@ -230,20 +235,24 @@ func TestIntegrationAttachedContainerFitsCleanupReceipt(t *testing.T) {
 		t.Fatal("rejected ID changed lease ownership")
 	}
 	containerID := strings.Repeat("c", 256)
+	provenance := seedContainerProvenance(ctx, t, pg, repo, fixture.JobID, fixture.LeaseToken, containerID)
 	if err := repo.AttachJobContainer(ctx, fixture.JobID, fixture.LeaseToken, containerID, before.RuntimeNodeID.String, command); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.RecordContainerCleanupReceipt(ctx, fixture.JobID, containerID); err != nil {
+	if err := repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     containerID,
+		RuntimeInstance: provenance.RuntimeInstance,
+		IntentID:        provenance.IntentID,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if _, err := pg.Exec(cleanupCtx, `DELETE FROM container_cleanup_receipts WHERE job_id=$1`, fixture.JobID); err != nil {
-			t.Error(err)
-		}
-	})
-	if completed, err := repo.GetContainerCleanupReceipt(ctx, fixture.JobID, containerID); err != nil || !completed {
+	if completed, err := repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
+		JobID:           fixture.JobID,
+		ContainerID:     containerID,
+		RuntimeInstance: provenance.RuntimeInstance,
+		IntentID:        provenance.IntentID,
+	}); err != nil || !completed {
 		t.Fatalf("accepted container cannot be receipted: completed=%v err=%v", completed, err)
 	}
 }

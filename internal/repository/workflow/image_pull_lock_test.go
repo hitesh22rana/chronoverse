@@ -175,3 +175,5 @@ func assertDigestPair(t *testing.T, ref, digest, wantRef, wantDigest string) {
 		t.Fatalf("resolved identity=%q/%q want %q/%q", ref, digest, wantRef, wantDigest)
 	}
 }
+
+func (*fakeContainerSvc) RuntimeInstance(context.Context) (string, error) { return "test-daemon", nil }

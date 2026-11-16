@@ -91,7 +91,10 @@ func TestCanceledContainerCleanupStopsAtRoutingAndTerminationFailure(t *testing.
 			}}}
 			workflow := buildContractWorkflow()
 			workflow.Kind = "CONTAINER"
-			err := repo.cleanupCanceledJobContainer(t.Context(), workflow, &jobspb.JobsResponse{ContainerId: "container-recovery", RuntimeNodeId: "runtime-node", RuntimeEndpoint: "tcp://runtime:2376"})
+			err := repo.cleanupCanceledJobContainer(t.Context(), workflow, &jobspb.JobsResponse{
+				RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
+				ContainerId: "container-recovery", RuntimeNodeId: "runtime-node", RuntimeEndpoint: "tcp://runtime:2376",
+			})
 			wantTerminates := 1
 			if stage == "factory" {
 				wantTerminates = 0
@@ -236,6 +239,7 @@ func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
 			workflow.Kind = tc.kind
 			// Valid routing keeps the missing-endpoint fallback from masking this guard.
 			job := &jobspb.JobsResponse{
+				RuntimeInstance: "test-daemon", IntentId: "00000000-0000-4000-8000-000000000015",
 				Id: "00000000-0000-4000-8000-000000000091", ContainerId: tc.containerID,
 				RuntimeNodeId: "00000000-0000-4000-8000-000000000092", RuntimeEndpoint: "http://runtime.example:2375",
 			}
@@ -244,4 +248,8 @@ func TestCanceledContainerCleanupSkipsJobsWithoutContainerWork(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (failingCleanupContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
 }

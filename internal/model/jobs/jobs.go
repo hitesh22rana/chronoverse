@@ -167,6 +167,8 @@ type ClaimedJob struct {
 
 // CancelJobSnapshot is the durable pre-cancellation cleanup response.
 type CancelJobSnapshot struct {
+	RuntimeInstance string         `db:"runtime_instance" json:"runtime_instance"`
+	IntentID        string         `db:"intent_id" json:"intent_id"`
 	ID              string         `db:"id" json:"id"`
 	PreviousStatus  string         `db:"previous_status" json:"previous_status"`
 	ContainerID     sql.NullString `db:"container_id" json:"container_id"`
@@ -182,6 +184,8 @@ func (s *CancelJobSnapshot) ToProto() *jobspb.CancelJobResponse {
 	}
 	return &jobspb.CancelJobResponse{
 		Id:              s.ID,
+		RuntimeInstance: s.RuntimeInstance,
+		IntentId:        s.IntentID,
 		PreviousStatus:  s.PreviousStatus,
 		ContainerId:     s.ContainerID.String,
 		RuntimeNodeId:   s.RuntimeNodeID.String,
@@ -345,6 +349,8 @@ type SearchJobLogsOptions struct {
 
 // JobByWorkflowIDResponse represents the response of ListJobsByID.
 type JobByWorkflowIDResponse struct {
+	RuntimeInstance    string         `db:"runtime_instance"`
+	IntentID           string         `db:"intent_id"`
 	ID                 string         `db:"id"`
 	WorkflowID         string         `db:"workflow_id"`
 	ContainerID        sql.NullString `db:"container_id,omitempty"` // Unique identifier for the container, if applicable
@@ -410,6 +416,8 @@ func (r *ListJobsResponse) ToProto(internalService bool) *jobspb.ListJobsRespons
 
 		if internalService {
 			jobs[i].ContainerId = j.ContainerID.String
+			jobs[i].RuntimeInstance = j.RuntimeInstance
+			jobs[i].IntentId = j.IntentID
 			jobs[i].RuntimeNodeId = j.RuntimeNodeID.String
 			jobs[i].RuntimeEndpoint = j.RuntimeEndpoint.String
 		}

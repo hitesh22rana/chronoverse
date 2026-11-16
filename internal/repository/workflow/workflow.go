@@ -40,6 +40,7 @@ const (
 
 // ContainerSvc represents the container service.
 type ContainerSvc interface {
+	RuntimeInstance(context.Context) (string, error)
 	Build(ctx context.Context, imageName string) error
 	ResolveImageDigest(ctx context.Context, imageName string) (string, string, error)
 	ImageExists(ctx context.Context, imageName string) (bool, error)

@@ -322,83 +322,55 @@ func (d *networkLifecycleTestDaemon) handleContainerCreate(w http.ResponseWriter
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	writeDockerTestResponse(d.t, w, `{"Id":"container-1","Warnings":null}`)
+	writeDockerTestResponse(d.t, w, `{"Id":"`+strings.Repeat("a", 64)+`","Warnings":null}`)
 }
 
-func TestExecuteRecreatesPrunedWorkloadNetwork(t *testing.T) {
+func networkCreateRequest() CreateRequest {
+	return CreateRequest{
+		Name: "cv-network-test", IntentID: "network-intent", JobID: "network-job", Attempt: 1,
+		Image: "alpine:3", Cmd: []string{"true"}, Timeout: time.Second,
+	}
+}
+
+func TestCreateRecreatesPrunedWorkloadNetwork(t *testing.T) {
 	daemon := newNetworkLifecycleTestDaemon(t, false)
 	workflow := newNetworkTestWorkflow(t, daemon)
-
-	id, logsCh, errsCh, err := workflow.Execute(context.Background(), time.Second, "alpine:3", []string{"echo", "hi"}, nil)
-	if status.Code(err) != codes.Aborted {
-		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.Aborted, err)
+	id, err := workflow.Create(t.Context(), networkCreateRequest())
+	if err != nil || id != strings.Repeat("a", 64) {
+		t.Fatalf("Create: id=%q error=%v", id, err)
 	}
-	if id != "container-1" {
-		t.Errorf("container id = %q, want container-1", id)
-	}
-	if logsCh != nil || errsCh != nil {
-		t.Fatal("Execute() returned log channels after ContainerStart failed")
-	}
-	if got := daemon.networkCreateCalls.Load(); got != 1 {
-		t.Errorf("network create calls = %d, want 1", got)
-	}
-	if got := daemon.containerCreateCalls.Load(); got != 1 {
-		t.Errorf("container create calls = %d, want 1", got)
+	if daemon.networkCreateCalls.Load() != 1 || daemon.containerCreateCalls.Load() != 1 {
+		t.Fatalf("unexpected network/create calls: %d/%d", daemon.networkCreateCalls.Load(), daemon.containerCreateCalls.Load())
 	}
 }
 
-func TestExecuteRejectsReplacedWorkloadNetwork(t *testing.T) {
+func TestCreateRejectsReplacedWorkloadNetwork(t *testing.T) {
 	daemon := newNetworkLifecycleTestDaemon(t, true)
 	daemon.unsafeNetwork = true
 	workflow := newNetworkTestWorkflow(t, daemon)
-
-	id, logsCh, errsCh, err := workflow.Execute(context.Background(), time.Second, "alpine:3", []string{"echo", "hi"}, nil)
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.Internal, err)
-	}
-	if id != "" || logsCh != nil || errsCh != nil {
-		t.Fatalf("Execute() = (%q, %v, %v), want empty results", id, logsCh, errsCh)
-	}
-	if got := daemon.containerCreateCalls.Load(); got != 0 {
-		t.Errorf("container create calls = %d, want 0", got)
+	id, err := workflow.Create(t.Context(), networkCreateRequest())
+	if status.Code(err) != codes.Unavailable || id != "" || daemon.containerCreateCalls.Load() != 0 {
+		t.Fatalf("unsafe network was used: id=%q creates=%d error=%v", id, daemon.containerCreateCalls.Load(), err)
 	}
 }
 
-func TestExecuteRetriesWhenWorkloadNetworkIsPrunedDuringCreate(t *testing.T) {
+func TestCreateDoesNotRetryWhenNetworkIsPrunedDuringCreate(t *testing.T) {
 	daemon := newNetworkLifecycleTestDaemon(t, true)
 	daemon.pruneDuringFirstCreate = true
 	workflow := newNetworkTestWorkflow(t, daemon)
-
-	id, _, _, err := workflow.Execute(context.Background(), time.Second, "alpine:3", []string{"echo", "hi"}, nil)
-	if status.Code(err) != codes.Aborted {
-		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.Aborted, err)
-	}
-	if id != "container-1" {
-		t.Errorf("container id = %q, want container-1", id)
-	}
-	if got := daemon.networkCreateCalls.Load(); got != 1 {
-		t.Errorf("network create calls = %d, want 1", got)
-	}
-	if got := daemon.containerCreateCalls.Load(); got != 2 {
-		t.Errorf("container create calls = %d, want 2", got)
+	id, err := workflow.Create(t.Context(), networkCreateRequest())
+	if status.Code(err) != codes.Unavailable || id != "" || daemon.containerCreateCalls.Load() != 1 || daemon.networkCreateCalls.Load() != 0 {
+		t.Fatalf("uncertain Create was replayed: id=%q creates=%d repairs=%d error=%v", id, daemon.containerCreateCalls.Load(), daemon.networkCreateCalls.Load(), err)
 	}
 }
 
-func TestExecuteReturnsWorkloadNetworkRecreationFailure(t *testing.T) {
-	daemon := newNetworkLifecycleTestDaemon(t, true)
-	daemon.pruneDuringFirstCreate = true
+func TestCreateReturnsWorkloadNetworkRecreationFailure(t *testing.T) {
+	daemon := newNetworkLifecycleTestDaemon(t, false)
 	daemon.failNetworkCreate = true
 	workflow := newNetworkTestWorkflow(t, daemon)
-
-	id, logsCh, errsCh, err := workflow.Execute(context.Background(), time.Second, "alpine:3", []string{"echo", "hi"}, nil)
-	if status.Code(err) != codes.Internal {
-		t.Fatalf("Execute() code = %s, want %s: %v", status.Code(err), codes.Internal, err)
-	}
-	if id != "" || logsCh != nil || errsCh != nil {
-		t.Fatalf("Execute() = (%q, %v, %v), want empty results", id, logsCh, errsCh)
-	}
-	if got := daemon.containerCreateCalls.Load(); got != 1 {
-		t.Errorf("container create calls = %d, want 1", got)
+	id, err := workflow.Create(t.Context(), networkCreateRequest())
+	if status.Code(err) != codes.Unavailable || id != "" || daemon.containerCreateCalls.Load() != 0 {
+		t.Fatalf("failed network repair sent Create: id=%q creates=%d error=%v", id, daemon.containerCreateCalls.Load(), err)
 	}
 }
 

@@ -8,11 +8,18 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 func (s *Service) updateContainerCleanup(ctx context.Context, operation string, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
-	if err := s.validateCleanupReceipt(&jobspb.ContainerCleanupReceiptRequest{JobId: req.GetJobId(), ContainerId: req.GetContainerId()}); err != nil {
+	if err := s.validateCleanupReceipt(&jobspb.ContainerCleanupReceiptRequest{
+		JobId:           req.GetJobId(),
+		ContainerId:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentId:        req.GetIntentId(),
+	}); err != nil {
 		return nil, err
 	}
 	if req.GetGeneration() <= 0 {
@@ -27,7 +34,12 @@ func (s *Service) updateContainerCleanup(ctx context.Context, operation string, 
 		}
 	}
 	// Canonical identity must match the SQL-generated event key.
-	result, err := s.repo.UpdateContainerCleanup(ctx, operation, strings.ToLower(req.GetJobId()), req.GetContainerId(), req.GetGeneration(), req.GetToken(), req.GetErrorCode(), req.GetInterrupted())
+	result, err := s.repo.UpdateContainerCleanup(ctx, operation, jobsmodel.CleanupIdentity{
+		JobID:           strings.ToLower(req.GetJobId()),
+		ContainerID:     req.GetContainerId(),
+		RuntimeInstance: req.GetRuntimeInstance(),
+		IntentID:        req.GetIntentId(),
+	}, req.GetGeneration(), req.GetToken(), req.GetErrorCode(), req.GetInterrupted())
 	if err != nil {
 		return nil, err
 	}

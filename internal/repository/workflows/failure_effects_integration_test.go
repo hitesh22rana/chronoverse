@@ -232,6 +232,13 @@ func seedFixtureNode(ctx context.Context, t *testing.T, pg *postgres.Postgres, r
 		t.Fatalf("seed fixture runtime node: %v", err)
 	}
 
+	// Keep spare occupancy backed by independent live allocations; reconciliation
+	// must never preserve an arbitrary counter with no owning job.
+	for range runningJobs - 1 {
+		other := seedWorkflowFixture(ctx, t, pg, New(&Config{FetchLimit: 20}, pg), 3)
+		seedFixtureRunningJob(ctx, t, pg, other, nodeID, "tcp://127.0.0.1:2375")
+	}
+
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fixtureCleanupTimeout)
 		defer cancel()
@@ -326,7 +333,7 @@ func seedFixtureRunningJob(ctx context.Context, t *testing.T, pg *postgres.Postg
 
 // cancelFixtureRunningJob is SQL fixture setup, not a verified jobs-service
 // cancellation: it applies the durable transition the jobs repository owns when
-// the workflow worker cancels a claimed job, including one runtime-slot release.
+// the workflow worker cancels a claimed job, including fresh runtime accounting.
 // This batch covers the workflow repository's own guards and effects; the
 // jobs-service cancellation path and its exactly-once slot release are covered
 // by the terminal-job suite from PR172. What this helper lets these tests prove
@@ -350,9 +357,7 @@ func cancelFixtureRunningJob(ctx context.Context, t *testing.T, pg *postgres.Pos
 		t.Fatalf("cancel fixture running job %q: %v", jobID, err)
 	}
 	if _, err := pg.Exec(ctx, `
-		UPDATE runtime_nodes
-		SET running_jobs = GREATEST(0, running_jobs - 1)
-		WHERE id = $1
+		SELECT reconcile_runtime_capacity($1)
 	`, nodeID); err != nil {
 		t.Fatalf("release runtime slot on node %q: %v", nodeID, err)
 	}
@@ -963,8 +968,8 @@ func TestIntegrationTerminateWorkflowReplayPublishesOneTermination(t *testing.T)
 // TestIntegrationDeleteWorkflowRefusesWhileJobHoldsRuntimeSlot proves deletion
 // refuses a terminated workflow whose job still occupies runtime capacity, so
 // the cascade can never strand a slot. Once the job's own terminal path has
-// released the slot exactly once, deletion succeeds and repeats neither the
-// release nor the publish intent. The node keeps unattributed spare occupancy
+// reconciled the slot exactly once, deletion succeeds and repeats neither the
+// release nor the publish intent. The node keeps independent live allocations
 // throughout, so a second release anywhere in this flow would be visible rather
 // than hidden by the zero clamp.
 //

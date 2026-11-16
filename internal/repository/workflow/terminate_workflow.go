@@ -67,6 +67,7 @@ func (r *Repository) cancelJobs(
 				Attempts:        cancelSnapshot.GetAttempt(),
 				RuntimeNodeId:   cancelSnapshot.GetRuntimeNodeId(),
 				RuntimeEndpoint: cancelSnapshot.GetRuntimeEndpoint(),
+				RuntimeInstance: cancelSnapshot.GetRuntimeInstance(), IntentId: cancelSnapshot.GetIntentId(),
 			})
 		}
 	}
@@ -187,7 +188,10 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 	if err != nil {
 		return err
 	}
-	receiptRequest := &jobspb.ContainerCleanupReceiptRequest{JobId: job.GetId(), ContainerId: job.GetContainerId()}
+	receiptRequest, err := r.cleanupReceiptRequest(authCtx, job)
+	if err != nil {
+		return err
+	}
 	// Recheck after admission: an in-flight receipt write may have raced the attempt grant.
 	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(authCtx, receiptRequest)
 	if err != nil {
@@ -200,27 +204,14 @@ func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, work
 	if err != nil {
 		return err
 	}
-	if stopErr := csvc.Terminate(parentCtx, job.GetContainerId()); stopErr != nil {
-		return stopErr
+	if identityErr := verifyCleanupRuntime(parentCtx, csvc, receiptRequest.GetRuntimeInstance()); identityErr != nil {
+		return identityErr
 	}
-	if err = parentCtx.Err(); err != nil {
-		return status.FromContextError(err).Err()
+	if cleanupErr := r.removeCanceledJobContainer(parentCtx, csvc, workflow, job); cleanupErr != nil {
+		return cleanupErr
 	}
-	if err = r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
-		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
-			zap.String("workflow_id", workflow.GetId()),
-			zap.String("job_id", job.GetId()),
-			zap.String("container_id", job.GetContainerId()),
-			zap.Error(err),
-		)
-		return err
-	}
-
-	if err = parentCtx.Err(); err != nil {
-		return status.FromContextError(err).Err()
-	}
-	if removeErr := csvc.Remove(parentCtx, job.GetContainerId()); removeErr != nil {
-		return removeErr
+	if identityErr := verifyCleanupRuntime(parentCtx, csvc, receiptRequest.GetRuntimeInstance()); identityErr != nil {
+		return identityErr
 	}
 	_, err = r.svc.Jobs.RecordContainerCleanupReceipt(authCtx, receiptRequest)
 	return err
@@ -582,4 +573,65 @@ func (r *Repository) terminateWorkflow(parentCtx context.Context, workflowEvent 
 
 		return nil
 	})
+}
+
+func (r *Repository) cleanupReceiptRequest(
+	ctx context.Context,
+	job *jobspb.JobsResponse,
+) (*jobspb.ContainerCleanupReceiptRequest, error) {
+	instanceID, intentID := job.GetRuntimeInstance(), job.GetIntentId()
+	if instanceID == "" || intentID == "" {
+		intentResult, lookupErr := r.svc.Jobs.GetContainerIntent(ctx, &jobspb.ContainerIntentCommand{JobId: job.GetId(), ContainerId: job.GetContainerId()})
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		intent := intentResult.GetIntent()
+		if intent.GetRuntimeNodeId() != job.GetRuntimeNodeId() || intent.GetRuntimeEndpoint() != job.GetRuntimeEndpoint() {
+			return nil, status.Error(codes.Unavailable, "cleanup routing differs from intent")
+		}
+		instanceID, intentID = intent.GetRuntimeInstance(), intent.GetId()
+	}
+	receiptRequest := &jobspb.ContainerCleanupReceiptRequest{JobId: job.GetId(), ContainerId: job.GetContainerId(), RuntimeInstance: instanceID, IntentId: intentID}
+
+	return receiptRequest, nil
+}
+
+func verifyCleanupRuntime(ctx context.Context, csvc ContainerSvc, expected string) error {
+	instance, err := csvc.RuntimeInstance(ctx)
+	if err != nil {
+		return err
+	}
+	if instance != expected {
+		return status.Error(codes.Unavailable, "cleanup daemon instance changed")
+	}
+	return nil
+}
+
+func (r *Repository) removeCanceledJobContainer(
+	parentCtx context.Context,
+	csvc ContainerSvc,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	job *jobspb.JobsResponse,
+) error {
+	var err error
+	if stopErr := csvc.Terminate(parentCtx, job.GetContainerId()); stopErr != nil {
+		return stopErr
+	}
+	if err = parentCtx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	if err = r.replayCanceledJobContainerLogs(parentCtx, csvc, workflow, job); err != nil {
+		loggerpkg.FromContext(parentCtx).Warn("failed to replay canceled job logs",
+			zap.String("workflow_id", workflow.GetId()),
+			zap.String("job_id", job.GetId()),
+			zap.String("container_id", job.GetContainerId()),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	if err = parentCtx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	return csvc.Remove(parentCtx, job.GetContainerId())
 }

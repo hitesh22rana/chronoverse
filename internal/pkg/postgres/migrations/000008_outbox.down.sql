@@ -1,8 +1,16 @@
+DROP TRIGGER IF EXISTS trigger_reconcile_deleted_job_capacity ON jobs;
+DROP FUNCTION IF EXISTS reconcile_deleted_job_capacity;
+DROP TRIGGER IF EXISTS trigger_close_terminated_workflow_container_intents ON workflows;
+DROP TRIGGER IF EXISTS trigger_close_deleted_job_container_intents ON jobs;
+DROP FUNCTION IF EXISTS close_deleted_job_container_intents;
 DROP TRIGGER IF EXISTS trigger_queue_deleted_workflow_container_cleanup ON workflows;
 DROP TRIGGER IF EXISTS trigger_queue_job_container_cleanup ON jobs;
 DROP FUNCTION IF EXISTS queue_deleted_workflow_container_cleanup;
 DROP FUNCTION IF EXISTS queue_job_container_cleanup;
 DROP FUNCTION IF EXISTS enqueue_container_cleanup(jobs, BOOLEAN);
+DROP FUNCTION IF EXISTS close_job_container_intents(UUID);
+DROP FUNCTION IF EXISTS enqueue_intent_materializations(UUID);
+DROP FUNCTION IF EXISTS enqueue_intent_container_cleanup(UUID,TEXT);
 DROP TABLE IF EXISTS outbox_events;
 DROP FUNCTION IF EXISTS update_outbox_events_updated_at;
 DROP TYPE IF EXISTS OUTBOX_STATUS;

@@ -1,4 +1,10 @@
+DROP FUNCTION IF EXISTS workflow_container_blocked(UUID);
+DROP FUNCTION IF EXISTS reconcile_runtime_capacity(TEXT);
 DROP TABLE IF EXISTS container_cleanup_receipts;
+DROP TABLE IF EXISTS runtime_capacity_holds;
+DROP TABLE IF EXISTS container_materializations;
+DROP TABLE IF EXISTS container_intent_redrives;
+DROP TABLE IF EXISTS container_creation_intents;
 DROP TABLE IF EXISTS jobs;
 DROP FUNCTION IF EXISTS update_jobs_updated_at;
 DROP TYPE IF EXISTS JOB_TRIGGER;

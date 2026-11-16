@@ -71,7 +71,11 @@ func TestContainerCleanupRetriesFromSnapshotWithoutWorkflow(t *testing.T) {
 	}}}
 	event := &workflowsmodel.WorkflowEvent{
 		CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "deleted-workflow", UserID: "owner", JobID: "job",
-		ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "original-container", RuntimeNodeID: "original-node", RuntimeEndpoint: "tcp://original:2376", Attempts: 2, LogRetention: true},
+		ContainerCleanup: &workflowsmodel.ContainerCleanup{
+			RuntimeInstance: "test-daemon", IntentID: "00000000-0000-4000-8000-000000000015",
+			ContainerID: "original-container", RuntimeNodeID: "original-node",
+			RuntimeEndpoint: "tcp://original:2376", Attempts: 2, LogRetention: true,
+		},
 	}
 	err := repo.runTargetWorkflow(t.Context(), event)
 	if err == nil || kafkapkg.ShouldCommitOnError(err) || removed != 0 {
@@ -134,7 +138,10 @@ func TestContainerCleanupBoundsEachAttempt(t *testing.T) {
 				repo := &Repository{auth: testAuth{}, svc: &Services{Jobs: jobs, CsvcForEndpoint: func(string, string) (ContainerSvc, error) { return container, nil }}}
 				event := &workflowsmodel.WorkflowEvent{
 					CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "owner", JobID: "job",
-					ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "container", RuntimeEndpoint: "runtime", LogRetention: true},
+					ContainerCleanup: &workflowsmodel.ContainerCleanup{
+						RuntimeInstance: "test-daemon", IntentID: "00000000-0000-4000-8000-000000000015",
+						ContainerID: "container", RuntimeEndpoint: "runtime", LogRetention: true,
+					},
 				}
 				started := time.Now()
 				err := repo.runTargetWorkflow(t.Context(), event)
@@ -162,7 +169,7 @@ func TestContainerCleanupRejectsMalformedIntentAndRetriesRoutingFailure(t *testi
 	if calls != 0 {
 		t.Fatal("malformed intent reached runtime")
 	}
-	event.ContainerCleanup = &workflowsmodel.ContainerCleanup{ContainerID: "container", RuntimeEndpoint: "endpoint"}
+	event.ContainerCleanup = &workflowsmodel.ContainerCleanup{RuntimeInstance: "test-daemon", IntentID: "00000000-0000-4000-8000-000000000015", ContainerID: "container", RuntimeEndpoint: "endpoint"}
 	event.CleanupGeneration = 0
 	if err := repo.runTargetWorkflow(t.Context(), event); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("missing cleanup generation accepted: %v", err)
@@ -234,7 +241,7 @@ func cleanupReceiptFailureFixture(phase string) (*Repository, *workflowsmodel.Wo
 	}
 	event := &workflowsmodel.WorkflowEvent{
 		CleanupGeneration: 1, EventKey: "cleanup", Action: workflowsmodel.ActionContainerCleanup, ID: "workflow", UserID: "user", JobID: "job",
-		ContainerCleanup: &workflowsmodel.ContainerCleanup{ContainerID: "original", RuntimeEndpoint: "runtime"},
+		ContainerCleanup: &workflowsmodel.ContainerCleanup{RuntimeInstance: "test-daemon", IntentID: "00000000-0000-4000-8000-000000000015", ContainerID: "original", RuntimeEndpoint: "runtime"},
 	}
 	return repo, event, counts
 }
@@ -448,4 +455,8 @@ func cleanupAdmissionFailureFixture(t *testing.T, mode string) (*Repository, *wo
 		}
 	}
 	return repo, event, counts
+}
+
+func (durableCleanupContainer) RuntimeInstance(context.Context) (string, error) {
+	return "test-daemon", nil
 }

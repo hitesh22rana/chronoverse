@@ -122,6 +122,9 @@ type ResourceLimits struct {
 
 // State represents the observed state of a Docker container.
 type State struct {
+	ID       string
+	Name     string
+	Labels   map[string]string
 	Running  bool
 	ExitCode int
 	Status   string
@@ -312,17 +315,10 @@ func NewDockerWorkflow(options ...DockerWorkflowOption) (*DockerWorkflow, error)
 	}
 
 	// No network work here: lifecycle-only clients (expired-lease recovery)
-	// must construct even when the workload network is broken. Execute enforces
+	// must construct even when the workload network is broken. Create enforces
 	// isolation before every container creation.
 
 	return w, nil
-}
-
-// workloadNetworkMissing reports whether the configured network is absent;
-// other inspect errors return false so the caller keeps its original failure.
-func (w *DockerWorkflow) workloadNetworkMissing(ctx context.Context) bool {
-	_, err := w.Client.NetworkInspect(ctx, w.workloadNetwork, client.NetworkInspectOptions{})
-	return cerrdefs.IsNotFound(err)
 }
 
 // ensureWorkloadNetwork idempotently creates the dedicated workload network
@@ -446,64 +442,7 @@ func (w *DockerWorkflow) DockerHost() string {
 	return w.Client.DaemonHost()
 }
 
-// Execute runs a command in a new container and streams the logs.
-//
-//nolint:gocritic // Preserve the established Execute result signature.
-func (w *DockerWorkflow) Execute(
-	ctx context.Context,
-	timeout time.Duration,
-	image string,
-	cmd []string,
-	env []string,
-) (string, <-chan *jobsmodel.JobLog, <-chan error, error) {
-	if err := w.healthCheck(ctx); err != nil {
-		return "", nil, nil, err
-	}
-
-	containerTimeout := int(timeout.Seconds())
-
-	createContainer := func() (client.ContainerCreateResult, error) {
-		return w.Client.ContainerCreate(
-			ctx,
-			client.ContainerCreateOptions{
-				Config: &container.Config{
-					Image:       image,
-					Cmd:         cmd,
-					StopTimeout: &containerTimeout,
-					Env:         env,
-				},
-				HostConfig: w.hostConfig(),
-			},
-		)
-	}
-
-	// Cached clients outlive the network they initialized: revalidate before
-	// use so prunes are recreated and unsafe replacements are rejected before
-	// Docker attaches a workload. Drift is infra, not user error, hence the
-	// retryable Internal classification.
-	if err := w.ensureWorkloadNetwork(ctx); err != nil {
-		return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", err)
-	}
-
-	resp, err := createContainer()
-	if err != nil && w.workloadNetworkMissing(ctx) {
-		// The network was pruned between the check and the create; a missing
-		// network proves no container was created, so one retry is safe.
-		if ensureErr := w.ensureWorkloadNetwork(ctx); ensureErr != nil {
-			return "", nil, nil, status.Errorf(codes.Internal, "workload network is not ready: %v", ensureErr)
-		}
-		resp, err = createContainer()
-	}
-	if err != nil || resp.ID == "" {
-		return "", nil, nil, status.Errorf(codes.FailedPrecondition, "failed to create container: %v", err)
-	}
-
-	containerID := resp.ID
-
-	if _, err := w.Client.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
-		return containerID, nil, nil, status.Errorf(codes.Aborted, "failed to start container: %v", err)
-	}
-
+func (w *DockerWorkflow) watchContainer(ctx context.Context, timeout time.Duration, containerID string) (logStream <-chan *jobsmodel.JobLog, errorStream <-chan error) {
 	logs := make(chan *jobsmodel.JobLog)
 	// Sized for every stream failure plus one terminal result, so neither blocks
 	// on a consumer that stopped draining. The terminal result is sent
@@ -565,7 +504,7 @@ func (w *DockerWorkflow) Execute(
 		}
 	}()
 
-	return containerID, logs, errs, nil
+	return logs, errs
 }
 
 // publishExecutionFailure reports the terminal cause before bounded cleanup.
@@ -1038,7 +977,12 @@ func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*Stat
 		return nil, status.Errorf(codes.Aborted, "container %s has no state", containerID)
 	}
 
+	var labels map[string]string
+	if data.Container.Config != nil {
+		labels = data.Container.Config.Labels
+	}
 	return &State{
+		ID: data.Container.ID, Name: data.Container.Name, Labels: labels,
 		Running:  data.Container.State.Running,
 		ExitCode: data.Container.State.ExitCode,
 		Status:   string(data.Container.State.Status),
@@ -1047,6 +991,9 @@ func (w *DockerWorkflow) Inspect(ctx context.Context, containerID string) (*Stat
 
 // Remove deletes a stopped container and ignores containers that are already gone.
 func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
+	if !fullContainerID.MatchString(containerID) {
+		return status.Error(codes.InvalidArgument, "container mutation requires a full immutable container id")
+	}
 	if _, err := w.Client.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
@@ -1065,6 +1012,9 @@ func (w *DockerWorkflow) Remove(ctx context.Context, containerID string) error {
 
 // Terminate stops a running container by its unique containerID.
 func (w *DockerWorkflow) Terminate(ctx context.Context, containerID string) error {
+	if !fullContainerID.MatchString(containerID) {
+		return status.Error(codes.InvalidArgument, "container mutation requires a full immutable container id")
+	}
 	if err := w.healthCheck(ctx); err != nil {
 		return err
 	}

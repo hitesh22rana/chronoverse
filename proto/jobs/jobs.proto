@@ -33,7 +33,9 @@ message CancelJobResponse {
   string container_id     = 3;
   string runtime_node_id  = 4;
   string runtime_endpoint = 5;
-  int32  attempt           = 6;
+  int32  attempt          = 6;
+  string runtime_instance = 7;
+  string intent_id        = 8;
 }
 
 // ClaimJobRequest contains the details needed to claim a queued job for execution.
@@ -329,6 +331,8 @@ message JobsResponse {
   string runtime_endpoint      = 13; // Docker endpoint snapshot for the owning runtime node
   string status_reason_code    = 14; // Safe terminal reason code (FAILED/CANCELED only)
   string status_reason_message = 15; // Safe terminal reason message (FAILED/CANCELED only)
+  string runtime_instance      = 16;
+  string intent_id             = 17;
 }
 
 message ListJobsResponse {
@@ -339,30 +343,113 @@ message ListJobsResponse {
 // JobsService handles job related operations.
 // ContainerCleanupReceiptRequest identifies one immutable job container.
 message ContainerCleanupReceiptRequest {
-  string job_id = 1;
-  string container_id = 2;
+  string job_id           = 1;
+  string container_id     = 2;
+  string runtime_instance = 3;
+  string intent_id        = 4;
 }
-message GetContainerCleanupReceiptResponse { bool completed = 1; }
+
+message GetContainerCleanupReceiptResponse {
+  bool completed = 1;
+}
+
 message RecordContainerCleanupReceiptResponse {}
 
 // Cleanup generations are independent of workflow generations.
 message ContainerCleanupAttemptRequest {
-  string job_id = 1;
-  string container_id = 2;
-  int64 generation = 3; // Expected cleanup generation, not the workflow generation.
-  string token = 4; // Failure reports only: the token granted by Begin.
-  string error_code = 5; // Failure reports only: non-OK gRPC status name.
-  bool interrupted = 6; // Caller cancellation returns the attempt without spending its budget.
+  string job_id           = 1;
+  string container_id     = 2;
+  int64  generation       = 3; // Expected cleanup generation, not the workflow generation.
+  string token            = 4; // Failure reports only: the token granted by Begin.
+  string error_code       = 5; // Failure reports only: non-OK gRPC status name.
+  bool   interrupted      = 6; // Caller cancellation returns the attempt without spending its budget.
+  string runtime_instance = 7;
+  string intent_id        = 8;
 }
+
 message ContainerCleanupAttemptResponse {
-  string state = 1;
-  int64 generation = 2;
-  int32 attempts = 3;
-  string token = 4;
+  string state      = 1;
+  int64  generation = 2;
+  int32  attempts   = 3;
+  string token      = 4;
+}
+
+// Container intents are immutable per execution attempt and survive source deletion.
+message ContainerIntentCommand {
+  string job_id              = 1;
+  string lease_token         = 2;
+  string intent_id           = 3;
+  string runtime_instance    = 4;
+  string request_hash        = 5;
+  string container_id        = 6;
+  string outcome             = 7;
+  string error_code          = 8;
+  string error_message       = 9;
+  string token               = 10;
+  string reason              = 11;
+  int32  attempt             = 12;
+  int32  batch_size          = 13;
+  int64  generation          = 14;
+  string stage               = 15;
+  int64  workflow_generation = 16;
+}
+
+message ContainerIntent {
+  string id                       = 1;
+  string job_id                   = 2;
+  string workflow_id              = 3;
+  string user_id                  = 4;
+  string name                     = 5;
+  string runtime_node_id          = 6;
+  string runtime_endpoint         = 7;
+  string runtime_instance         = 8;
+  string request_hash             = 9;
+  string container_id             = 10;
+  string outcome                  = 11;
+  string error_code               = 12;
+  string error_message            = 13;
+  string token                    = 14;
+  string next_inspection_at       = 15;
+  string last_inspection_at       = 16;
+  int32  attempt                  = 17;
+  int64  generation               = 18;
+  bool   create_reserved          = 19;
+  bool   start_reserved           = 20;
+  bool   closed                   = 21;
+  bool   log_retention            = 22;
+  bool   quarantined              = 23;
+  int32  inspection_errors        = 24;
+  bool   held_capacity            = 25;
+  string stage                    = 26;
+  string inspection_error_code    = 27;
+  string inspection_error_message = 28;
+  int64  workflow_generation      = 29;
+  string image_reference          = 30;
+}
+
+message ContainerIntentResponse {
+  ContainerIntent intent  = 1;
+  bool            granted = 2;
+}
+
+message ListContainerIntentsResponse {
+  repeated ContainerIntent intents = 1;
 }
 
 // JobsService handles jobs related operations.
 service JobsService {
+  // Internal lifecycle authority; mutation grants are single-use, never replayed.
+  rpc EnsureContainerIntent(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc GetContainerIntent(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc ReserveContainerCreate(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc ObserveContainer(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc ReserveContainerStart(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc CloseContainerIntent(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc ClaimContainerIntents(ContainerIntentCommand) returns (ListContainerIntentsResponse) {}
+  rpc ReportContainerInspection(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+  rpc ListContainerIntents(ContainerIntentCommand) returns (ListContainerIntentsResponse) {}
+  rpc RedriveContainerIntent(ContainerIntentCommand) returns (ContainerIntentResponse) {}
+
   // Internal-only cleanup execution authority and administrative redrive.
   rpc BeginContainerCleanupAttempt(ContainerCleanupAttemptRequest) returns (ContainerCleanupAttemptResponse) {}
   rpc FailContainerCleanupAttempt(ContainerCleanupAttemptRequest) returns (ContainerCleanupAttemptResponse) {}
@@ -371,69 +458,69 @@ service JobsService {
   rpc GetContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (GetContainerCleanupReceiptResponse) {}
   rpc RecordContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (RecordContainerCleanupReceiptResponse) {}
 
-    // ScheduleJob schedules a job to run at a specific time.
+  // ScheduleJob schedules a job to run at a specific time.
   rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
-    // CancelJob applies a deterministic workflow-driven cancellation.
-    // This is an internal API and should not be exposed to the public.
+  // CancelJob applies a deterministic workflow-driven cancellation.
+  // This is an internal API and should not be exposed to the public.
   rpc CancelJob(CancelJobRequest) returns (CancelJobResponse) {}
 
-    // ClaimJob atomically claims a queued job for execution.
-    // This is an internal API and should not be exposed to the public.
+  // ClaimJob atomically claims a queued job for execution.
+  // This is an internal API and should not be exposed to the public.
   rpc ClaimJob(ClaimJobRequest) returns (ClaimJobResponse) {}
 
-    // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
-    // This is an internal API and should not be exposed to the public.
+  // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
+  // This is an internal API and should not be exposed to the public.
   rpc GetReadyRuntimeNode(GetReadyRuntimeNodeRequest) returns (GetReadyRuntimeNodeResponse) {}
 
-    // ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
-    // This is an internal API and should not be exposed to the public.
+  // ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
+  // This is an internal API and should not be exposed to the public.
   rpc ListReadyRuntimeNodes(ListReadyRuntimeNodesRequest) returns (ListReadyRuntimeNodesResponse) {}
 
-    // RenewJobLease renews a running job lease.
-    // This is an internal API and should not be exposed to the public.
+  // RenewJobLease renews a running job lease.
+  // This is an internal API and should not be exposed to the public.
   rpc RenewJobLease(RenewJobLeaseRequest) returns (RenewJobLeaseResponse) {}
 
-    // AttachJobContainer attaches a container ID to a running claimed job.
-    // This is an internal API and should not be exposed to the public.
+  // AttachJobContainer attaches a container ID to a running claimed job.
+  // This is an internal API and should not be exposed to the public.
   rpc AttachJobContainer(AttachJobContainerRequest) returns (AttachJobContainerResponse) {}
 
-    // CompleteJob completes a running claimed job.
-    // This is an internal API and should not be exposed to the public.
+  // CompleteJob completes a running claimed job.
+  // This is an internal API and should not be exposed to the public.
   rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse) {}
 
-    // FailJob marks a running claimed job as failed.
-    // This is an internal API and should not be exposed to the public.
+  // FailJob marks a running claimed job as failed.
+  // This is an internal API and should not be exposed to the public.
   rpc FailJob(FailJobRequest) returns (FailJobResponse) {}
 
-    // CancelClaimedJob marks a running claimed job as canceled.
-    // This is an internal API and should not be exposed to the public.
+  // CancelClaimedJob marks a running claimed job as canceled.
+  // This is an internal API and should not be exposed to the public.
   rpc CancelClaimedJob(CancelClaimedJobRequest) returns (CancelClaimedJobResponse) {}
 
-    // ReleaseJobForRetry releases a running claimed job back to pending.
-    // This is an internal API and should not be exposed to the public.
+  // ReleaseJobForRetry releases a running claimed job back to pending.
+  // This is an internal API and should not be exposed to the public.
   rpc ReleaseJobForRetry(ReleaseJobForRetryRequest) returns (ReleaseJobForRetryResponse) {}
 
-    // RecoverExpiredJobLeases returns expired running job leases for recovery.
-    // This is an internal API and should not be exposed to the public.
+  // RecoverExpiredJobLeases returns expired running job leases for recovery.
+  // This is an internal API and should not be exposed to the public.
   rpc RecoverExpiredJobLeases(RecoverExpiredJobLeasesRequest) returns (RecoverExpiredJobLeasesResponse) {}
 
-    // GetJob gets a job by ID and user_id.
+  // GetJob gets a job by ID and user_id.
   rpc GetJob(GetJobRequest) returns (GetJobResponse) {}
 
-    // GetJobByID gets a job by ID.
-    // This is an internal API and should not be exposed to the public.
+  // GetJobByID gets a job by ID.
+  // This is an internal API and should not be exposed to the public.
   rpc GetJobByID(GetJobByIDRequest) returns (GetJobByIDResponse) {}
 
-    // GetJobLogs gets the logs of a job.
+  // GetJobLogs gets the logs of a job.
   rpc GetJobLogs(GetJobLogsRequest) returns (GetJobLogsResponse) {}
 
-    // StreamJobLogs streams the logs of a job.
+  // StreamJobLogs streams the logs of a job.
   rpc StreamJobLogs(StreamJobLogsRequest) returns (stream Log) {}
 
-    // SearchJobLogs returns the filtered logs of a job.
+  // SearchJobLogs returns the filtered logs of a job.
   rpc SearchJobLogs(SearchJobLogsRequest) returns (GetJobLogsResponse) {}
 
-    // ListJobs returns a list of all jobs for a workflow_id owned by a user.
+  // ListJobs returns a list of all jobs for a workflow_id owned by a user.
   rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {}
 }

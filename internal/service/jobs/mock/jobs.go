@@ -132,18 +132,18 @@ func (mr *MockRepositoryMockRecorder) FailJob(ctx, jobID, leaseToken, failureKin
 }
 
 // GetContainerCleanupReceipt mocks base method.
-func (m *MockRepository) GetContainerCleanupReceipt(ctx context.Context, jobID, containerID string) (bool, error) {
+func (m *MockRepository) GetContainerCleanupReceipt(ctx context.Context, identity jobs.CleanupIdentity) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetContainerCleanupReceipt", ctx, jobID, containerID)
+	ret := m.ctrl.Call(m, "GetContainerCleanupReceipt", ctx, identity)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetContainerCleanupReceipt indicates an expected call of GetContainerCleanupReceipt.
-func (mr *MockRepositoryMockRecorder) GetContainerCleanupReceipt(ctx, jobID, containerID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) GetContainerCleanupReceipt(ctx, identity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).GetContainerCleanupReceipt), ctx, jobID, containerID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).GetContainerCleanupReceipt), ctx, identity)
 }
 
 // GetJob mocks base method.
@@ -207,6 +207,21 @@ func (mr *MockRepositoryMockRecorder) GetReadyRuntimeNode(ctx any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReadyRuntimeNode", reflect.TypeOf((*MockRepository)(nil).GetReadyRuntimeNode), ctx)
 }
 
+// ListContainerIntents mocks base method.
+func (m *MockRepository) ListContainerIntents(arg0 context.Context, arg1 *jobs.ContainerIntentCommand, arg2 bool) ([]*jobs.ContainerIntent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListContainerIntents", arg0, arg1, arg2)
+	ret0, _ := ret[0].([]*jobs.ContainerIntent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListContainerIntents indicates an expected call of ListContainerIntents.
+func (mr *MockRepositoryMockRecorder) ListContainerIntents(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListContainerIntents", reflect.TypeOf((*MockRepository)(nil).ListContainerIntents), arg0, arg1, arg2)
+}
+
 // ListJobs mocks base method.
 func (m *MockRepository) ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobs.ListJobsFilters) (*jobs.ListJobsResponse, error) {
 	m.ctrl.T.Helper()
@@ -238,17 +253,17 @@ func (mr *MockRepositoryMockRecorder) ListReadyRuntimeNodes(ctx any) *gomock.Cal
 }
 
 // RecordContainerCleanupReceipt mocks base method.
-func (m *MockRepository) RecordContainerCleanupReceipt(ctx context.Context, jobID, containerID string) error {
+func (m *MockRepository) RecordContainerCleanupReceipt(ctx context.Context, identity jobs.CleanupIdentity) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordContainerCleanupReceipt", ctx, jobID, containerID)
+	ret := m.ctrl.Call(m, "RecordContainerCleanupReceipt", ctx, identity)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RecordContainerCleanupReceipt indicates an expected call of RecordContainerCleanupReceipt.
-func (mr *MockRepositoryMockRecorder) RecordContainerCleanupReceipt(ctx, jobID, containerID any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) RecordContainerCleanupReceipt(ctx, identity any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).RecordContainerCleanupReceipt), ctx, jobID, containerID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordContainerCleanupReceipt", reflect.TypeOf((*MockRepository)(nil).RecordContainerCleanupReceipt), ctx, identity)
 }
 
 // RecoverExpiredJobLeases mocks base method.
@@ -342,18 +357,33 @@ func (mr *MockRepositoryMockRecorder) StreamJobLogs(ctx, jobID, workflowID, user
 }
 
 // UpdateContainerCleanup mocks base method.
-func (m *MockRepository) UpdateContainerCleanup(ctx context.Context, operation, jobID, containerID string, generation int64, token, errorCode string, interrupted bool) (*jobs.CleanupAttempt, error) {
+func (m *MockRepository) UpdateContainerCleanup(ctx context.Context, operation string, identity jobs.CleanupIdentity, generation int64, token, errorCode string, interrupted bool) (*jobs.CleanupAttempt, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateContainerCleanup", ctx, operation, jobID, containerID, generation, token, errorCode, interrupted)
+	ret := m.ctrl.Call(m, "UpdateContainerCleanup", ctx, operation, identity, generation, token, errorCode, interrupted)
 	ret0, _ := ret[0].(*jobs.CleanupAttempt)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // UpdateContainerCleanup indicates an expected call of UpdateContainerCleanup.
-func (mr *MockRepositoryMockRecorder) UpdateContainerCleanup(ctx, operation, jobID, containerID, generation, token, errorCode, interrupted any) *gomock.Call {
+func (mr *MockRepositoryMockRecorder) UpdateContainerCleanup(ctx, operation, identity, generation, token, errorCode, interrupted any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateContainerCleanup", reflect.TypeOf((*MockRepository)(nil).UpdateContainerCleanup), ctx, operation, jobID, containerID, generation, token, errorCode, interrupted)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateContainerCleanup", reflect.TypeOf((*MockRepository)(nil).UpdateContainerCleanup), ctx, operation, identity, generation, token, errorCode, interrupted)
+}
+
+// UpdateContainerIntent mocks base method.
+func (m *MockRepository) UpdateContainerIntent(arg0 context.Context, arg1 string, arg2 *jobs.ContainerIntentCommand) (*jobs.ContainerIntentResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateContainerIntent", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*jobs.ContainerIntentResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateContainerIntent indicates an expected call of UpdateContainerIntent.
+func (mr *MockRepositoryMockRecorder) UpdateContainerIntent(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateContainerIntent", reflect.TypeOf((*MockRepository)(nil).UpdateContainerIntent), arg0, arg1, arg2)
 }
 
 // MockCache is a mock of Cache interface.

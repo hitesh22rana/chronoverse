@@ -45,7 +45,9 @@ type ContainerSvc interface {
 	Build(ctx context.Context, imageName string) error
 	ImageExists(ctx context.Context, imageName string) (bool, error)
 	DockerHost() string
-	Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (string, <-chan *jobsmodel.JobLog, <-chan error, error)
+	RuntimeInstance(ctx context.Context) (string, error)
+	Create(ctx context.Context, req container.CreateRequest) (string, error)
+	Start(ctx context.Context, timeout time.Duration, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 	Logs(ctx context.Context, containerID string) (<-chan *jobsmodel.JobLog, <-chan error, error)
 	Inspect(ctx context.Context, containerID string) (*container.State, error)
 	Remove(ctx context.Context, containerID string) error
@@ -159,6 +161,8 @@ func (r *Repository) Run(ctx context.Context) error {
 	recoveryCtx, cancelRecovery := context.WithCancel(ctx)
 	defer cancelRecovery()
 
+	discoveryDone := make(chan struct{})
+	go func() { defer close(discoveryDone); r.reconcileContainerIntents(recoveryCtx) }()
 	recoveryDone := make(chan struct{})
 	go func() {
 		defer close(recoveryDone)
@@ -173,6 +177,7 @@ func (r *Repository) Run(ctx context.Context) error {
 		<-liveDone
 	}
 	<-recoveryDone
+	<-discoveryDone
 	return err
 }
 
@@ -653,7 +658,19 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, jo
 	if err != nil {
 		return normalizeExecutionError(err)
 	}
-	request := &jobspb.ContainerCleanupReceiptRequest{JobId: jobID, ContainerId: containerID}
+	intentResult, err := r.svc.Jobs.GetContainerIntent(authCtx, &jobspb.ContainerIntentCommand{JobId: jobID, ContainerId: containerID})
+	if err != nil {
+		return normalizeExecutionError(err)
+	}
+	intent := intentResult.GetIntent()
+	instance, err := containerInstance(cleanupCtx, csvc)
+	if err != nil {
+		return err
+	}
+	if instance != intent.GetRuntimeInstance() || intent.GetContainerId() != containerID {
+		return status.Error(codes.Unavailable, "cleanup runtime/materialization identity mismatch")
+	}
+	request := &jobspb.ContainerCleanupReceiptRequest{JobId: jobID, ContainerId: containerID, RuntimeInstance: instance, IntentId: intent.GetId()}
 	receipt, err := r.svc.Jobs.GetContainerCleanupReceipt(authCtx, request)
 	if err != nil {
 		return normalizeExecutionError(err)
@@ -663,6 +680,13 @@ func (r *Repository) cleanupContainer(ctx context.Context, csvc ContainerSvc, jo
 	}
 	if err = csvc.Remove(cleanupCtx, containerID); err != nil {
 		return normalizeExecutionError(err)
+	}
+	instance, err = containerInstance(cleanupCtx, csvc)
+	if err != nil {
+		return err
+	}
+	if instance != request.RuntimeInstance {
+		return status.Error(codes.Unavailable, "runtime instance changed during cleanup")
 	}
 	_, err = r.svc.Jobs.RecordContainerCleanupReceipt(authCtx, request)
 	return normalizeExecutionError(err)

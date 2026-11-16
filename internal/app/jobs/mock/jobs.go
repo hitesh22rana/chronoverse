@@ -101,6 +101,21 @@ func (mr *MockServiceMockRecorder) CancelJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CancelJob", reflect.TypeOf((*MockService)(nil).CancelJob), ctx, req)
 }
 
+// ClaimContainerIntents mocks base method.
+func (m *MockService) ClaimContainerIntents(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ListContainerIntentsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimContainerIntents", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ListContainerIntentsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClaimContainerIntents indicates an expected call of ClaimContainerIntents.
+func (mr *MockServiceMockRecorder) ClaimContainerIntents(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimContainerIntents", reflect.TypeOf((*MockService)(nil).ClaimContainerIntents), arg0, arg1)
+}
+
 // ClaimJob mocks base method.
 func (m *MockService) ClaimJob(ctx context.Context, req *jobs0.ClaimJobRequest) (*jobs0.ClaimJobResponse, error) {
 	m.ctrl.T.Helper()
@@ -116,6 +131,21 @@ func (mr *MockServiceMockRecorder) ClaimJob(ctx, req any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimJob", reflect.TypeOf((*MockService)(nil).ClaimJob), ctx, req)
 }
 
+// CloseContainerIntent mocks base method.
+func (m *MockService) CloseContainerIntent(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CloseContainerIntent", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CloseContainerIntent indicates an expected call of CloseContainerIntent.
+func (mr *MockServiceMockRecorder) CloseContainerIntent(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseContainerIntent", reflect.TypeOf((*MockService)(nil).CloseContainerIntent), arg0, arg1)
+}
+
 // CompleteJob mocks base method.
 func (m *MockService) CompleteJob(ctx context.Context, req *jobs0.CompleteJobRequest) error {
 	m.ctrl.T.Helper()
@@ -128,6 +158,21 @@ func (m *MockService) CompleteJob(ctx context.Context, req *jobs0.CompleteJobReq
 func (mr *MockServiceMockRecorder) CompleteJob(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CompleteJob", reflect.TypeOf((*MockService)(nil).CompleteJob), ctx, req)
+}
+
+// EnsureContainerIntent mocks base method.
+func (m *MockService) EnsureContainerIntent(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnsureContainerIntent", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EnsureContainerIntent indicates an expected call of EnsureContainerIntent.
+func (mr *MockServiceMockRecorder) EnsureContainerIntent(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnsureContainerIntent", reflect.TypeOf((*MockService)(nil).EnsureContainerIntent), arg0, arg1)
 }
 
 // FailContainerCleanupAttempt mocks base method.
@@ -172,6 +217,21 @@ func (m *MockService) GetContainerCleanupReceipt(ctx context.Context, req *jobs0
 func (mr *MockServiceMockRecorder) GetContainerCleanupReceipt(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerCleanupReceipt", reflect.TypeOf((*MockService)(nil).GetContainerCleanupReceipt), ctx, req)
+}
+
+// GetContainerIntent mocks base method.
+func (m *MockService) GetContainerIntent(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetContainerIntent", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetContainerIntent indicates an expected call of GetContainerIntent.
+func (mr *MockServiceMockRecorder) GetContainerIntent(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetContainerIntent", reflect.TypeOf((*MockService)(nil).GetContainerIntent), arg0, arg1)
 }
 
 // GetJob mocks base method.
@@ -234,6 +294,21 @@ func (mr *MockServiceMockRecorder) GetReadyRuntimeNode(ctx, req any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetReadyRuntimeNode", reflect.TypeOf((*MockService)(nil).GetReadyRuntimeNode), ctx, req)
 }
 
+// ListContainerIntents mocks base method.
+func (m *MockService) ListContainerIntents(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ListContainerIntentsResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListContainerIntents", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ListContainerIntentsResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListContainerIntents indicates an expected call of ListContainerIntents.
+func (mr *MockServiceMockRecorder) ListContainerIntents(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListContainerIntents", reflect.TypeOf((*MockService)(nil).ListContainerIntents), arg0, arg1)
+}
+
 // ListJobs mocks base method.
 func (m *MockService) ListJobs(ctx context.Context, req *jobs0.ListJobsRequest) (*jobs.ListJobsResponse, error) {
 	m.ctrl.T.Helper()
@@ -262,6 +337,21 @@ func (m *MockService) ListReadyRuntimeNodes(ctx context.Context, req *jobs0.List
 func (mr *MockServiceMockRecorder) ListReadyRuntimeNodes(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListReadyRuntimeNodes", reflect.TypeOf((*MockService)(nil).ListReadyRuntimeNodes), ctx, req)
+}
+
+// ObserveContainer mocks base method.
+func (m *MockService) ObserveContainer(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ObserveContainer", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ObserveContainer indicates an expected call of ObserveContainer.
+func (mr *MockServiceMockRecorder) ObserveContainer(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveContainer", reflect.TypeOf((*MockService)(nil).ObserveContainer), arg0, arg1)
 }
 
 // RecordContainerCleanupReceipt mocks base method.
@@ -308,6 +398,21 @@ func (mr *MockServiceMockRecorder) RedriveContainerCleanup(ctx, req any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RedriveContainerCleanup", reflect.TypeOf((*MockService)(nil).RedriveContainerCleanup), ctx, req)
 }
 
+// RedriveContainerIntent mocks base method.
+func (m *MockService) RedriveContainerIntent(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RedriveContainerIntent", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RedriveContainerIntent indicates an expected call of RedriveContainerIntent.
+func (mr *MockServiceMockRecorder) RedriveContainerIntent(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RedriveContainerIntent", reflect.TypeOf((*MockService)(nil).RedriveContainerIntent), arg0, arg1)
+}
+
 // ReleaseJobForRetry mocks base method.
 func (m *MockService) ReleaseJobForRetry(ctx context.Context, req *jobs0.ReleaseJobForRetryRequest) error {
 	m.ctrl.T.Helper()
@@ -335,6 +440,51 @@ func (m *MockService) RenewJobLease(ctx context.Context, req *jobs0.RenewJobLeas
 func (mr *MockServiceMockRecorder) RenewJobLease(ctx, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RenewJobLease", reflect.TypeOf((*MockService)(nil).RenewJobLease), ctx, req)
+}
+
+// ReportContainerInspection mocks base method.
+func (m *MockService) ReportContainerInspection(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReportContainerInspection", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReportContainerInspection indicates an expected call of ReportContainerInspection.
+func (mr *MockServiceMockRecorder) ReportContainerInspection(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReportContainerInspection", reflect.TypeOf((*MockService)(nil).ReportContainerInspection), arg0, arg1)
+}
+
+// ReserveContainerCreate mocks base method.
+func (m *MockService) ReserveContainerCreate(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReserveContainerCreate", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReserveContainerCreate indicates an expected call of ReserveContainerCreate.
+func (mr *MockServiceMockRecorder) ReserveContainerCreate(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReserveContainerCreate", reflect.TypeOf((*MockService)(nil).ReserveContainerCreate), arg0, arg1)
+}
+
+// ReserveContainerStart mocks base method.
+func (m *MockService) ReserveContainerStart(arg0 context.Context, arg1 *jobs0.ContainerIntentCommand) (*jobs0.ContainerIntentResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReserveContainerStart", arg0, arg1)
+	ret0, _ := ret[0].(*jobs0.ContainerIntentResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReserveContainerStart indicates an expected call of ReserveContainerStart.
+func (mr *MockServiceMockRecorder) ReserveContainerStart(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReserveContainerStart", reflect.TypeOf((*MockService)(nil).ReserveContainerStart), arg0, arg1)
 }
 
 // ScheduleJob mocks base method.

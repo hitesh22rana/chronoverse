@@ -71,6 +71,21 @@ The production profile declares replicated workers and resource reservations. Ef
 | Mid | `workflow-worker`, `joblogs-processor` | `0.5` CPU, `2G` memory | `0.25` CPU, `1G` memory |
 | High | `execution-worker` | `2` CPU, `2G` memory | `1` CPU, `1G` memory |
 
+## Container lifecycle recovery
+
+Container creation uses durable per-attempt identity and single-use Create/Start
+permissions. Replacement execution waits for original-runtime cleanup evidence;
+runtime heartbeats retain unresolved capacity holds. Discovery continues after
+source deletion, and infrastructure faults use bounded system retries.
+
+Quarantine requires operator repair and generation-fenced redrive. Permanent
+loss of the original runtime can keep execution blocked: there is no force-run
+bypass, and cleanup evidence must not be expired merely by age. Execution and
+cleanup roles need the proxy's daemon-identity read permission; workflow workers
+remain unable to list, inspect or start containers.
+
+<SourceLink path="docs/operations.md">Container reconciliation, cleanup and recovery operations</SourceLink>
+
 ## Required hardening
 
 - Replace database and Meilisearch credentials.

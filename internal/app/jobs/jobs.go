@@ -35,6 +35,17 @@ import (
 // internalAPIs contains the list of internal APIs that require admin role.
 // These APIs are not exposed to the public and should only be used internally.
 var internalAPIs = map[string]bool{
+	"EnsureContainerIntent":     true,
+	"GetContainerIntent":        true,
+	"ReserveContainerCreate":    true,
+	"ObserveContainer":          true,
+	"ReserveContainerStart":     true,
+	"CloseContainerIntent":      true,
+	"ReportContainerInspection": true,
+	"RedriveContainerIntent":    true,
+	"ClaimContainerIntents":     true,
+	"ListContainerIntents":      true,
+
 	"BeginContainerCleanupAttempt":  true,
 	"FailContainerCleanupAttempt":   true,
 	"RedriveContainerCleanup":       true,
@@ -56,6 +67,17 @@ var internalAPIs = map[string]bool{
 
 // Service provides job related operations.
 type Service interface {
+	EnsureContainerIntent(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	GetContainerIntent(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	ReserveContainerCreate(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	ObserveContainer(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	ReserveContainerStart(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	CloseContainerIntent(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	ReportContainerInspection(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	RedriveContainerIntent(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
+	ClaimContainerIntents(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error)
+	ListContainerIntents(context.Context, *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error)
+
 	BeginContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
 	FailContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)
 	RedriveContainerCleanup(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error)

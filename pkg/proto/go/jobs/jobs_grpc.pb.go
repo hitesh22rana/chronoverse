@@ -19,6 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	JobsService_EnsureContainerIntent_FullMethodName         = "/jobs.JobsService/EnsureContainerIntent"
+	JobsService_GetContainerIntent_FullMethodName            = "/jobs.JobsService/GetContainerIntent"
+	JobsService_ReserveContainerCreate_FullMethodName        = "/jobs.JobsService/ReserveContainerCreate"
+	JobsService_ObserveContainer_FullMethodName              = "/jobs.JobsService/ObserveContainer"
+	JobsService_ReserveContainerStart_FullMethodName         = "/jobs.JobsService/ReserveContainerStart"
+	JobsService_CloseContainerIntent_FullMethodName          = "/jobs.JobsService/CloseContainerIntent"
+	JobsService_ClaimContainerIntents_FullMethodName         = "/jobs.JobsService/ClaimContainerIntents"
+	JobsService_ReportContainerInspection_FullMethodName     = "/jobs.JobsService/ReportContainerInspection"
+	JobsService_ListContainerIntents_FullMethodName          = "/jobs.JobsService/ListContainerIntents"
+	JobsService_RedriveContainerIntent_FullMethodName        = "/jobs.JobsService/RedriveContainerIntent"
 	JobsService_BeginContainerCleanupAttempt_FullMethodName  = "/jobs.JobsService/BeginContainerCleanupAttempt"
 	JobsService_FailContainerCleanupAttempt_FullMethodName   = "/jobs.JobsService/FailContainerCleanupAttempt"
 	JobsService_RedriveContainerCleanup_FullMethodName       = "/jobs.JobsService/RedriveContainerCleanup"
@@ -50,6 +60,17 @@ const (
 //
 // JobsService handles jobs related operations.
 type JobsServiceClient interface {
+	// Internal lifecycle authority; mutation grants are single-use, never replayed.
+	EnsureContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	GetContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	ReserveContainerCreate(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	ObserveContainer(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	ReserveContainerStart(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	CloseContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	ClaimContainerIntents(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ListContainerIntentsResponse, error)
+	ReportContainerInspection(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
+	ListContainerIntents(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ListContainerIntentsResponse, error)
+	RedriveContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error)
 	// Internal-only cleanup execution authority and administrative redrive.
 	BeginContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error)
 	FailContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error)
@@ -113,6 +134,106 @@ type jobsServiceClient struct {
 
 func NewJobsServiceClient(cc grpc.ClientConnInterface) JobsServiceClient {
 	return &jobsServiceClient{cc}
+}
+
+func (c *jobsServiceClient) EnsureContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_EnsureContainerIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) GetContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_GetContainerIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ReserveContainerCreate(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_ReserveContainerCreate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ObserveContainer(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_ObserveContainer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ReserveContainerStart(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_ReserveContainerStart_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) CloseContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_CloseContainerIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ClaimContainerIntents(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ListContainerIntentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListContainerIntentsResponse)
+	err := c.cc.Invoke(ctx, JobsService_ClaimContainerIntents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ReportContainerInspection(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_ReportContainerInspection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) ListContainerIntents(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ListContainerIntentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListContainerIntentsResponse)
+	err := c.cc.Invoke(ctx, JobsService_ListContainerIntents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *jobsServiceClient) RedriveContainerIntent(ctx context.Context, in *ContainerIntentCommand, opts ...grpc.CallOption) (*ContainerIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContainerIntentResponse)
+	err := c.cc.Invoke(ctx, JobsService_RedriveContainerIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *jobsServiceClient) BeginContainerCleanupAttempt(ctx context.Context, in *ContainerCleanupAttemptRequest, opts ...grpc.CallOption) (*ContainerCleanupAttemptResponse, error) {
@@ -360,6 +481,17 @@ func (c *jobsServiceClient) ListJobs(ctx context.Context, in *ListJobsRequest, o
 //
 // JobsService handles jobs related operations.
 type JobsServiceServer interface {
+	// Internal lifecycle authority; mutation grants are single-use, never replayed.
+	EnsureContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	GetContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	ReserveContainerCreate(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	ObserveContainer(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	ReserveContainerStart(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	CloseContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	ClaimContainerIntents(context.Context, *ContainerIntentCommand) (*ListContainerIntentsResponse, error)
+	ReportContainerInspection(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
+	ListContainerIntents(context.Context, *ContainerIntentCommand) (*ListContainerIntentsResponse, error)
+	RedriveContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error)
 	// Internal-only cleanup execution authority and administrative redrive.
 	BeginContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error)
 	FailContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error)
@@ -424,6 +556,36 @@ type JobsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedJobsServiceServer struct{}
 
+func (UnimplementedJobsServiceServer) EnsureContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnsureContainerIntent not implemented")
+}
+func (UnimplementedJobsServiceServer) GetContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetContainerIntent not implemented")
+}
+func (UnimplementedJobsServiceServer) ReserveContainerCreate(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReserveContainerCreate not implemented")
+}
+func (UnimplementedJobsServiceServer) ObserveContainer(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ObserveContainer not implemented")
+}
+func (UnimplementedJobsServiceServer) ReserveContainerStart(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReserveContainerStart not implemented")
+}
+func (UnimplementedJobsServiceServer) CloseContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseContainerIntent not implemented")
+}
+func (UnimplementedJobsServiceServer) ClaimContainerIntents(context.Context, *ContainerIntentCommand) (*ListContainerIntentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClaimContainerIntents not implemented")
+}
+func (UnimplementedJobsServiceServer) ReportContainerInspection(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportContainerInspection not implemented")
+}
+func (UnimplementedJobsServiceServer) ListContainerIntents(context.Context, *ContainerIntentCommand) (*ListContainerIntentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListContainerIntents not implemented")
+}
+func (UnimplementedJobsServiceServer) RedriveContainerIntent(context.Context, *ContainerIntentCommand) (*ContainerIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RedriveContainerIntent not implemented")
+}
 func (UnimplementedJobsServiceServer) BeginContainerCleanupAttempt(context.Context, *ContainerCleanupAttemptRequest) (*ContainerCleanupAttemptResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BeginContainerCleanupAttempt not implemented")
 }
@@ -511,6 +673,186 @@ func RegisterJobsServiceServer(s grpc.ServiceRegistrar, srv JobsServiceServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&JobsService_ServiceDesc, srv)
+}
+
+func _JobsService_EnsureContainerIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).EnsureContainerIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_EnsureContainerIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).EnsureContainerIntent(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_GetContainerIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).GetContainerIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_GetContainerIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).GetContainerIntent(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ReserveContainerCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ReserveContainerCreate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ReserveContainerCreate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ReserveContainerCreate(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ObserveContainer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ObserveContainer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ObserveContainer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ObserveContainer(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ReserveContainerStart_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ReserveContainerStart(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ReserveContainerStart_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ReserveContainerStart(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_CloseContainerIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).CloseContainerIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_CloseContainerIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).CloseContainerIntent(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ClaimContainerIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ClaimContainerIntents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ClaimContainerIntents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ClaimContainerIntents(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ReportContainerInspection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ReportContainerInspection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ReportContainerInspection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ReportContainerInspection(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_ListContainerIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).ListContainerIntents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_ListContainerIntents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).ListContainerIntents(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _JobsService_RedriveContainerIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContainerIntentCommand)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(JobsServiceServer).RedriveContainerIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: JobsService_RedriveContainerIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(JobsServiceServer).RedriveContainerIntent(ctx, req.(*ContainerIntentCommand))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _JobsService_BeginContainerCleanupAttempt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -927,6 +1269,46 @@ var JobsService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jobs.JobsService",
 	HandlerType: (*JobsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "EnsureContainerIntent",
+			Handler:    _JobsService_EnsureContainerIntent_Handler,
+		},
+		{
+			MethodName: "GetContainerIntent",
+			Handler:    _JobsService_GetContainerIntent_Handler,
+		},
+		{
+			MethodName: "ReserveContainerCreate",
+			Handler:    _JobsService_ReserveContainerCreate_Handler,
+		},
+		{
+			MethodName: "ObserveContainer",
+			Handler:    _JobsService_ObserveContainer_Handler,
+		},
+		{
+			MethodName: "ReserveContainerStart",
+			Handler:    _JobsService_ReserveContainerStart_Handler,
+		},
+		{
+			MethodName: "CloseContainerIntent",
+			Handler:    _JobsService_CloseContainerIntent_Handler,
+		},
+		{
+			MethodName: "ClaimContainerIntents",
+			Handler:    _JobsService_ClaimContainerIntents_Handler,
+		},
+		{
+			MethodName: "ReportContainerInspection",
+			Handler:    _JobsService_ReportContainerInspection_Handler,
+		},
+		{
+			MethodName: "ListContainerIntents",
+			Handler:    _JobsService_ListContainerIntents_Handler,
+		},
+		{
+			MethodName: "RedriveContainerIntent",
+			Handler:    _JobsService_RedriveContainerIntent_Handler,
+		},
 		{
 			MethodName: "BeginContainerCleanupAttempt",
 			Handler:    _JobsService_BeginContainerCleanupAttempt_Handler,

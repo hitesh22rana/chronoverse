@@ -140,7 +140,7 @@ func TestExecuteInternalDeadlinePublishesBeforeStopCompletes(t *testing.T) {
 		logStream: func(w http.ResponseWriter, r *http.Request) { flushDockerLogStream(w); <-r.Context().Done() },
 		stop:      func() { close(entered); <-release },
 	})
-	_, logs, errs, err := workflow.Execute(t.Context(), 200*time.Millisecond, "alpine", nil, nil)
+	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), 200*time.Millisecond, "alpine", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

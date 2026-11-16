@@ -16,28 +16,45 @@ import (
 
 // UpdateContainerCleanup serializes execution, failure reporting and explicit redrive.
 // Publication attempts remain separate from this three-attempt execution budget.
-func (r *Repository) UpdateContainerCleanup(ctx context.Context, operation, jobID, containerID string, generation int64, token, errorCode string, interrupted bool) (*jobsmodel.CleanupAttempt, error) {
+func (r *Repository) UpdateContainerCleanup(
+	ctx context.Context,
+	operation string,
+	identity jobsmodel.CleanupIdentity,
+	generation int64,
+	token, errorCode string,
+	interrupted bool,
+) (*jobsmodel.CleanupAttempt, error) {
+	if identityErr := validateCleanupIdentity(identity); identityErr != nil {
+		return nil, identityErr
+	}
 	tx, err := r.pg.BeginTx(ctx)
 	if err != nil {
 		return nil, mapBeginTxError(err, "begin cleanup attempt")
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
-	key := "job:" + jobID + ":container:" + containerID + ":cleanup"
+	key := cleanupEventKey(identity.JobID, identity.ContainerID, identity.RuntimeInstance)
 	var result cleanupAttempt
 	var storedToken sql.NullString
 	var lease, next sql.NullTime
 	var now time.Time
 	err = tx.QueryRow(ctx, `SELECT cleanup_state,cleanup_generation,cleanup_attempts,cleanup_token::text,
  cleanup_lease_until,cleanup_next_attempt_at,clock_timestamp() AT TIME ZONE 'utc'
- FROM outbox_events WHERE topic='workflows' AND event_key=$1 AND cleanup_state IS NOT NULL FOR UPDATE`, key).
+ FROM outbox_events WHERE topic='workflows' AND event_key=$1 AND cleanup_state IS NOT NULL AND payload->'ContainerCleanup'->>'IntentID'=$2 FOR UPDATE`, key, identity.IntentID).
 		Scan(&result.State, &result.Generation, &result.Attempts, &storedToken, &lease, &next, &now)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, r.mapJobLeaseReadError(err, "read cleanup attempt")
 	}
 	missing := errors.Is(err, pgx.ErrNoRows)
 	var completed bool
-	if receiptErr := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM container_cleanup_receipts WHERE job_id=$1 AND container_id=$2)`, jobID, containerID).Scan(&completed); receiptErr != nil {
+	if receiptErr := tx.QueryRow(
+		ctx,
+		`SELECT EXISTS(SELECT 1 FROM container_cleanup_receipts WHERE job_id=$1 AND container_id=$2 AND runtime_instance=$3 AND intent_id=$4)`,
+		identity.JobID,
+		identity.ContainerID,
+		identity.RuntimeInstance,
+		identity.IntentID,
+	).Scan(&completed); receiptErr != nil {
 		return nil, r.mapJobLeaseReadError(receiptErr, "read cleanup receipt")
 	}
 	if completed {

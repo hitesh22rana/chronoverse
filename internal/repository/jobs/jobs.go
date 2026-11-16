@@ -107,7 +107,7 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 	if cfg.EventCommandRetention <= 0 {
 		cfg.EventCommandRetention = commandidempotency.DefaultEventCommandRetention
 	}
-	return &Repository{
+	r := &Repository{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
 		cfg:  cfg,
 		auth: auth,
@@ -117,6 +117,12 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, 
 		ms:   ms,
 		svc:  svc,
 	}
+	if pg != nil {
+		if metricsErr := r.registerContainerIntentMetrics(otel.Meter("chronoverse/jobs/container-intents")); metricsErr != nil {
+			otel.Handle(metricsErr)
+		}
+	}
+	return r
 }
 
 // ScheduleJob schedules a job.
@@ -337,10 +343,20 @@ func automaticScheduleGuardSQL() string {
     `, postgres.TableWorkflows)
 }
 
+// Resolve cleanup identity from persisted provenance, never from caller routing.
+const jobCleanupIdentityJoin = `
+LEFT JOIN LATERAL (
+ SELECT i.runtime_instance, i.id::text AS intent_id
+ FROM container_creation_intents i
+ JOIN container_materializations m ON m.intent_id=i.id
+ WHERE i.job_id=j.id AND i.attempt=j.attempts
+   AND i.container_id=j.container_id AND m.container_id=j.container_id
+   AND m.runtime_instance=i.runtime_instance
+   AND i.runtime_node_id=j.runtime_node_id AND i.runtime_endpoint=j.runtime_endpoint
+) cleanup ON true`
+
 // CancelJob applies a deterministic workflow-driven cancellation and persists
 // the pre-cancellation cleanup snapshot for response-loss replay.
-//
-//nolint:gocyclo // Cancellation persists and replays a complete cleanup snapshot atomically.
 func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (snapshot *jobsmodel.CancelJobSnapshot, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.CancelJob")
 	defer func() {
@@ -361,6 +377,9 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 	}
 	//nolint:errcheck // Rollback is a no-op after commit.
 	defer tx.Rollback(ctx)
+	if lockErr := r.lockJobWorkflow(ctx, tx, jobID); lockErr != nil {
+		return nil, lockErr
+	}
 
 	// A string map always has a JSON representation.
 	//nolint:errcheck // The concrete input cannot produce a recoverable encoding error.
@@ -379,11 +398,13 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 
 	snapshot = &jobsmodel.CancelJobSnapshot{}
 	query := fmt.Sprintf(`
-		SELECT id, status, container_id, runtime_node_id, runtime_endpoint, attempts
-		FROM %s
-		WHERE id = $1
-		FOR UPDATE;
-	`, postgres.TableJobs)
+		SELECT j.id, j.status, j.container_id, j.runtime_node_id, j.runtime_endpoint, j.attempts,
+   COALESCE(cleanup.runtime_instance,''), COALESCE(cleanup.intent_id,'')
+  FROM %s j
+  %s
+  WHERE j.id = $1
+  FOR UPDATE OF j;
+ `, postgres.TableJobs, jobCleanupIdentityJoin)
 	if err = tx.QueryRow(ctx, query, jobID).Scan(
 		&snapshot.ID,
 		&snapshot.PreviousStatus,
@@ -391,6 +412,8 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		&snapshot.RuntimeNodeID,
 		&snapshot.RuntimeEndpoint,
 		&snapshot.Attempt,
+		&snapshot.RuntimeInstance,
+		&snapshot.IntentID,
 	); err != nil {
 		if r.pg.IsNoRows(err) {
 			return nil, status.Error(codes.NotFound, "job not found")
@@ -415,11 +438,6 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		`, postgres.TableJobs)
 		if _, err = tx.Exec(ctx, query, jobID, terminalReasonCode); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to cancel job: %v", err)
-		}
-		if snapshot.PreviousStatus == jobsmodel.JobStatusRunning.ToString() {
-			if decrementErr := r.decrementRuntimeSlotForJob(ctx, tx, jobID); decrementErr != nil {
-				return nil, decrementErr
-			}
 		}
 	}
 
@@ -964,11 +982,13 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	}()
 
 	query := fmt.Sprintf(`
-	        SELECT id, workflow_id, container_id, status, trigger, attempts, scheduled_at, started_at, completed_at, created_at, updated_at, runtime_node_id, runtime_endpoint,
-	               terminal_reason_code, failure_kind, last_error_code, last_error_message
-        FROM %s
-        WHERE workflow_id = $1 AND user_id = $2
-    `, postgres.TableJobs)
+	        SELECT j.id, j.workflow_id, j.container_id, j.status, j.trigger, j.attempts, j.scheduled_at, j.started_at, j.completed_at, j.created_at, j.updated_at, j.runtime_node_id, j.runtime_endpoint,
+                j.terminal_reason_code, j.failure_kind, j.last_error_code, j.last_error_message,
+                COALESCE(cleanup.runtime_instance,'') AS runtime_instance, COALESCE(cleanup.intent_id,'') AS intent_id
+        FROM %s j
+        %s
+        WHERE j.workflow_id = $1 AND j.user_id = $2
+    `, postgres.TableJobs, jobCleanupIdentityJoin)
 	args := []any{workflowID, userID}
 	paramIndex := 3
 

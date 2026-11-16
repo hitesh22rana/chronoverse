@@ -36,6 +36,8 @@ type WorkflowEvent struct {
 
 // ContainerCleanup retains runtime routing after a job or workflow is deleted.
 type ContainerCleanup struct {
+	RuntimeInstance string
+	IntentID        string
 	ContainerID     string
 	RuntimeNodeID   string
 	RuntimeEndpoint string

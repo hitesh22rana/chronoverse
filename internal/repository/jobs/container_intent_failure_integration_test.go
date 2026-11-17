@@ -3,13 +3,21 @@ package jobs
 
 import (
 	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"google.golang.org/grpc/codes"
@@ -88,8 +96,10 @@ func TestIntegrationContainerIntentUnavailableStorageHasNoSuccess(t *testing.T) 
 	if result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationGet, command); result != nil || status.Code(err) != codes.Internal {
 		t.Fatalf("closed pool returned intent: %+v %v", result, err)
 	}
-	if result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, false); result != nil || status.Code(err) != codes.Internal {
-		t.Fatalf("closed pool returned listing: %+v %v", result, err)
+	for _, claim := range []bool{false, true} {
+		if result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, claim); result != nil || status.Code(err) != codes.Internal {
+			t.Fatalf("closed pool returned listing: %+v %v", result, err)
+		}
 	}
 	if err := repo.RecordContainerCleanupReceipt(t.Context(), jobsmodel.CleanupIdentity{
 		JobID:           command.JobID,
@@ -266,9 +276,14 @@ func TestIntegrationContainerIntentDecodeFailureCannotReturnPartialInventory(t *
 	if _, err := repo.pg.Exec(t.Context(), "UPDATE container_creation_intents SET outcome=NULL WHERE id=$1", req.IntentID); err != nil {
 		t.Fatal(err)
 	}
-	result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, false)
-	if err == nil || result != nil {
-		t.Fatalf("invalid inventory returned as success: %+v %v", result, err)
+	if _, err := repo.pg.Exec(t.Context(), "UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1", req.IntentID); err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range []bool{false, true} {
+		result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, claim)
+		if err == nil || result != nil {
+			t.Fatalf("invalid inventory returned as success: %+v %v", result, err)
+		}
 	}
 }
 
@@ -448,4 +463,193 @@ VALUES($1,$2,$3,$4)`, first.JobID, first.ContainerID, first.RuntimeInstance, sec
 			t.Fatal(err)
 		}
 	}
+}
+
+func discoveryWireFault(t *testing.T, repo *Repository, drop func(byte, []byte) bool) *Repository {
+	t.Helper()
+	cfg, err := pgx.ParseConfig(testkit.PostgresDSN(t))
+	require.NoError(t, err)
+	var database string
+	require.NoError(t, repo.pg.QueryRow(t.Context(), "SELECT current_database()").Scan(&database))
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	var workers sync.WaitGroup
+	var mu sync.Mutex
+	var connections []net.Conn
+	acceptDone := make(chan struct{})
+	go func() {
+		defer close(acceptDone)
+		for {
+			client, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			server, dialErr := net.DialTimeout("tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(int(cfg.Port))), time.Second)
+			if dialErr != nil {
+				_ = client.Close()
+				continue
+			}
+			mu.Lock()
+			connections = append(connections, client, server)
+			mu.Unlock()
+			workers.Add(2)
+			go func() {
+				defer workers.Done()
+				//nolint:errcheck // Fault proxy intentionally terminates connections.
+				_, _ = io.Copy(server, client)
+				_ = server.Close()
+			}()
+			go func() {
+				defer workers.Done()
+				defer client.Close()
+				defer server.Close()
+				for {
+					var header [5]byte
+					if _, readErr := io.ReadFull(server, header[:]); readErr != nil {
+						return
+					}
+					length := int(binary.BigEndian.Uint32(header[1:])) - 4
+					if length < 0 || length > 16<<20 {
+						return
+					}
+					body := make([]byte, length)
+					if _, readErr := io.ReadFull(server, body); readErr != nil {
+						return
+					}
+					if drop(header[0], body) {
+						return
+					}
+					if _, writeErr := client.Write(header[:]); writeErr != nil {
+						return
+					}
+					if _, writeErr := client.Write(body); writeErr != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-acceptDone
+		mu.Lock()
+		for _, conn := range connections {
+			_ = conn.Close()
+		}
+		mu.Unlock()
+		workers.Wait()
+	})
+	address, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	port := address.Port
+	pg, err := postgres.New(t.Context(), &postgres.Config{
+		Host: "127.0.0.1", Port: port, User: cfg.User,
+		Password: cfg.Password, Database: database, MaxConns: 3, TLSConfig: &postgres.TLSConfig{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(pg.Close)
+	faulty := *repo
+	faulty.pg = pg
+	return &faulty
+}
+
+func TestIntegrationDiscoveryLostCommitCannotGrantFallback(t *testing.T) {
+	repo := isolatedContainerIntentRepository(t)
+	fixture := seedRetainedCleanupOn(t, repo.pg)
+	require.NoError(t, func() error {
+		_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+		return err
+	}())
+	faulty := discoveryWireFault(t, repo, func(kind byte, body []byte) bool {
+		return kind == 'C' && string(body) == "COMMIT\x00"
+	})
+	result, err := faulty.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+	require.Error(t, err)
+	require.Nil(t, result, "uncertain commit must expose no tokens")
+	var token string
+	var next bool
+	require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT inspection_token::text FROM container_creation_intents WHERE id=$1`, fixture.IntentID).Scan(&token))
+	require.NotEmpty(t, token)
+	require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT next_urgent FROM container_discovery_turn`).Scan(&next))
+	require.False(t, next, "token and turn committed together")
+	result, err = repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+	require.NoError(t, err)
+	require.Empty(t, result, "a failed response does not authorize another grant")
+	_, err = repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET inspection_until=now() AT TIME ZONE 'utc'-interval '1 second' WHERE id=$1`, fixture.IntentID)
+	require.NoError(t, err)
+	result, err = repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.NotEqual(t, token, result[0].Token, "expired claim recovers with fresh authority")
+}
+
+func TestIntegrationDiscoveryClaimFailuresRollBackTurnAndTokens(t *testing.T) {
+	for _, deferred := range []bool{false, true} {
+		t.Run(fmt.Sprint(deferred), func(t *testing.T) {
+			repo := isolatedContainerIntentRepository(t)
+			fixture := seedRetainedCleanupOn(t, repo.pg)
+			_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+			require.NoError(t, err)
+			remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_creation_intents", "UPDATE", deferred, map[string]string{"id": fixture.IntentID})
+			result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+			require.Error(t, err)
+			require.Nil(t, result)
+			remove()
+			var unclaimed, next bool
+			require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT inspection_token IS NULL FROM container_creation_intents WHERE id=$1`, fixture.IntentID).Scan(&unclaimed))
+			require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT next_urgent FROM container_discovery_turn`).Scan(&next))
+			require.True(t, unclaimed)
+			require.True(t, next)
+		})
+	}
+}
+
+func TestIntegrationObservationFailureRollsBackPromotionAndProof(t *testing.T) {
+	for _, target := range []string{"primary identity", "cleanup obligation"} {
+		t.Run(target, func(t *testing.T) {
+			repo := isolatedContainerIntentRepository(t)
+			command := seedIntentFailureFixture(t, repo)
+			command.ContainerID = strings.Repeat("b", 64)
+			var remove func()
+			if target == "primary identity" {
+				remove = scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_creation_intents", "UPDATE", false, map[string]string{"id": command.IntentID, "container_id": command.ContainerID})
+			} else {
+				_, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationClose, command)
+				require.NoError(t, err)
+				remove = scopedJobFaultTrigger(t.Context(), t, repo.pg, "outbox_events", "INSERT", false,
+					map[string]string{"event_key": cleanupEventKey(command.JobID, command.ContainerID, command.RuntimeInstance)})
+			}
+			_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET inspection_urgent=FALSE,next_inspection_at='2099-01-01' WHERE id=$1`, command.IntentID)
+			require.NoError(t, err)
+			result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationObserve, command)
+			require.Error(t, err)
+			require.Nil(t, result)
+			remove()
+			var absent, preserved bool
+			require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT NOT EXISTS(SELECT 1 FROM container_materializations WHERE intent_id=$1),
+ NOT inspection_urgent AND next_inspection_at='2099-01-01' FROM container_creation_intents WHERE id=$1`, command.IntentID).Scan(&absent, &preserved))
+			require.True(t, absent, "failed observation must not fabricate cleanup evidence")
+			require.True(t, preserved, "failed transaction must roll back urgency promotion")
+		})
+	}
+}
+
+func TestIntegrationDiscoveryTurnFailureCannotReturnTokens(t *testing.T) {
+	repo := isolatedContainerIntentRepository(t)
+	fixture := seedRetainedCleanupOn(t, repo.pg)
+	_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+	require.NoError(t, err)
+	remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_discovery_turn", "UPDATE", false, map[string]string{"id": "true"})
+	result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+	require.Error(t, err)
+	require.Nil(t, result)
+	remove()
+	var unclaimed bool
+	require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT inspection_token IS NULL FROM container_creation_intents WHERE id=$1`, fixture.IntentID).Scan(&unclaimed))
+	require.True(t, unclaimed, "turn update failure rolled back the executable lease")
+	_, err = repo.pg.Exec(t.Context(), `ALTER TABLE container_discovery_turn RENAME COLUMN next_urgent TO unavailable_next_urgent`)
+	require.NoError(t, err)
+	result, err = repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{}, true)
+	require.Error(t, err)
+	require.Nil(t, result)
 }

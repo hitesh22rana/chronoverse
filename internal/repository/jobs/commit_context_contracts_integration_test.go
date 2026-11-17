@@ -4,6 +4,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
@@ -31,6 +33,9 @@ type queryCancelTarget struct {
 	sqlPrefix string
 	cancel    context.CancelFunc
 	fired     atomic.Bool
+	nth       int32
+	seen      atomic.Int32
+	before    func()
 }
 
 // OnStart runs before pgx sends the marked statement. Only private context
@@ -46,11 +51,20 @@ func (*commitCancelProcessor) OnStart(ctx context.Context, span sdktrace.ReadWri
 		return
 	}
 	for _, attribute := range span.Attributes() {
-		if attribute.Key == "db.query.text" && strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), target.sqlPrefix) {
-			target.fired.Store(true)
-			target.cancel()
+		if attribute.Key != "db.query.text" || !strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), target.sqlPrefix) {
+			continue
+		}
+		if target.nth > 0 && target.seen.Add(1) != target.nth {
 			return
 		}
+		target.fired.Store(true)
+		if target.before != nil {
+			target.before()
+		}
+		if target.cancel != nil {
+			target.cancel()
+		}
+		return
 	}
 }
 func (*commitCancelProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
@@ -61,10 +75,18 @@ func (*commitCancelProcessor) ForceFlush(context.Context) error { return nil }
 // it is closed before the original global provider is restored.
 func newCommitCancellationRepository(t *testing.T) *Repository {
 	t.Helper()
+	return commitCancellationRepositoryOn(t, "")
+}
+
+func commitCancellationRepositoryOn(t *testing.T, database string) *Repository {
+	t.Helper()
 	dsn := testkit.PostgresDSN(t)
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if database != "" {
+		cfg.ConnConfig.Database = database
 	}
 	previous := otel.GetTracerProvider()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(&commitCancelProcessor{}))
@@ -214,4 +236,89 @@ func cancelAtQueryContext(t *testing.T, operation, sqlPrefix string) (context.Co
 	t.Cleanup(cancel)
 	target := &queryCancelTarget{operation: operation, sqlPrefix: strings.TrimSpace(sqlPrefix), cancel: cancel}
 	return context.WithValue(ctx, queryCancelContextKey{}, target), target
+}
+
+func TestIntegrationDiscoveryFinalResponseDeterminesTurn(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) { discoveryArrivalBetweenAllocations(t, fail) })
+	}
+}
+
+//nolint:gocyclo // The success and rollback sides share the same causal arrival barrier.
+func discoveryArrivalBetweenAllocations(t *testing.T, fail bool) {
+	t.Helper()
+	base := isolatedContainerIntentRepository(t)
+	var database string
+	if err := base.pg.QueryRow(t.Context(), `SELECT current_database()`).Scan(&database); err != nil {
+		t.Fatal(err)
+	}
+	repo := commitCancellationRepositoryOn(t, database)
+	late := seedRetainedCleanupOn(t, base.pg)
+	for range 2 {
+		fixture := seedRetainedCleanupOn(t, base.pg)
+		if _, err := base.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc',inspection_urgent=FALSE WHERE id=$1`, fixture.IntentID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fail {
+		remove := scopedJobFaultTrigger(t.Context(), t, base.pg, "container_creation_intents", "UPDATE OF inspection_token", false, map[string]string{"id": late.IntentID})
+		defer remove()
+	}
+	target := &queryCancelTarget{operation: "WITH", sqlPrefix: "WITH due AS MATERIALIZED", nth: 3, before: func() {
+		if _, err := base.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, late.IntentID); err != nil {
+			t.Error(err)
+		}
+	}}
+	ctx, span := otel.Tracer("discovery-order").Start(context.WithValue(t.Context(), queryCancelContextKey{}, target), "claim")
+	defer span.End()
+	claimed, err := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 3}, true)
+	if fail {
+		if err == nil || claimed != nil || !target.fired.Load() {
+			t.Fatalf("failed borrow exposed authority: %v %v", claimed, err)
+		}
+		var next, unclaimed bool
+		readErr := base.pg.QueryRow(t.Context(), `
+SELECT next_urgent,(SELECT bool_and(inspection_token IS NULL) FROM container_creation_intents)
+FROM container_discovery_turn`).Scan(&next, &unclaimed)
+		if readErr != nil || !next || !unclaimed {
+			t.Fatalf("failed borrow partially committed: turn=%v unclaimed=%v err=%v", next, unclaimed, readErr)
+		}
+		return
+	}
+	if err != nil || len(claimed) != 3 || !target.fired.Load() {
+		t.Fatalf("borrow arrival was not exercised: claimed=%v err=%v fired=%v", claimed, err, target.fired.Load())
+	}
+	if claimed[0].ID != late.IntentID {
+		t.Fatal("borrowed preferred lane did not lead final response")
+	}
+	var next bool
+	if err := base.pg.QueryRow(t.Context(), `SELECT next_urgent FROM container_discovery_turn`).Scan(&next); err != nil || next {
+		t.Fatalf("turn followed allocation order instead of final response: next=%v err=%v", next, err)
+	}
+}
+
+func TestIntegrationDiscoveryCancellationDuringEachAllocationRollsBack(t *testing.T) {
+	base := isolatedContainerIntentRepository(t)
+	var database string
+	if err := base.pg.QueryRow(t.Context(), `SELECT current_database()`).Scan(&database); err != nil {
+		t.Fatal(err)
+	}
+	repo := commitCancellationRepositoryOn(t, database)
+	for _, nth := range []int32{1, 2, 3} {
+		t.Run(fmt.Sprint(nth), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			target := &queryCancelTarget{operation: "WITH", sqlPrefix: "WITH due AS MATERIALIZED", nth: nth, cancel: cancel}
+			ctx, span := otel.Tracer("discovery-cancel").Start(context.WithValue(ctx, queryCancelContextKey{}, target), "claim")
+			defer span.End()
+			result, err := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+			if err == nil || result != nil || !target.fired.Load() {
+				t.Fatalf("allocation cancellation returned authority: result=%v err=%v fired=%v", result, err, target.fired.Load())
+			}
+			var next bool
+			if err := base.pg.QueryRow(t.Context(), `SELECT next_urgent FROM container_discovery_turn`).Scan(&next); err != nil || !next {
+				t.Fatalf("failed allocation advanced turn: next=%v err=%v", next, err)
+			}
+		})
+	}
 }

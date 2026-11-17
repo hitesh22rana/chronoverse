@@ -60,3 +60,9 @@ const (
 	ContainerInspectionError       = "ERROR"
 	ContainerInspectionInterrupted = "INTERRUPTED"
 )
+
+// Container inspection lanes are bounded monitoring labels, not mutation authority.
+const (
+	ContainerInspectionLaneUrgent       = "URGENT"
+	ContainerInspectionLaneSurveillance = "SURVEILLANCE"
+)

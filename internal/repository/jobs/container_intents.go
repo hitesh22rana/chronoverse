@@ -3,7 +3,6 @@ package jobs
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -499,11 +498,20 @@ func recordContainerObservation(
 			return err
 		}
 	}
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 INSERT INTO container_materializations(intent_id,container_id,runtime_instance)
 VALUES($1,$2,$3)
-ON CONFLICT (intent_id,container_id,runtime_instance) DO NOTHING`, intent.ID, req.ContainerID, req.RuntimeInstance); err != nil {
+ON CONFLICT (intent_id,container_id,runtime_instance) DO NOTHING`, intent.ID, req.ContainerID, req.RuntimeInstance)
+	if err != nil {
 		return err
+	}
+	if tag.RowsAffected() == 1 {
+		if _, err := tx.Exec(ctx, `
+UPDATE container_creation_intents
+SET inspection_urgent=TRUE, next_inspection_at=clock_timestamp() AT TIME ZONE 'utc'
+WHERE id=$1`, intent.ID); err != nil {
+			return err
+		}
 	}
 	if intent.ContainerID == "" && !intent.Closed {
 		if _, err := tx.Exec(ctx, `
@@ -535,7 +543,8 @@ SET closed_at=COALESCE(closed_at,clock_timestamp() AT TIME ZONE 'utc'),
   error_code=$3,
   error_message=$4,
   outcome_stage=$5,
-  next_inspection_at=clock_timestamp() AT TIME ZONE 'utc'
+  next_inspection_at=CASE WHEN closed_at IS NULL THEN clock_timestamp() AT TIME ZONE 'utc' ELSE next_inspection_at END,
+  inspection_urgent=CASE WHEN closed_at IS NULL THEN TRUE ELSE inspection_urgent END
 WHERE id=$1`, intent.ID, req.Outcome, req.ErrorCode, truncateDiagnostic(req.ErrorMessage), req.Stage)
 	if err != nil {
 		return err
@@ -553,9 +562,19 @@ func reportContainerInspection(
 	if err := validateInspectionLease(ctx, tx, intent, req); err != nil {
 		return err
 	}
+	// The receipt PK (job_id, container_id, runtime_instance) limits the scalar lookup to at most one row.
+	// Keep this form: measured NOT EXISTS plans repeatedly scanned a job's receipts.
 	_, err := tx.Exec(ctx, `
 UPDATE container_creation_intents
-SET inspection_token=NULL,
+SET inspection_urgent=CASE WHEN $2 IN ($5::text,$6::text) THEN inspection_urgent ELSE
+    EXISTS(SELECT 1 FROM runtime_capacity_holds h WHERE h.intent_id=container_creation_intents.id AND h.released_at IS NULL)
+    OR EXISTS(
+      SELECT 1 FROM container_materializations m
+      WHERE m.intent_id=container_creation_intents.id AND NOT COALESCE((
+        SELECT r.intent_id=m.intent_id FROM container_cleanup_receipts r
+        WHERE r.job_id=container_creation_intents.job_id AND r.container_id=m.container_id
+          AND r.runtime_instance=m.runtime_instance),FALSE)) END,
+  inspection_token=NULL,
   inspection_until=NULL,
   last_inspection_at=clock_timestamp() AT TIME ZONE 'utc',
   inspection_errors=CASE WHEN $2=$5::text THEN LEAST(3,inspection_errors+1) WHEN $2=$6::text THEN inspection_errors ELSE 0 END,
@@ -599,7 +618,8 @@ VALUES($1,$2::bigint,$2::bigint+1,$3,$4)`, intent.ID, intent.Generation, req.Act
 	}
 	_, err = tx.Exec(ctx, `
 UPDATE container_creation_intents
-SET inspection_generation=inspection_generation+1,
+SET inspection_urgent=TRUE,
+  inspection_generation=inspection_generation+1,
   inspection_errors=0,
   quarantined=false,
   inspection_token=NULL,
@@ -669,27 +689,10 @@ SELECT ` + intentColumns + `
 FROM container_creation_intents
 ORDER BY quarantined DESC,next_inspection_at,id
 LIMIT $1`
-	args := []any{limit}
 	if claim {
-		query = fmt.Sprintf(`
-WITH due AS (
-  SELECT id
-  FROM container_creation_intents
-  WHERE closed_at IS NOT NULL
-    AND NOT quarantined
-    AND next_inspection_at<=(clock_timestamp() AT TIME ZONE 'utc')
-    AND (inspection_until IS NULL OR inspection_until<=(clock_timestamp() AT TIME ZONE 'utc'))
-  ORDER BY next_inspection_at,id
-  LIMIT $1
-  FOR UPDATE SKIP LOCKED
-)
-UPDATE container_creation_intents
-SET inspection_token=uuidv7(),
-  inspection_until=(clock_timestamp() AT TIME ZONE 'utc')+interval '45 seconds'
-WHERE id IN(SELECT id FROM due)
-RETURNING %s`, intentColumns)
+		return r.claimContainerIntents(ctx, int(limit))
 	}
-	rows, err := r.pg.Query(ctx, query, args...)
+	rows, err := r.pg.Query(ctx, query, limit)
 	if err != nil {
 		return nil, r.mapJobLeaseReadError(err, "list container intents")
 	}
@@ -701,6 +704,102 @@ RETURNING %s`, intentColumns)
 			return nil, scanErr
 		}
 		result = append(result, i)
+	}
+	return result, rows.Err()
+}
+
+// Claims serialize only allocation; the turn and executable tokens share one commit.
+//
+//nolint:gocyclo // Keep the three allocations and their single atomic commit together.
+func (r *Repository) claimContainerIntents(ctx context.Context, limit int) ([]*jobsmodel.ContainerIntent, error) {
+	tx, err := r.pg.BeginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // Commit owns the successful path.
+	var urgent bool
+	if err = tx.QueryRow(ctx, `SELECT next_urgent FROM container_discovery_turn WHERE id=TRUE FOR UPDATE`).Scan(&urgent); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.Internal, "container discovery turn is missing; initialize from current migrations")
+		}
+		return nil, err
+	}
+	first, err := claimContainerIntentLane(ctx, tx, urgent, (limit+1)/2, nil)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, limit)
+	for _, intent := range first {
+		ids = append(ids, intent.ID)
+	}
+	second, err := claimContainerIntentLane(ctx, tx, !urgent, limit-len(first), ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, intent := range second {
+		ids = append(ids, intent.ID)
+	}
+	if remaining := limit - len(ids); remaining > 0 {
+		borrowed, err := claimContainerIntentLane(ctx, tx, urgent, remaining, ids)
+		if err != nil {
+			return nil, err
+		}
+		first = append(first, borrowed...)
+	}
+	result := make([]*jobsmodel.ContainerIntent, 0, len(first)+len(second))
+	for i := 0; i < max(len(first), len(second)); i++ {
+		if i < len(first) {
+			result = append(result, first[i])
+		}
+		if i < len(second) {
+			result = append(result, second[i])
+		}
+	}
+	if len(result) > 0 {
+		servedUrgent := urgent
+		if len(first) == 0 {
+			servedUrgent = !urgent
+		}
+		if _, err := tx.Exec(ctx, `UPDATE container_discovery_turn SET next_urgent=$1 WHERE id=TRUE`, !servedUrgent); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func claimContainerIntentLane(ctx context.Context, tx pgx.Tx, urgent bool, limit int, excluded []string) ([]*jobsmodel.ContainerIntent, error) {
+	rows, err := tx.Query(ctx, `
+WITH due AS MATERIALIZED (
+  SELECT id
+  FROM container_creation_intents
+  WHERE closed_at IS NOT NULL AND NOT quarantined
+    AND inspection_urgent=$1
+    AND next_inspection_at <= (statement_timestamp() AT TIME ZONE 'utc')
+    AND (inspection_until IS NULL OR inspection_until <= (statement_timestamp() AT TIME ZONE 'utc'))
+    AND NOT (id=ANY(COALESCE($3::uuid[],ARRAY[]::uuid[])))
+  ORDER BY next_inspection_at,id
+  LIMIT $2 FOR UPDATE SKIP LOCKED
+), claimed AS (
+  UPDATE container_creation_intents
+  SET inspection_token=uuidv7(), inspection_until=(clock_timestamp() AT TIME ZONE 'utc')+interval '45 seconds'
+  WHERE id=ANY(ARRAY(SELECT id FROM due))
+  RETURNING `+intentColumns+`
+)
+SELECT * FROM claimed ORDER BY next_inspection_at,id`, urgent, limit, excluded)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []*jobsmodel.ContainerIntent{}
+	for rows.Next() {
+		intent, err := scanContainerIntent(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, intent)
 	}
 	return result, rows.Err()
 }

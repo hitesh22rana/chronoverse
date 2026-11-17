@@ -201,6 +201,20 @@ func testContainerCreationFault(t *testing.T, daemon *containerpkg.DockerWorkflo
 		return
 	}
 	if mode == "late Create" {
+		// A successful absence report must not retire the issued creation name.
+		if _, err = pg.Exec(ctx, "UPDATE container_creation_intents SET next_inspection_at='1970-01-01' WHERE id=$1", intent.ID); err != nil {
+			t.Fatal(err)
+		}
+		claimed, claimErr := jobs.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
+		if claimErr != nil || len(claimed) != 1 || claimed[0].ID != intent.ID {
+			t.Fatalf("claim before delayed Create: %+v %v", claimed, claimErr)
+		}
+		client.mode = ""
+		repo.inspectContainerIntent(ctx, containerIntentProto(claimed[0]))
+		var urgent bool
+		if err = pg.QueryRow(ctx, "SELECT inspection_urgent FROM container_creation_intents WHERE id=$1", intent.ID).Scan(&urgent); err != nil || urgent {
+			t.Fatalf("absence did not downgrade discovery: urgent=%v err=%v", urgent, err)
+		}
 		runtime.id, err = daemon.Create(ctx, runtime.request)
 		if err != nil {
 			t.Fatal(err)

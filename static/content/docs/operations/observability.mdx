@@ -137,6 +137,46 @@ request/runtime dashboard does not provision cleanup-specific panels or alerts.
 
 <SourceLink path="internal/repository/jobs/cleanup_metrics.go">Cleanup metric definitions and collection</SourceLink>
 
+### Durable discovery metrics
+
+Jobs-service exports discovery backlog gauges from committed intent state:
+
+| OTLP metric | Meaning |
+| --- | --- |
+| `chronoverse.container_intents.discovery_due{lane}` | Closed, non-quarantined intents scheduled due, split by `URGENT` and `SURVEILLANCE` |
+| `chronoverse.container_intents.oldest_due{lane}` | Seconds since the oldest scheduled due time in that lane, including due rows that still hold an inspection lease |
+| `chronoverse.container_intents.quarantined` | Quarantined intents requiring repair before redrive |
+| `chronoverse.container_intents.capacity_holds` | Unreleased Start-reserved capacity holds |
+
+A successful read always reports both lanes, with an explicit zero for an empty
+lane, and never an unlabeled total beside them. Lane is the only attribute; no
+job, intent or runtime identity is exported. Scheduled-due age is not claimable
+waiting age because a due row can still hold its 45-second inspection lease, so
+inspect active leases separately and compare the maximum lane age.
+
+The marker is a conservative scheduling hint, not proof, admission or mutation
+authority. First closure starts in the urgent lane at closure time, a duplicate
+closure preserves the marker and due time, a new unreceipted materialization
+promotes, and only a successful fenced report may downgrade when no active hold or
+unreceipted materialization remains. Errors, quarantine, redrive and authority
+rules are unchanged. Claims lock a durable turn, split the batch between the
+preferred lane and the other, borrow unused capacity, then interleave the final
+response starting with the preferred lane when nonempty; the turn advances
+opposite that first served lane in the same transaction as the tokens. Batch
+sizes, rearm, lease, backoff and pass timing are unchanged, and no new setting is
+introduced.
+
+Claim selection uses the lane/due index and materializes candidate IDs before
+updating leases. Healthy reports use full-key receipt probes for the current
+intent. Recheck both query plans after PostgreSQL or predicate/index changes,
+including generic plans and intents with many materializations; indexed selection
+alone does not guarantee an efficient update or receipt join.
+
+Every jobs-service replica reads the same database totals; aggregate with **max**,
+not sum. Failed collection omits samples rather than reporting a healthy zero.
+
+<SourceLink path="internal/repository/jobs/container_intent_metrics.go">Discovery lane metric definitions and collection</SourceLink>
+
 ## Logs
 
 Structured application logs include service context and trace correlation where available. Container job stdout and stderr are a separate product data stream and follow the live/retained log pipeline.

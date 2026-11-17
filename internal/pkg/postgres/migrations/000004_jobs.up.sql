@@ -114,6 +114,7 @@ CREATE TABLE container_creation_intents (
     inspection_error_message TEXT NOT NULL DEFAULT '',
     error_code TEXT NOT NULL DEFAULT '',
     error_message TEXT NOT NULL DEFAULT '',
+    inspection_urgent BOOLEAN NOT NULL DEFAULT TRUE,
     next_inspection_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'utc'),
     last_inspection_at TIMESTAMP WITHOUT TIME ZONE,
     inspection_token UUID,
@@ -126,9 +127,16 @@ CREATE TABLE container_creation_intents (
     redriven_at TIMESTAMP WITHOUT TIME ZONE,
     UNIQUE(job_id, attempt)
 );
-CREATE INDEX idx_container_intents_due ON container_creation_intents(next_inspection_at,id)
+CREATE INDEX idx_container_intents_due ON container_creation_intents(inspection_urgent,next_inspection_at,id)
 WHERE closed_at IS NOT NULL AND NOT quarantined;
 CREATE INDEX idx_container_intents_workflow ON container_creation_intents(workflow_id);
+
+-- Turn and inspection grants commit together; no process-local preference.
+CREATE TABLE container_discovery_turn (
+    id BOOLEAN PRIMARY KEY CHECK (id),
+    next_urgent BOOLEAN NOT NULL
+);
+INSERT INTO container_discovery_turn(id,next_urgent) VALUES(TRUE,TRUE);
 
 CREATE TABLE container_intent_redrives (
     id UUID PRIMARY KEY DEFAULT uuidv7(),

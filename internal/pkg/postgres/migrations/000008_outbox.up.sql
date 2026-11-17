@@ -161,6 +161,8 @@ BEGIN
     FOR i IN SELECT * FROM container_creation_intents WHERE job_id=job ORDER BY id FOR UPDATE LOOP
         UPDATE container_creation_intents SET
             closed_at=COALESCE(closed_at,clock_timestamp() AT TIME ZONE 'utc'),
+            next_inspection_at=CASE WHEN closed_at IS NULL THEN clock_timestamp() AT TIME ZONE 'utc' ELSE next_inspection_at END,
+            inspection_urgent=CASE WHEN closed_at IS NULL THEN TRUE ELSE inspection_urgent END,
             outcome=CASE WHEN outcome='' THEN COALESCE(
                 (SELECT CASE WHEN failure_kind='USER' THEN 'REJECTED'
                     WHEN failure_kind='SYSTEM' THEN 'SYSTEM' ELSE status::text END
@@ -209,7 +211,11 @@ RETURNS TRIGGER AS $$
 DECLARE i container_creation_intents;
 BEGIN
     FOR i IN SELECT * FROM container_creation_intents WHERE workflow_id=OLD.id ORDER BY job_id,id FOR UPDATE LOOP
-        UPDATE container_creation_intents SET closed_at=COALESCE(closed_at,clock_timestamp() AT TIME ZONE 'utc') WHERE id=i.id;
+        UPDATE container_creation_intents SET
+            closed_at=COALESCE(closed_at,clock_timestamp() AT TIME ZONE 'utc'),
+            next_inspection_at=CASE WHEN closed_at IS NULL THEN clock_timestamp() AT TIME ZONE 'utc' ELSE next_inspection_at END,
+            inspection_urgent=CASE WHEN closed_at IS NULL THEN TRUE ELSE inspection_urgent END
+        WHERE id=i.id;
         PERFORM enqueue_intent_materializations(i.id);
     END LOOP;
     IF TG_OP='DELETE' THEN RETURN OLD; END IF;

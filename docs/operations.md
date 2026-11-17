@@ -558,17 +558,50 @@ Unrelated workflows retain independent workflow locks.
 
 Discovery has one reserved worker, separate from expired-lease recovery. Each
 recovery cycle processes at most ten discovery items, bounded by
-`EXECUTION_WORKER_RECOVERY_BATCH_SIZE`. Each claim is obtained immediately before
-its inspection, with a 45-second ownership lease. Inspection work has a 30-second
-operation budget and failure reporting a detached five-second budget; daemon
-identity reads are capped at five seconds. Healthy absence reschedules discovery
-after five minutes with jitter. Inspection errors back off and quarantine after
-three consecutive reported failures. Quarantined intents are excluded from
-automatic discovery claims until administrative redrive; quarantine does not
-release workflow admission gates or capacity holds. Redrive retains the last
-inspection diagnostic until an inspection reports success or a new failure.
-Worker shutdown releases the inspection lease without spending or resetting that budget; repeated interruptions can postpone
-discovery indefinitely. Redrive does not reopen execution authority.
+`EXECUTION_WORKER_RECOVERY_BATCH_SIZE`. Two durable scheduling lanes, `URGENT`
+and `SURVEILLANCE`, share claim opportunities equally and lend unused capacity.
+The 15-second pass interval, maximum ten sequential claims per pass, healthy
+five-minute rearm with jitter, error backoff, 45-second ownership lease,
+30-second inspection budget and five-second failure-report/identity-read budgets
+are unchanged; no new cadence, concurrency, API or GC setting is introduced. The
+equal split is a fairness policy, not a latency guarantee: a slow inspection can
+still delay the other lane, and overload postpones recovery.
+
+Each claim is obtained immediately before its inspection. One short database
+transaction locks a singleton discovery turn, selects half the requested batch
+(rounded up) from the preferred lane, fills the rest from the other lane, then
+borrows any remainder back. Existing closed, non-quarantined, due,
+expired-inspection and `SKIP LOCKED` predicates and fresh tokens/leases remain.
+The final response interleaves the ordered lane slices, starting with the
+preferred lane when nonempty, and the turn advances opposite that first served
+lane. An empty claim leaves preference unchanged. Tokens and the turn commit
+atomically; the turn is never held across remote inspection, and a lost commit
+authorization grants no fallback. First served means `response[0]`, not
+allocation or `UPDATE RETURNING` order.
+
+The marker is a scheduling hint, never proof, admission or mutation authority.
+Open intents stay ineligible. First closure sets the marker urgent and the due
+clock to closure time; duplicate closure preserves both. A new unreceipted
+materialization promotes to urgent, while duplicate observation, ensure, receipt
+or closure does not reset due or backoff. A successful fenced `ABSENT`/`OBSERVED`
+report may downgrade only when the intent has no active hold and no
+materialization lacking an exact job/container/runtime/intent receipt. Errors and
+interruptions preserve the marker and existing backoff/quarantine; recording a
+receipt or releasing a hold keeps it until a later successful inspection.
+Inspection errors back off and quarantine after three consecutive reported
+failures. Quarantined intents are excluded from automatic discovery claims until
+administrative redrive; quarantine does not release workflow admission gates or
+capacity holds. Redrive returns the row to urgent and due now, retains the last
+inspection diagnostic until an inspection reports success or a new failure, and
+does not reopen execution authority. Worker shutdown releases the inspection
+lease without spending or resetting that budget; repeated interruptions can postpone
+discovery indefinitely.
+
+Claim selection uses the lane/due index and materializes candidate IDs before
+updating leases. Healthy reports use full-key receipt probes for the current
+intent. Recheck both query plans after PostgreSQL or predicate/index changes,
+including generic plans and intents with many materializations; indexed selection
+alone does not guarantee an efficient update or receipt join.
 
 Use the internal-admin `ListContainerIntents` and `GetContainerIntent` RPCs to
 inspect original routing, image reference, creation outcome, inspection error,
@@ -578,23 +611,33 @@ the authenticated principal and generation transition in
 `container_intent_redrives`; no caller-supplied actor is trusted. Never use SQL
 to manufacture a receipt or clear a hold.
 
-Monitor `chronoverse.container_intents.discovery_due`,
-`chronoverse.container_intents.quarantined`,
-`chronoverse.container_intents.oldest_due` (seconds) and
-`chronoverse.container_intents.capacity_holds`. These jobs-service gauges read
-persisted state with a five-second collection budget and carry no identity labels.
+Monitor `chronoverse.container_intents.discovery_due` and
+`chronoverse.container_intents.oldest_due` (seconds), which carry only a bounded
+`lane` label with `URGENT` and `SURVEILLANCE` series, plus the global
+`chronoverse.container_intents.quarantined` and
+`chronoverse.container_intents.capacity_holds`. Successful collection always
+reports both lanes, as an explicit zero for an empty lane, and never an unlabeled
+total beside them. `oldest_due` keeps the scheduled-due clock: a due row may still
+hold an inspection lease, so it is not the same as immediately claimable waiting
+age; inspect active leases separately and use the maximum lane age. Collection
+failure omits the sample rather than fabricating a healthy zero. Each replica
+reads the same database state; aggregate with the maximum, not the sum.
+These jobs-service gauges read persisted state with a five-second collection
+budget and carry no job, intent or runtime identity labels.
 Holds also exist during live execution; a nonzero hold count alone is not a failure.
 Alert on quarantine and overdue inspection, and investigate holds that outlive their
-execution. Collection failure
-omits the sample rather than reporting a false zero. The following queries provide
-per-runtime diagnosis without secret-bearing request data:
+execution. The following queries provide per-lane and per-runtime diagnosis
+without secret-bearing request data:
 
 ```sql
-SELECT quarantined, count(*) AS intents,
-       min(next_inspection_at) AS oldest_due
+SELECT quarantined, inspection_urgent,
+       count(*) AS intents,
+       count(*) FILTER (WHERE NOT quarantined AND next_inspection_at <= (clock_timestamp() AT TIME ZONE 'utc')) AS due,
+       count(*) FILTER (WHERE NOT quarantined AND inspection_until > (clock_timestamp() AT TIME ZONE 'utc')) AS leased,
+       min(next_inspection_at) FILTER (WHERE NOT quarantined) AS oldest_due
 FROM container_creation_intents
 WHERE closed_at IS NOT NULL
-GROUP BY quarantined;
+GROUP BY quarantined, inspection_urgent;
 
 SELECT h.runtime_node_id, h.runtime_instance, h.intent_id, h.job_id,
        i.start_reserved_at,

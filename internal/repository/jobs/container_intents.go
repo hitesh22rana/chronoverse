@@ -562,6 +562,8 @@ func reportContainerInspection(
 	if err := validateInspectionLease(ctx, tx, intent, req); err != nil {
 		return err
 	}
+	// The receipt PK (job_id, container_id, runtime_instance) limits the scalar lookup to at most one row.
+	// Keep this form: measured NOT EXISTS plans repeatedly scanned a job's receipts.
 	_, err := tx.Exec(ctx, `
 UPDATE container_creation_intents
 SET inspection_urgent=CASE WHEN $2 IN ($5::text,$6::text) THEN inspection_urgent ELSE

@@ -168,6 +168,7 @@ CREATE TABLE container_cleanup_receipts (
     completed_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (clock_timestamp() AT TIME ZONE 'utc'),
     PRIMARY KEY(job_id, container_id, runtime_instance)
 );
+CREATE INDEX idx_container_cleanup_receipts_intent ON container_cleanup_receipts(intent_id);
 
 -- A Start reservation installs its future hold before transmission. While its
 -- job still owns the active allocation, the hold is excluded from occupancy.

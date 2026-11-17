@@ -1142,6 +1142,198 @@ retention and exports; existing telemetry is not retroactively removed.
 Processed-event retention supports replay dedupe. Avoid setting it too low for
 the longest replay window you expect to tolerate.
 
+### Retained cleanup data
+
+Cleanup receipts, creation intents and materializations survive source deletion
+and transport pruning. Retained proof and unfinished work can therefore grow even
+when the queue is quiet. Use the following on-demand reports to inspect that
+storage and decide whether to investigate cleanup or expand deployment capacity.
+
+Save the SQL blocks below as `retention-inventory.sql` and `retention-backlog.sql`.
+Use an observer libpq service profile with database CONNECT, public-schema USAGE
+and SELECT on the seven reported tables; superuser privileges are not required.
+Keep credentials out of command-line URIs and captured samples.
+
+```sh
+PGCONNECT_TIMEOUT=5 psql -X -qAt -v ON_ERROR_STOP=1 \
+  'service=chronoverse-observer' -f retention-inventory.sql
+PGCONNECT_TIMEOUT=5 psql -X -qAt -v ON_ERROR_STOP=1 \
+  'service=chronoverse-observer' -f retention-backlog.sql
+```
+
+Both reports use read-only transactions, UTC and a one-second lock timeout. The
+inventory SELECT has a five-second statement deadline and the exact backlog
+SELECT ten seconds. Connection setup has its own timeout; these are not total
+wall-time or I/O budgets. Accept a sample only after a zero exit and a complete
+JSON result. A timeout, permission error, missing schema or partial result means
+unknown, not a healthy zero; retain the previous good sample separately.
+
+#### Catalog and file-size inventory
+
+`table_bytes` includes TOAST and auxiliary table storage; `index_bytes` measures
+indexes. `total_bytes` combines both. These physical observations are separate
+function calls, so concurrent changes can make the components differ; read-only
+MVCC does not freeze files or statistics. Database bytes already include these
+relations: do not add database and relation totals together. Neither is free space.
+
+Row/dead-tuple statistics are estimates, not exact counts or reclaimable bytes.
+Use the analyze timestamps and modification count for context; do not run ANALYZE
+or VACUUM as a side effect of sampling. Record collection time and deployment/
+volume identity, since database names and OIDs alone do not distinguish clones or
+restores. Measure local cost before choosing a polling frequency.
+
+```sql
+-- Catalog/file-size sample; no application-row count or modification.
+BEGIN READ ONLY;
+SET LOCAL statement_timeout = '5s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL timezone = 'UTC';
+SET LOCAL search_path = pg_catalog;
+WITH relations(oid) AS (
+    VALUES
+        ('public.container_creation_intents'::regclass),
+        ('public.container_materializations'::regclass),
+        ('public.container_cleanup_receipts'::regclass),
+        ('public.runtime_capacity_holds'::regclass),
+        ('public.outbox_events'::regclass),
+        ('public.container_intent_redrives'::regclass),
+        ('public.container_cleanup_redrives'::regclass)
+), sizes AS (
+    SELECT c.relname AS relation,
+           c.oid,
+           pg_table_size(c.oid) AS table_bytes,
+           pg_indexes_size(c.oid) AS index_bytes,
+           pg_total_relation_size(c.oid) AS total_bytes,
+           s.n_live_tup AS estimated_live_rows,
+           s.n_dead_tup AS estimated_dead_rows,
+           s.n_mod_since_analyze,
+           s.last_analyze,
+           s.last_autoanalyze
+    FROM relations r
+    JOIN pg_class c ON c.oid = r.oid
+    LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+)
+SELECT jsonb_build_object(
+    'sampled_at', clock_timestamp(),
+    'database', current_database(),
+    'database_oid', (SELECT oid FROM pg_database WHERE datname = current_database()),
+    'database_bytes', pg_database_size(current_database()),
+    'server_version', current_setting('server_version'),
+    'postmaster_started_at', pg_postmaster_start_time(),
+    'read_only', current_setting('transaction_read_only'),
+    'relations', (SELECT jsonb_agg(to_jsonb(s) ORDER BY relation) FROM sizes s)
+);
+COMMIT;
+```
+
+#### Exact retained-backlog diagnostic
+
+This report scans application data; run it for diagnosis or a planned capacity
+review, not on every worker/relay poll. Exact scans can consume CPU, I/O and temp
+space and retain an MVCC snapshot. A timeout is a reason to inspect cost, not to
+silently remove the deadline. Inventory and backlog are separate samples.
+
+`MATCHED` means an existing receipt satisfies the pruning predicate's job,
+container, runtime and intent comparison. Exact proof is checked first; only
+unmatched rows are classified `INVALID_IDENTITY` or `MISSING`. Opaque container/
+runtime strings remain untrimmed. Intent text follows pruning's canonical text
+comparison: a valid but noncanonical payload UUID can be `MISSING`. This does not
+normalize it into removal authority or validate a new RPC request.
+
+Counts cover retained cleanup-action outbox rows, not lifetime cleanup or every
+remaining intent/name obligation. Pruned transport disappears while proof and
+name surveillance remain. A zero cleanup count does not establish that all work
+or late-creation risk is gone. Active holds can represent live execution, not a
+leak, and must not be added again to `runtime_nodes.running_jobs`. Marker/proof
+mismatches call for diagnosis, never fabricated receipts or deletion. Whole-table
+bytes cannot be assigned to individual cohorts using these counts.
+
+```sql
+-- On-demand full scans; timeout/error means unknown, never a healthy zero.
+BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET LOCAL statement_timeout = '10s';
+SET LOCAL lock_timeout = '1s';
+SET LOCAL timezone = 'UTC';
+SET LOCAL search_path = pg_catalog, public;
+WITH cleanup AS MATERIALIZED (
+    SELECT e.topic,
+           e.status::text AS publication_state,
+           e.cleanup_state,
+           CASE
+               WHEN COALESCE((
+                   SELECT r.intent_id::text = e.payload->'ContainerCleanup'->>'IntentID'
+                   FROM public.container_cleanup_receipts r
+                   WHERE r.job_id = CASE
+                       WHEN pg_input_is_valid(e.payload->>'JobID', 'uuid')
+                       THEN (e.payload->>'JobID')::uuid
+                   END
+                     AND r.container_id = e.payload->'ContainerCleanup'->>'ContainerID'
+                     AND r.runtime_instance = e.payload->'ContainerCleanup'->>'RuntimeInstance'
+               ), FALSE) THEN 'MATCHED'
+               WHEN NOT COALESCE(pg_input_is_valid(e.payload->>'JobID', 'uuid'), FALSE)
+                 OR NOT COALESCE(pg_input_is_valid(e.payload->'ContainerCleanup'->>'IntentID', 'uuid'), FALSE)
+                 OR COALESCE(e.payload->'ContainerCleanup'->>'ContainerID', '') = ''
+                 OR COALESCE(e.payload->'ContainerCleanup'->>'RuntimeInstance', '') = ''
+               THEN 'INVALID_IDENTITY'
+               ELSE 'MISSING'
+           END AS receipt,
+           e.created_at
+    FROM public.outbox_events e
+    WHERE e.payload->>'Action' = 'CONTAINER_CLEANUP'
+), groups AS (
+    SELECT topic, publication_state, cleanup_state, receipt,
+           count(*) AS rows,
+           min(created_at) AS oldest_created_at
+    FROM cleanup
+    GROUP BY topic, publication_state, cleanup_state, receipt
+)
+SELECT jsonb_build_object(
+    'sampled_at', statement_timestamp(),
+    'database', current_database(),
+    'read_only', current_setting('transaction_read_only'),
+    'cleanup_groups', COALESCE((SELECT jsonb_agg(to_jsonb(g)
+        ORDER BY topic, publication_state, cleanup_state, receipt) FROM groups g), '[]'::jsonb),
+    'cleanup_rows', (SELECT count(*) FROM cleanup),
+    'cleanup_without_exact_receipt', (SELECT count(*) FROM cleanup WHERE receipt <> 'MATCHED'),
+    'completed_without_exact_receipt', (SELECT count(*) FROM cleanup WHERE cleanup_state = 'COMPLETED' AND receipt <> 'MATCHED'),
+    'matched_receipt_without_completed_marker', (SELECT count(*) FROM cleanup WHERE receipt = 'MATCHED' AND cleanup_state IS DISTINCT FROM 'COMPLETED'),
+    'holds', (SELECT jsonb_build_object(
+        'active', count(*) FILTER (WHERE released_at IS NULL),
+        'released', count(*) FILTER (WHERE released_at IS NOT NULL)) FROM public.runtime_capacity_holds),
+    'ordinary_outbox_rows', (SELECT count(*) FROM public.outbox_events WHERE payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP'),
+    'non_cleanup_rows_with_cleanup_state', (SELECT count(*) FROM public.outbox_events
+        WHERE payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP' AND cleanup_state IS NOT NULL)
+);
+COMMIT;
+```
+
+#### Capacity runway
+
+Use existing filesystem, PVC or provider-quota monitoring for available/used
+bytes, timestamps and storage-budget identity. Database size excludes WAL, logs,
+backups and other databases/shared consumers. Map tables, indexes, TOAST and WAL
+to their actual volumes using deployment/tablespace configuration; these reports
+do not discover that mapping. Calculate each relevant volume separately.
+
+For comparable samples over a representative interval:
+
+```text
+growth_bytes_per_day = (used_later - used_earlier) / elapsed_days
+usable_headroom = max(0, available_now - operator_safety_reserve)
+runway_days = usable_headroom / growth_bytes_per_day
+```
+
+Only calculate runway for positive representative growth. Missing history,
+zero/negative growth, mismatched volumes, restores or resizes do not give a reliable
+exhaustion forecast. Available bytes already exclude current usage; do not subtract
+database size again. For illustration, 120 GiB available minus a 20 GiB reserve,
+at a measured 5 GiB/day, gives 20 days. These are not defaults or a measurement of
+your deployment. Choose reserve, review cadence and capacity alerts for the time
+needed to expand storage. No storage threshold authorizes proof garbage collection.
+
+See PostgreSQL's [size-function definitions](https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADMIN-DBSIZE)
+and [statistics semantics](https://www.postgresql.org/docs/18/monitoring-stats.html).
+
 ## Troubleshooting
 
 ### TLS or Certificate Failures

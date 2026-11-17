@@ -46,6 +46,10 @@ Ambiguous broker sends may still duplicate before that interval.
 
 [Replay scheduling and ordering](/docs/engineering/transactional-outbox#claiming)
 
+For grouped receipt/backlog counts and storage/runway interpretation, use the
+[retained cleanup reports](/docs/operations/scaling#retained-cleanup-data).
+These counts describe retained transport rows, not lifetime cleanup obligations.
+
 ### Administrative redrive
 
 Repair the original runtime or configuration first. Call the internal jobs-service

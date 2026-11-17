@@ -66,6 +66,20 @@ func TestCleanupOutcomesKeepBothStoresIndependent(t *testing.T) {
 	}
 }
 
+func TestCleanupLogsCommittedDeletesOnPartialFailure(t *testing.T) {
+	core, logs := observer.New(zap.DebugLevel)
+	svc := &maintenanceService{outbox: 4, outboxErr: errors.New("commit acknowledgement lost")}
+	app := &OutboxRelay{logger: zap.New(core), svc: svc, cfg: &Config{ContextTimeout: time.Second, CleanupBatchSize: 10, IdempotencyCleanupMaxBatches: 1}}
+	app.cleanupOnce(t.Context())
+
+	require.Equal(t, 1, svc.publishedCalls)
+	require.Equal(t, 1, svc.ledgerCalls)
+	require.Len(t, logs.All(), 1)
+	entry := logs.All()[0]
+	require.Equal(t, "failed to cleanup published outbox events", entry.Message)
+	require.Equal(t, int64(4), entry.ContextMap()["deleted"])
+}
+
 func TestCleanupRunsImmediatelyThenOnTickAndStops(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		svc := &maintenanceService{ledgerObserved: make(chan struct{}, 2)}

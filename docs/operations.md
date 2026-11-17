@@ -678,6 +678,9 @@ original runtime instance and routing, attempt and log-retention policy. Workflo
 before cascading job deletion. Cleanup does not require the workflow or job row
 to remain present, and repeated events target the original container ID.
 
+For retained storage, grouped receipt/backlog counts and capacity planning, see
+[Retained cleanup data](#retained-cleanup-data).
+
 Workflow workers stop the container, replay retained logs and remove it. Each
 attempt has a three-minute deadline, including the existing two-minute replay
 budget. Replay failures preserve the container for retry. Failed attempts remain

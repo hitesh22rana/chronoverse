@@ -102,7 +102,7 @@ func (o *OutboxRelay) cleanupOnce(ctx context.Context) {
 	total, err := o.svc.CleanupPublishedEvents(outboxCtx, o.cfg.PublishedRetention, o.cfg.CleanupBatchSize)
 	cancelOutbox()
 	if err != nil {
-		o.logger.Error("failed to cleanup published outbox events", zap.Error(err))
+		o.logger.Error("failed to cleanup published outbox events", zap.Error(err), zap.Int64("deleted", total))
 	} else if total > 0 {
 		o.logger.Info("cleaned up published outbox events", zap.Int64("total", total))
 	}

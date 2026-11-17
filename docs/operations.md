@@ -700,6 +700,103 @@ intervals require whole milliseconds and `1ms <= interval <= maximum`. Programma
 zero intervals select defaults; explicit negative or fractional-millisecond
 values are rejected.
 
+#### Published-outbox pruning
+
+Recheck both lane query plans after PostgreSQL upgrades or changes to their
+predicates/indexes. Lane transactions disable bitmap scans locally to avoid
+sorting the full eligible backlog before the candidate limit. Validate candidate
+index access, target-row PK access and bounded receipt PK probes at representative
+cardinalities; a materialized CTE alone does not prevent a full receipt scan.
+Physical pages, locked-row skips and IO remain outside a strict work bound.
+
+Published-outbox retention uses two candidate-limited lanes: ordinary published
+events and completed container cleanup. Before any lane work, a call reserves a
+durable maintenance turn and commits that reservation. The turn alternates the
+preferred lane across replicas and restarts; an empty or failed lane still
+advances it. The turn lock is not held during deletion. A busy reservation skips that maintenance
+call and is logged at debug level; aligned replica schedules can reduce achieved
+pruning throughput. Replica count does not guarantee proportional capacity.
+
+A call selects at most `OUTBOX_RELAY_CLEANUP_BATCH_SIZE` candidate identities. The
+preferred lane is offered half rounded up; the other lane receives the batch size
+minus already charged candidates, and the preferred lane gets at most one final borrowed
+operation. A failed lane is not reentered in the same call. Each lane locks its
+candidates before checking proof, then deletes by candidate ID and commits
+independently. Ordinary candidates include missing or null actions. Cleanup
+candidates require `cleanup_state = 'COMPLETED'` and an exact receipt match on
+job, container, original runtime instance and creation intent. Job IDs are parsed
+as UUIDs only when valid; intent comparison is textual. Missing or mismatched
+proof retains the row.
+
+A call can return a known committed delete count together with an error when one
+lane fails and another commits, in either order. The relay logs that count with
+the error. Successful lane logs report selected, deleted and proof-mismatch
+counts, including
+zero-deletion cycles. Failed lanes log the full charged allowance, zero known
+committed deletions and whether the commit may be uncertain. `selected_known`
+distinguishes observed selections from unavailable counts; a failed commit can
+retain an observed selection count without proving deletion. If a commit acknowledgement is
+uncertain,
+the count is a lower bound; the next cycle finds any remaining candidates. Lanes
+commit independently, so one lane's failure or rollback does not undo another
+lane's confirmed deletions.
+
+A `COMPLETED` row without exact proof is corruption, not deletion authority. It
+fails closed and can block cleanup-lane progress while ordinary pruning continues.
+Inspect expired cleanup candidates lacking proof (replace the interval with the
+configured `OUTBOX_RELAY_PUBLISHED_RETENTION`):
+
+```sql
+SELECT events.id, events.published_at, events.payload->>'JobID' AS job_id,
+       events.payload->'ContainerCleanup'->>'ContainerID' AS container_id,
+       events.payload->'ContainerCleanup'->>'RuntimeInstance' AS runtime_instance,
+       events.payload->'ContainerCleanup'->>'IntentID' AS intent_id,
+       events.cleanup_state, events.cleanup_generation
+FROM outbox_events events
+WHERE events.status = 'PUBLISHED'
+  AND events.published_at < now() - interval '168h'
+  AND events.payload->>'Action' = 'CONTAINER_CLEANUP'
+  AND events.cleanup_state = 'COMPLETED'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM container_cleanup_receipts receipt
+      WHERE receipt.job_id = CASE
+              WHEN pg_input_is_valid(events.payload->>'JobID', 'uuid')
+              THEN (events.payload->>'JobID')::uuid
+            END
+        AND receipt.container_id = events.payload->'ContainerCleanup'->>'ContainerID'
+        AND receipt.runtime_instance = events.payload->'ContainerCleanup'->>'RuntimeInstance'
+        AND receipt.intent_id::text = events.payload->'ContainerCleanup'->>'IntentID'
+  )
+ORDER BY events.published_at, events.id
+LIMIT 100;
+```
+
+Receipt-present rows in a non-`COMPLETED` state, including `NULL`, should not be
+produced by completion writers. They stay outside automatic pruning and are an
+invariant violation to preserve for diagnosis:
+
+```sql
+SELECT events.id, events.status, events.published_at, events.cleanup_state,
+       events.payload->>'JobID' AS job_id,
+       events.payload->'ContainerCleanup'->>'ContainerID' AS container_id,
+       events.payload->'ContainerCleanup'->>'RuntimeInstance' AS runtime_instance,
+       events.payload->'ContainerCleanup'->>'IntentID' AS intent_id
+FROM outbox_events events
+JOIN container_cleanup_receipts receipt
+  ON receipt.job_id = CASE
+         WHEN pg_input_is_valid(events.payload->>'JobID', 'uuid')
+         THEN (events.payload->>'JobID')::uuid
+       END
+ AND receipt.container_id = events.payload->'ContainerCleanup'->>'ContainerID'
+ AND receipt.runtime_instance = events.payload->'ContainerCleanup'->>'RuntimeInstance'
+ AND receipt.intent_id::text = events.payload->'ContainerCleanup'->>'IntentID'
+WHERE events.payload->>'Action' = 'CONTAINER_CLEANUP'
+  AND events.cleanup_state IS DISTINCT FROM 'COMPLETED'
+ORDER BY events.published_at, events.id
+LIMIT 100;
+```
+
 Receipts survive job/workflow deletion and published-outbox pruning. Enqueueing
 cleanup consults receipts, and a previously queued delivery also checks them,
 so completed cleanup does not depend on its former runtime remaining available.
@@ -818,7 +915,10 @@ returns `COMPLETED` without requeueing, even after outbox pruning. The RPC canno
 change the original runtime routing. Execution quarantine is separate from
 publication `DEAD`: the same explicit redrive can requeue a retained cleanup
 whose publication failed, while unrelated DEAD events retain the relay's
-existing recovery procedure. Monitor both states.
+existing recovery procedure. Monitor both states. Redrive cannot repair a
+`COMPLETED` row that lacks exact receipt proof or manufacture removal proof; do
+not issue raw `cleanup_state` updates or insert receipts without confirmed
+removal. Persistent malformed identity needs a separate repair design.
 
 Recovery depends on the original runtime
 being reachable and on container identity having been durably attached; unknown

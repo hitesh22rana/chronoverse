@@ -12,6 +12,7 @@ DROP FUNCTION IF EXISTS close_job_container_intents(UUID);
 DROP FUNCTION IF EXISTS enqueue_intent_materializations(UUID);
 DROP FUNCTION IF EXISTS enqueue_intent_container_cleanup(UUID,TEXT);
 DROP TABLE IF EXISTS container_cleanup_redrives;
+DROP TABLE IF EXISTS outbox_cleanup_turn;
 DROP TABLE IF EXISTS outbox_relay_turns;
 DROP TABLE IF EXISTS outbox_events;
 DROP FUNCTION IF EXISTS update_outbox_events_updated_at;

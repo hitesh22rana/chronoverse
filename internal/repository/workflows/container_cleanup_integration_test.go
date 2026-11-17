@@ -219,7 +219,8 @@ func assertCleanupReceiptPersistence(t *testing.T, receipts *jobsrepo.Repository
 
 func prunePublishedCleanup(t *testing.T, workflowID string) int {
 	t.Helper()
-	ctx := t.Context()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
 	pg := testkit.Postgres(t)
 	if _, err := pg.Exec(ctx, `UPDATE outbox_events SET status='PUBLISHED',published_at=clock_timestamp()-interval '2 hours' WHERE kafka_key=$1`, workflowID); err != nil {
 		t.Fatal(err)

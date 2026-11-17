@@ -36,6 +36,13 @@ CREATE TABLE outbox_relay_turns (
 );
 INSERT INTO outbox_relay_turns(topic, next_replay) VALUES ('workflows', FALSE);
 
+-- Maintenance preference is reserved independently of lane deletions and publication.
+CREATE TABLE outbox_cleanup_turn (
+    id BOOLEAN PRIMARY KEY CHECK (id),
+    next_cleanup BOOLEAN NOT NULL
+);
+INSERT INTO outbox_cleanup_turn(id, next_cleanup) VALUES (TRUE, FALSE);
+
 -- Audit identity is retained independently of pruned outbox/source rows.
 CREATE TABLE container_cleanup_redrives (
     event_key TEXT NOT NULL,
@@ -68,9 +75,14 @@ CREATE INDEX IF NOT EXISTS idx_outbox_events_processing_locked
 ON outbox_events (locked_at)
 WHERE status = 'PROCESSING';
 
-CREATE INDEX IF NOT EXISTS idx_outbox_events_published_cleanup
-ON outbox_events (published_at)
-WHERE status = 'PUBLISHED';
+CREATE INDEX idx_outbox_events_published_ordinary
+ON outbox_events (published_at, id)
+WHERE status = 'PUBLISHED' AND payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP';
+
+CREATE INDEX idx_outbox_events_published_completed_cleanup
+ON outbox_events (published_at, id)
+WHERE status = 'PUBLISHED' AND cleanup_state = 'COMPLETED'
+    AND payload->>'Action' = 'CONTAINER_CLEANUP';
 
 CREATE INDEX idx_outbox_cleanup_redrive ON outbox_events (topic,cleanup_replay_due_at,id)
 WHERE status='PUBLISHED' AND cleanup_state IN ('READY','RETRY','PROCESSING');

@@ -17,7 +17,11 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 )
 
-const cleanupSQLStateQueryCanceled = "57014"
+const (
+	cleanupSQLStateQueryCanceled   = "57014"
+	cleanupSQLStateUndefinedTable  = "42P01"
+	cleanupSQLStateUndefinedColumn = "42703"
+)
 
 // CleanupPublishedEvents bounds candidate/proof work, returning only confirmed commits.
 func (r *Repository) CleanupPublishedEvents(ctx context.Context, retention time.Duration, batchSize int) (int64, error) {
@@ -51,9 +55,6 @@ func (r *Repository) CleanupPublishedEvents(ctx context.Context, retention time.
 		if allowance == 0 || failed[cleanup] {
 			continue
 		}
-		if err = ctx.Err(); err != nil {
-			break
-		}
 		operationCtx, stop := cleanupOperationContext(ctx, 3-operation)
 		if operationCtx.Err() != nil {
 			failures = append(failures, status.FromContextError(operationCtx.Err()).Err())
@@ -67,7 +68,7 @@ func (r *Repository) CleanupPublishedEvents(ctx context.Context, retention time.
 			charged += allowance
 			failed[cleanup] = true
 			failures = append(failures, laneErr)
-			logCleanupLane(ctx, cleanup, allowance, nil, 0, laneErr)
+			logCleanupLane(ctx, cleanup, allowance, ids, 0, laneErr)
 			continue
 		}
 		charged += len(ids)
@@ -86,7 +87,8 @@ func logCleanupLane(ctx context.Context, cleanup bool, allowance int, ids []stri
 	fields := []zap.Field{zap.String("lane", lane), zap.Int("allowance", allowance)}
 	if err != nil {
 		loggerpkg.FromContext(ctx).Warn("published outbox cleanup lane failed", append(fields,
-			zap.Int("charged", allowance), zap.Bool("uncertain", status.Code(err) == codes.Unavailable), zap.Error(err))...)
+			zap.Int("charged", allowance), zap.Int("selected", len(ids)), zap.Bool("selected_known", ids != nil),
+			zap.Int64("deleted", 0), zap.Bool("uncertain", ids != nil && status.Code(err) != codes.Internal), zap.Error(err))...)
 		return
 	}
 	mismatched := int64(0)
@@ -151,6 +153,9 @@ func cleanupOperationError(ctx context.Context, err error) error {
 		if strings.HasPrefix(databaseErr.Code, "08") || databaseErr.Severity == "FATAL" {
 			return status.Errorf(codes.Unavailable, "outbox cleanup database unavailable: %v", err)
 		}
+		if databaseErr.Code == cleanupSQLStateUndefinedTable || databaseErr.Code == cleanupSQLStateUndefinedColumn {
+			return status.Errorf(codes.Internal, "outbox cleanup schema is incomplete; initialize from current migrations (existing development databases may need recreation): %v", err)
+		}
 		return status.Errorf(codes.Internal, "outbox cleanup SQL: %v", err)
 	}
 	return status.Errorf(codes.Unavailable, "outbox cleanup transport: %v", err)
@@ -173,7 +178,7 @@ func (r *Repository) reserveCleanupTurn(ctx context.Context) (nextCleanup, reser
 			return false, false, cleanupOperationError(ctx, err)
 		}
 		if !exists {
-			return false, false, status.Error(codes.Internal, "outbox cleanup maintenance turn is missing")
+			return false, false, status.Error(codes.Internal, "outbox cleanup maintenance turn is missing; reinitialize the database with the current migrations")
 		}
 		loggerpkg.FromContext(ctx).Debug("outbox cleanup maintenance turn busy")
 		return false, false, nil
@@ -243,7 +248,7 @@ func (r *Repository) cleanupPublishedLane(
 		return nil, 0, cleanupOperationError(ctx, err)
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return nil, 0, cleanupOperationError(ctx, err)
+		return ids, 0, cleanupOperationError(ctx, err)
 	}
 	return ids, deleted, nil
 }

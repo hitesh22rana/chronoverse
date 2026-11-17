@@ -20,6 +20,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -482,13 +484,21 @@ func TestIntegrationPruningConcurrentCallsAndLockedCandidate(t *testing.T) {
 // Drop a confirmed COMMIT response at the wire boundary, after PostgreSQL accepted it.
 func pruningCommitLoss(t *testing.T, repo *Repository, commit int32) *Repository {
 	t.Helper()
+	var seen atomic.Int32
+	return pruningWireFault(t, repo, func(kind byte, body []byte) bool {
+		return kind == 'C' && string(body) == "COMMIT\x00" && seen.Add(1) == commit
+	})
+}
+
+// The callback drops one backend response at a real protocol boundary.
+func pruningWireFault(t *testing.T, repo *Repository, drop func(byte, []byte) bool) *Repository {
+	t.Helper()
 	cfg, err := pgx.ParseConfig(testkit.PostgresDSN(t))
 	require.NoError(t, err)
 	var database string
 	require.NoError(t, repo.pg.QueryRow(t.Context(), "SELECT current_database()").Scan(&database))
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	var seen atomic.Int32
 	var workers sync.WaitGroup
 	var mu sync.Mutex
 	var connections []net.Conn
@@ -532,7 +542,7 @@ func pruningCommitLoss(t *testing.T, repo *Repository, commit int32) *Repository
 					if _, readErr := io.ReadFull(server, body); readErr != nil {
 						return
 					}
-					if header[0] == 'C' && string(body) == "COMMIT\x00" && seen.Add(1) == commit {
+					if drop(header[0], body) {
 						return
 					}
 					if _, writeErr := client.Write(header[:]); writeErr != nil {
@@ -749,6 +759,7 @@ func TestPruningFailureClassification(t *testing.T) {
 		{"transport SQLSTATE", &pgconn.PgError{Code: "08006"}, codes.Unavailable},
 		{"fatal database", &pgconn.PgError{Code: "57P01", Severity: "FATAL"}, codes.Unavailable},
 		{"constraint", &pgconn.PgError{Code: "23514"}, codes.Internal},
+		{"missing table", &pgconn.PgError{Code: "42P01"}, codes.Internal},
 		{"known commit rollback", pgx.ErrTxCommitRollback, codes.Internal},
 		{"wrapped context", fmt.Errorf("query: %w", context.DeadlineExceeded), codes.DeadlineExceeded},
 		{"wrapped cancellation", fmt.Errorf("query: %w", context.Canceled), codes.Canceled},
@@ -772,4 +783,144 @@ func TestPruningFailureClassification(t *testing.T) {
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 	require.Equal(t, codes.Canceled, status.Code(cleanupFailures(canceled, []error{status.Error(codes.Unavailable, "transport")})))
+}
+
+func TestIntegrationPruningSetupTransportFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		tag        string
+		occurrence int32
+		busy       bool
+		known      int64
+	}{
+		{"reservation read", "", 1, false, 0},
+		{"busy existence read", "", 1, true, 0},
+		{"lane begin", "BEGIN\x00", 2, false, 1},
+		{"lane planner setting", "SET\x00", 1, false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := pruningRepository(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			old := time.Now().Add(-2 * time.Hour)
+			seedOutboxRow(ctx, t, repo.pg, "ordinary", "old", statusPublished, &old)
+			seedPruningCleanup(t, repo, true)
+			if tc.busy {
+				lock, lockErr := repo.pg.BeginTx(ctx)
+				require.NoError(t, lockErr)
+				_, lockErr = lock.Exec(ctx, "SELECT * FROM outbox_cleanup_turn FOR UPDATE")
+				require.NoError(t, lockErr)
+				defer func() { require.NoError(t, lock.Rollback(ctx)) }()
+			}
+			var armed atomic.Bool
+			var matches atomic.Int32
+			faulty := pruningWireFault(t, repo, func(kind byte, body []byte) bool {
+				if !armed.Load() {
+					return false
+				}
+				match := kind == 'D'
+				if tc.tag != "" {
+					match = kind == 'C' && string(body) == tc.tag
+				}
+				return match && matches.Add(1) == tc.occurrence
+			})
+			armed.Store(true)
+			n, err := faulty.CleanupPublishedEvents(ctx, time.Hour, 2)
+			require.Equal(t, codes.Unavailable, status.Code(err))
+			require.Equal(t, tc.known, n)
+			var remaining int
+			require.NoError(t, repo.pg.QueryRow(ctx, "SELECT count(*) FROM outbox_events").Scan(&remaining))
+			require.EqualValues(t, 2-tc.known, remaining, "failed setup cannot mutate its lane")
+		})
+	}
+}
+
+func TestIntegrationPruningPoolClosureAndIncompleteSchema(t *testing.T) {
+	t.Run("reservation pool closed", func(t *testing.T) {
+		repo := pruningRepository(t)
+		repo.pg.Close()
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		n, err := repo.CleanupPublishedEvents(ctx, time.Hour, 1)
+		require.Zero(t, n)
+		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+	t.Run("lane pool closed", func(t *testing.T) {
+		repo := pruningRepository(t)
+		repo.pg.Close()
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		ids, n, err := repo.cleanupPublishedLane(ctx, time.Now(), 1, false, []string{})
+		require.Nil(t, ids)
+		require.Zero(t, n)
+		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+	t.Run("incomplete schema", func(t *testing.T) {
+		repo := pruningRepository(t)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, err := repo.pg.Exec(ctx, "ALTER TABLE outbox_cleanup_turn RENAME COLUMN next_cleanup TO obsolete_turn")
+		require.NoError(t, err)
+		n, err := repo.CleanupPublishedEvents(ctx, time.Hour, 1)
+		require.Zero(t, n)
+		require.Equal(t, codes.Internal, status.Code(err))
+		require.Contains(t, err.Error(), "initialize from current migrations")
+	})
+}
+
+type pruningCommitCancelProcessor struct {
+	armed  atomic.Bool
+	cancel context.CancelFunc
+}
+
+func (*pruningCommitCancelProcessor) OnStart(context.Context, sdktrace.ReadWriteSpan) {}
+func (p *pruningCommitCancelProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
+	if span.Name() == "COMMIT" && p.armed.Swap(false) {
+		p.cancel()
+	}
+}
+func (*pruningCommitCancelProcessor) Shutdown(context.Context) error   { return nil }
+func (*pruningCommitCancelProcessor) ForceFlush(context.Context) error { return nil }
+
+// The installed pgx tracer ends COMMIT synchronously, before returning to the caller.
+func TestIntegrationPruningCancellationAfterConfirmedReservation(t *testing.T) {
+	previous := otel.GetTracerProvider()
+	processor := &pruningCommitCancelProcessor{}
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(processor))
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() { otel.SetTracerProvider(previous); require.NoError(t, provider.Shutdown(context.Background())) })
+	repo := pruningRepository(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	old := time.Now().Add(-2 * time.Hour)
+	seedOutboxRow(ctx, t, repo.pg, "ordinary", "old", statusPublished, &old)
+	processor.cancel = cancel
+	ctx, span := provider.Tracer("pruning-cancellation").Start(ctx, "maintenance")
+	defer span.End()
+	processor.armed.Store(true)
+	n, err := repo.CleanupPublishedEvents(ctx, time.Hour, 1)
+	require.Zero(t, n)
+	require.Equal(t, codes.Canceled, status.Code(err))
+	var flipped bool
+	require.NoError(t, repo.pg.QueryRow(t.Context(), "SELECT next_cleanup FROM outbox_cleanup_turn").Scan(&flipped))
+	require.True(t, flipped, "cancellation cannot retract confirmed reservation")
+	var remaining int
+	require.NoError(t, repo.pg.QueryRow(t.Context(), "SELECT count(*) FROM outbox_events").Scan(&remaining))
+	require.Equal(t, 1, remaining, "cancellation after reservation must not begin pruning")
+}
+
+func TestIntegrationPruningObservedSelectionDoesNotProveCommit(t *testing.T) {
+	repo := pruningRepository(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	old := time.Now().Add(-2 * time.Hour)
+	seedOutboxRow(ctx, t, repo.pg, "ordinary", "old", statusPublished, &old)
+	faulty := pruningCommitLoss(t, repo, 1)
+	ids, deleted, err := faulty.cleanupPublishedLane(ctx, time.Now().Add(-time.Hour), 1, false, []string{})
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.Len(t, ids, 1, "observed selection remains available for diagnostics")
+	require.Zero(t, deleted, "uncertain commit must not count observed DELETE result")
+	var remaining int
+	require.NoError(t, repo.pg.QueryRow(ctx, "SELECT count(*) FROM outbox_events").Scan(&remaining))
+	require.Zero(t, remaining, "PostgreSQL committed before its response was lost")
 }

@@ -108,13 +108,16 @@ Age alone does not prove physical absence or authorize releasing a gate or hold.
 Published-outbox pruning uses two candidate-limited lanes: ordinary published
 events and `COMPLETED` cleanup awaiting exact receipt proof. A durable turn,
 committed before lane work, alternates the preferred lane across replicas and
-restarts; empty or failed calls still advance it. Each call selects at most
+restarts; empty or failed calls still advance it. Busy reservations skip the call
+with a debug log, so aligned replica schedules can reduce achieved throughput. Each call selects at most
 `OUTBOX_RELAY_CLEANUP_BATCH_SIZE` candidate identities. The preferred lane is offered
-half rounded up; the other lane may then use all remaining budget, and the
+half rounded up; the other lane receives the batch size
+minus already charged candidates, and the
 preferred lane gets at most one final borrowed operation. A failed lane is not
 reentered in that call. Lanes lock candidates before proof, delete by candidate
 ID and commit independently, so a partial call can return confirmed deletions
-with an error. Retained proof requires exact job, container, original-runtime and
+with an error. Failed lanes report charged allowances and zero known committed
+deletions; `selected_known` marks whether the selection count was observed. Retained proof requires exact job, container, original-runtime and
 text-intent matching; invalid job UUIDs and mismatched proof fail closed.
 
 A `COMPLETED` row without exact proof is corruption and remains outside automatic

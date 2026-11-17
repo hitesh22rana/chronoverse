@@ -702,15 +702,24 @@ values are rejected.
 
 #### Published-outbox pruning
 
+Recheck both lane query plans after PostgreSQL upgrades or changes to their
+predicates/indexes. Lane transactions disable bitmap scans locally to avoid
+sorting the full eligible backlog before the candidate limit. Validate candidate
+index access, target-row PK access and bounded receipt PK probes at representative
+cardinalities; a materialized CTE alone does not prevent a full receipt scan.
+Physical pages, locked-row skips and IO remain outside a strict work bound.
+
 Published-outbox retention uses two candidate-limited lanes: ordinary published
 events and completed container cleanup. Before any lane work, a call reserves a
 durable maintenance turn and commits that reservation. The turn alternates the
 preferred lane across replicas and restarts; an empty or failed lane still
-advances it. The turn lock is not held during deletion.
+advances it. The turn lock is not held during deletion. A busy reservation skips that maintenance
+call and is logged at debug level; aligned replica schedules can reduce achieved
+pruning throughput. Replica count does not guarantee proportional capacity.
 
 A call selects at most `OUTBOX_RELAY_CLEANUP_BATCH_SIZE` candidate identities. The
-preferred lane is offered half rounded up; the other lane may then use all
-remaining budget, and the preferred lane gets at most one final borrowed
+preferred lane is offered half rounded up; the other lane receives the batch size
+minus already charged candidates, and the preferred lane gets at most one final borrowed
 operation. A failed lane is not reentered in the same call. Each lane locks its
 candidates before checking proof, then deletes by candidate ID and commits
 independently. Ordinary candidates include missing or null actions. Cleanup
@@ -721,8 +730,13 @@ proof retains the row.
 
 A call can return a known committed delete count together with an error when one
 lane fails and another commits, in either order. The relay logs that count with
-the error. Lane maintenance logs report selected, deleted and proof-mismatch
-counts, including zero-deletion cycles. If a commit acknowledgement is uncertain,
+the error. Successful lane logs report selected, deleted and proof-mismatch
+counts, including
+zero-deletion cycles. Failed lanes log the full charged allowance, zero known
+committed deletions and whether the commit may be uncertain. `selected_known`
+distinguishes observed selections from unavailable counts; a failed commit can
+retain an observed selection count without proving deletion. If a commit acknowledgement is
+uncertain,
 the count is a lower bound; the next cycle finds any remaining candidates. Lanes
 commit independently, so one lane's failure or rollback does not undo another
 lane's confirmed deletions.

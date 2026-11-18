@@ -15,12 +15,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
-	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 )
 
 func TestIsStaleWorkflowEvent(t *testing.T) {
@@ -797,7 +796,14 @@ type testJobsClient struct {
 	listReadyRuntimeNodes func(context.Context, *jobspb.ListReadyRuntimeNodesRequest) (*jobspb.ListReadyRuntimeNodesResponse, error)
 }
 
-func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
+func (c *testJobsClient) CancelJob(
+	ctx context.Context,
+	req *jobspb.CancelJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.CancelJobResponse,
+	error,
+) {
 	if c.cancelJob != nil {
 		if err := c.cancelJob(ctx, req); err != nil {
 			return nil, err
@@ -811,14 +817,28 @@ func (c *testJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobReq
 	}, nil
 }
 
-func (c *testJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest, _ ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {
+func (c *testJobsClient) ScheduleJob(
+	ctx context.Context,
+	req *jobspb.ScheduleJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ScheduleJobResponse,
+	error,
+) {
 	if c.scheduleJob != nil {
 		return c.scheduleJob(ctx, req)
 	}
 	return &jobspb.ScheduleJobResponse{Id: "job-1"}, nil
 }
 
-func (c *testJobsClient) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest, _ ...grpc.CallOption) (*jobspb.ListJobsResponse, error) {
+func (c *testJobsClient) ListJobs(
+	ctx context.Context,
+	req *jobspb.ListJobsRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ListJobsResponse,
+	error,
+) {
 	if c.listJobs != nil {
 		result, err := c.listJobs(ctx, req)
 		if result != nil {
@@ -832,7 +852,14 @@ func (c *testJobsClient) ListJobs(ctx context.Context, req *jobspb.ListJobsReque
 	return &jobspb.ListJobsResponse{}, nil
 }
 
-func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest, _ ...grpc.CallOption) (*jobspb.GetReadyRuntimeNodeResponse, error) {
+func (c *testJobsClient) GetReadyRuntimeNode(
+	ctx context.Context,
+	req *jobspb.GetReadyRuntimeNodeRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetReadyRuntimeNodeResponse,
+	error,
+) {
 	if c.getReadyRuntimeNode != nil {
 		return c.getReadyRuntimeNode(ctx, req)
 	}
@@ -842,7 +869,14 @@ func (c *testJobsClient) GetReadyRuntimeNode(ctx context.Context, req *jobspb.Ge
 	}, nil
 }
 
-func (c *testJobsClient) ListReadyRuntimeNodes(ctx context.Context, req *jobspb.ListReadyRuntimeNodesRequest, _ ...grpc.CallOption) (*jobspb.ListReadyRuntimeNodesResponse, error) {
+func (c *testJobsClient) ListReadyRuntimeNodes(
+	ctx context.Context,
+	req *jobspb.ListReadyRuntimeNodesRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ListReadyRuntimeNodesResponse,
+	error,
+) {
 	if c.listReadyRuntimeNodes != nil {
 		return c.listReadyRuntimeNodes(ctx, req)
 	}
@@ -856,7 +890,14 @@ type testWorkflowsClient struct {
 	incrementFailures func(context.Context, *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest) (*workflowspb.IncrementWorkflowConsecutiveJobFailuresCountResponse, error)
 }
 
-func (c *testWorkflowsClient) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+func (c *testWorkflowsClient) GetWorkflowByID(
+	context.Context,
+	*workflowspb.GetWorkflowByIDRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	error,
+) {
 	if c.workflow == nil {
 		return nil, status.Error(codes.NotFound, "workflow not found")
 	}
@@ -894,7 +935,14 @@ type testNotificationsClient struct {
 	events             *orderedEvents
 }
 
-func (c testNotificationsClient) CreateNotification(ctx context.Context, req *notificationspb.CreateNotificationRequest, _ ...grpc.CallOption) (*notificationspb.CreateNotificationResponse, error) {
+func (c testNotificationsClient) CreateNotification(
+	ctx context.Context,
+	req *notificationspb.CreateNotificationRequest,
+	_ ...grpc.CallOption,
+) (
+	*notificationspb.CreateNotificationResponse,
+	error,
+) {
 	if c.createNotification != nil {
 		return c.createNotification(ctx, req)
 	}
@@ -993,7 +1041,15 @@ func (s *testContainerSvc) Terminate(_ context.Context, containerID string) erro
 
 type testWorkflowLockStore struct{}
 
-func (*testWorkflowLockStore) AcquireDistributedLockWithToken(context.Context, string, time.Duration) (token string, acquired bool, err error) {
+func (*testWorkflowLockStore) AcquireDistributedLockWithToken(
+	context.Context,
+	string,
+	time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	return "owner-token", true, nil
 }
 
@@ -1011,7 +1067,14 @@ func (*testWorkflowLockStore) ExtendDistributedLockWithToken(context.Context, st
 	return true, nil
 }
 
-func (c *testJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+func (c *testJobsClient) GetContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetContainerCleanupReceiptResponse,
+	error,
+) {
 	if c.getReceipt != nil {
 		return c.getReceipt(ctx, req)
 	}
@@ -1019,7 +1082,14 @@ func (c *testJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jo
 	return &jobspb.GetContainerCleanupReceiptResponse{Completed: completed}, nil
 }
 
-func (c *testJobsClient) RecordContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
+func (c *testJobsClient) RecordContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RecordContainerCleanupReceiptResponse,
+	error,
+) {
 	if c.recordReceipt != nil {
 		if err := c.recordReceipt(ctx, req); err != nil {
 			return nil, err
@@ -1029,14 +1099,28 @@ func (c *testJobsClient) RecordContainerCleanupReceipt(ctx context.Context, req 
 	return &jobspb.RecordContainerCleanupReceiptResponse{}, nil
 }
 
-func (c *testJobsClient) BeginContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest, _ ...grpc.CallOption) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (c *testJobsClient) BeginContainerCleanupAttempt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupAttemptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	if c.beginCleanup != nil {
 		return c.beginCleanup(ctx, req)
 	}
 	return &jobspb.ContainerCleanupAttemptResponse{State: "PROCESSING", Token: "owner", Generation: req.Generation, Attempts: 1}, nil
 }
 
-func (c *testJobsClient) FailContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest, _ ...grpc.CallOption) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (c *testJobsClient) FailContainerCleanupAttempt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupAttemptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	if c.failCleanup != nil {
 		return c.failCleanup(ctx, req)
 	}

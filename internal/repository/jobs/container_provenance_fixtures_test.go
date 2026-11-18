@@ -33,9 +33,14 @@ func seedContainerProvenance(
 	var attempt int32
 	var workflowGeneration int64
 	if err := pg.QueryRow(ctx, `
-		SELECT j.attempts, w.generation
-		FROM jobs j JOIN workflows w ON w.id=j.workflow_id
-		WHERE j.id=$1
+		SELECT
+			j.attempts,
+			w.generation
+		FROM
+			jobs j
+			JOIN workflows w ON w.id = j.workflow_id
+		WHERE
+			j.id = $1
 	`, jobID).Scan(&attempt, &workflowGeneration); err != nil {
 		t.Fatalf("read job attempt and workflow generation: %v", err)
 	}

@@ -171,10 +171,25 @@ func TestIntegrationListReadyRuntimeNodesStorageFailures(t *testing.T) {
 		{"query", `DROP TABLE runtime_nodes`},
 		{"scan", `ALTER TABLE runtime_nodes ALTER COLUMN docker_endpoint DROP NOT NULL;
    INSERT INTO runtime_nodes VALUES ('broken',NULL,'READY',now() AT TIME ZONE 'utc',0)`},
-		{"iteration", `DROP TABLE runtime_nodes;
-   CREATE VIEW runtime_nodes AS SELECT 'broken'::text id,
-    (1 / (extract(epoch FROM clock_timestamp())::bigint % 1))::text docker_endpoint,
-    'READY'::text status, now() AT TIME ZONE 'utc' last_heartbeat_at, 0 running_jobs`},
+		{"iteration", `
+			DROP TABLE runtime_nodes;
+
+			CREATE VIEW runtime_nodes AS
+			SELECT
+				'broken'::text id,
+				(
+					1 / (
+						extract(
+							epoch
+							FROM
+								clock_timestamp()
+						)::bigint % 1
+					)
+				)::text docker_endpoint,
+				'READY'::text status,
+				now() AT TIME ZONE 'utc' last_heartbeat_at,
+				0 running_jobs
+		`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := runtimeSelectionRepository(t)

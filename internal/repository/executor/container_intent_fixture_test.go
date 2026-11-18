@@ -39,22 +39,54 @@ func (s *intentTestLifecycle) Inspect(_ context.Context, id string) (*containerp
 	}, nil
 }
 
-func (s *observedContainerSvc) Start(ctx context.Context, d time.Duration, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *observedContainerSvc) Start(
+	ctx context.Context,
+	d time.Duration,
+	_ string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	_, logs, errs, err = s.Execute(ctx, d, s.request.Image, s.request.Cmd, s.request.Env)
 	return logs, errs, err
 }
 
-func (s *failingContainerSvc) Start(ctx context.Context, d time.Duration, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *failingContainerSvc) Start(
+	ctx context.Context,
+	d time.Duration,
+	_ string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	_, logs, errs, err = s.Execute(ctx, d, s.request.Image, s.request.Cmd, s.request.Env)
 	return logs, errs, err
 }
 
-func (s *recordingContainerSvc) Start(ctx context.Context, d time.Duration, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *recordingContainerSvc) Start(
+	ctx context.Context,
+	d time.Duration,
+	_ string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	_, logs, errs, err = s.Execute(ctx, d, s.request.Image, s.request.Cmd, s.request.Env)
 	return logs, errs, err
 }
 
-func (s *blockingRecoveryContainerSvc) Start(ctx context.Context, d time.Duration, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *blockingRecoveryContainerSvc) Start(
+	ctx context.Context,
+	d time.Duration,
+	_ string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	_, logs, errs, err = s.Execute(ctx, d, s.request.Image, s.request.Cmd, s.request.Env)
 	return logs, errs, err
 }
@@ -67,7 +99,15 @@ func (s *boundaryContainer) Create(ctx context.Context, req containerpkg.CreateR
 	return s.intentTestLifecycle.Create(ctx, req)
 }
 
-func (s *boundaryContainer) Start(ctx context.Context, d time.Duration, _ string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *boundaryContainer) Start(
+	ctx context.Context,
+	d time.Duration,
+	_ string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	_, logs, errs, err = s.Execute(ctx, d, s.request.Image, s.request.Cmd, s.request.Env)
 	return logs, errs, err
 }
@@ -87,26 +127,68 @@ func fakeIntent(req *jobspb.ContainerIntentCommand) *jobspb.ContainerIntentRespo
 	}
 }
 
-func (c *scriptedJobsClient) EnsureContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) EnsureContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }
 
-func (c *scriptedJobsClient) GetContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) GetContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }
 
-func (c *scriptedJobsClient) ReserveContainerCreate(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) ReserveContainerCreate(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }
 
-func (c *scriptedJobsClient) ReserveContainerStart(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) ReserveContainerStart(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }
 
-func (c *scriptedJobsClient) ObserveContainer(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) ObserveContainer(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }
 
-func (c *scriptedJobsClient) CloseContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *scriptedJobsClient) CloseContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return fakeIntent(req), nil
 }

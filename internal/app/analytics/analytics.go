@@ -18,8 +18,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
-
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -27,6 +25,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
 
 // Service defines the interface for analytics service operations.
@@ -147,7 +146,13 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 }
 
 // GetUserAnalytics retrieves analytics data for a specific user.
-func (a *Analytics) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUserAnalyticsRequest) (res *analyticspb.GetUserAnalyticsResponse, err error) {
+func (a *Analytics) GetUserAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetUserAnalyticsRequest,
+) (
+	res *analyticspb.GetUserAnalyticsResponse,
+	err error,
+) {
 	ctx, span := a.tp.Start(
 		ctx, "App.GetUserAnalytics",
 		trace.WithAttributes(
@@ -171,7 +176,13 @@ func (a *Analytics) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUs
 }
 
 // GetWorkflowAnalytics retrieves analytics data for a specific workflow.
-func (a *Analytics) GetWorkflowAnalytics(ctx context.Context, req *analyticspb.GetWorkflowAnalyticsRequest) (res *analyticspb.GetWorkflowAnalyticsResponse, err error) {
+func (a *Analytics) GetWorkflowAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetWorkflowAnalyticsRequest,
+) (
+	res *analyticspb.GetWorkflowAnalyticsResponse,
+	err error,
+) {
 	ctx, span := a.tp.Start(
 		ctx, "App.GetWorkflowAnalytics",
 		trace.WithAttributes(

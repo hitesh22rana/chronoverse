@@ -5,9 +5,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
-
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
 
 func TestGetUserAnalyticsResponseToProto(t *testing.T) {

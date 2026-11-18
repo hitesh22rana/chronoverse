@@ -215,8 +215,12 @@ func expireKey(ctx context.Context, t *testing.T, pg *postgres.Postgres, scope, 
 	t.Helper()
 	if _, err := pg.Exec(ctx, fmt.Sprintf(`
 		UPDATE %s
-		SET expires_at = (now() AT TIME ZONE 'utc') - interval '1 hour'
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+		SET
+			expires_at = (now() AT TIME ZONE 'utc') - interval '1 hour'
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, postgres.TableCommandIdempotencyKeys), scope, operation, key); err != nil {
 		t.Fatalf("expire key: %v", err)
 	}

@@ -7,7 +7,13 @@ import (
 )
 
 // GetContainerCleanupReceipt exposes internal completion evidence.
-func (j *Jobs) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+func (j *Jobs) GetContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+) (
+	*jobspb.GetContainerCleanupReceiptResponse,
+	error,
+) {
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 	completed, err := j.svc.GetContainerCleanupReceipt(ctx, req)
@@ -18,7 +24,13 @@ func (j *Jobs) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.Conta
 }
 
 // RecordContainerCleanupReceipt acknowledges confirmed removal, never an attempted cleanup.
-func (j *Jobs) RecordContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest) (*jobspb.RecordContainerCleanupReceiptResponse, error) {
+func (j *Jobs) RecordContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+) (
+	*jobspb.RecordContainerCleanupReceiptResponse,
+	error,
+) {
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 	if err := j.svc.RecordContainerCleanupReceipt(ctx, req); err != nil {

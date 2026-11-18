@@ -240,7 +240,13 @@ func (s *Service) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (re
 }
 
 // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
-func (s *Service) GetReadyRuntimeNode(ctx context.Context, _ *jobspb.GetReadyRuntimeNodeRequest) (res *jobspb.GetReadyRuntimeNodeResponse, err error) {
+func (s *Service) GetReadyRuntimeNode(
+	ctx context.Context,
+	_ *jobspb.GetReadyRuntimeNodeRequest,
+) (
+	res *jobspb.GetReadyRuntimeNodeResponse,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.GetReadyRuntimeNode")
 	defer func() {
 		if err != nil {
@@ -259,7 +265,13 @@ func (s *Service) GetReadyRuntimeNode(ctx context.Context, _ *jobspb.GetReadyRun
 }
 
 // ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
-func (s *Service) ListReadyRuntimeNodes(ctx context.Context, _ *jobspb.ListReadyRuntimeNodesRequest) (res *jobspb.ListReadyRuntimeNodesResponse, err error) {
+func (s *Service) ListReadyRuntimeNodes(
+	ctx context.Context,
+	_ *jobspb.ListReadyRuntimeNodesRequest,
+) (
+	res *jobspb.ListReadyRuntimeNodesResponse,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.ListReadyRuntimeNodes")
 	defer func() {
 		if err != nil {
@@ -499,7 +511,13 @@ type RecoverExpiredJobLeasesRequest struct {
 }
 
 // RecoverExpiredJobLeases returns expired running job leases for recovery.
-func (s *Service) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) (res []*jobsmodel.ExpiredJobLease, err error) {
+func (s *Service) RecoverExpiredJobLeases(
+	ctx context.Context,
+	req *jobspb.RecoverExpiredJobLeasesRequest,
+) (
+	res []*jobsmodel.ExpiredJobLease,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.RecoverExpiredJobLeases")
 	defer func() {
 		if err != nil {
@@ -1056,7 +1074,15 @@ func jobLogsCacheKey(userID, jobID, cursor, stream string, sortOrder jobsmodel.J
 }
 
 // searchJobLogsCacheKey hashes unbounded search inputs (cursor, message) into a fixed-size key.
-func searchJobLogsCacheKey(userID, jobID, cursor, message, stream string, sortOrder jobsmodel.JobLogsSortOrder, disableHighlight bool) string {
+func searchJobLogsCacheKey(
+	userID,
+	jobID,
+	cursor,
+	message,
+	stream string,
+	sortOrder jobsmodel.JobLogsSortOrder,
+	disableHighlight bool,
+) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, message, stream, fmt.Sprint(sortOrder), fmt.Sprint(disableHighlight)}, "\x00")))
 	return fmt.Sprintf("job_logs:search:%s:%x", userID, sum)
 }

@@ -165,83 +165,190 @@ func claimJobQuery() string {
 	blockedExpression := workflowClaimBlockedExpression("j")
 
 	return fmt.Sprintf(`
-        WITH workflow AS (
-            SELECT kind
-            FROM %s
-            WHERE id = $2
-            FOR UPDATE
-        ),
-        target_job AS (
-            SELECT id FROM %s WHERE id=$1 AND workflow_id=$2
-              AND EXISTS(SELECT 1 FROM workflow)
-            FOR UPDATE
-        ),
-        selected_runtime AS (
-            SELECT rn.id, rn.docker_endpoint
-            FROM %s AS rn
-            WHERE rn.status = 'READY'
-                AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($7::int * interval '1 second')
-                AND rn.running_jobs < rn.max_concurrency
-                AND EXISTS (SELECT 1 FROM workflow WHERE kind = 'CONTAINER')
-                AND EXISTS (SELECT 1 FROM target_job)
-            ORDER BY rn.running_jobs ASC, rn.last_heartbeat_at DESC, rn.id ASC
-            FOR UPDATE
-            LIMIT 1
-        ),
-        claimed AS (
-		UPDATE %s AS j
-        SET status = 'RUNNING',
-            attempts = attempts + 1,
-            lease_token = $3,
-			leased_by = $4,
-			lease_process_instance_id = $8,
-            lease_expires_at = (now() AT TIME ZONE 'utc') + ($5::int * interval '1 second'),
-            last_heartbeat_at = now() AT TIME ZONE 'utc',
-            started_at = now() AT TIME ZONE 'utc',
-            completed_at = NULL,
-			terminal_reason_code = NULL,
-            failure_kind = NULL,
-            last_error_code = NULL,
-            last_error_message = NULL,
-            runtime_node_id = CASE
-                WHEN (SELECT kind FROM workflow) = 'CONTAINER' THEN (SELECT id FROM selected_runtime)
-                ELSE NULL
-            END,
-            runtime_endpoint = CASE
-                WHEN (SELECT kind FROM workflow) = 'CONTAINER' THEN (SELECT docker_endpoint FROM selected_runtime)
-                ELSE NULL
-            END
-        WHERE j.id = $1
-            AND j.workflow_id = $2
-            AND j.status = 'QUEUED'
-            AND j.dispatch_attempts = $6
-            AND EXISTS (SELECT 1 FROM workflow)
-            AND (
-                (SELECT kind FROM workflow) <> 'CONTAINER'
-                OR EXISTS (SELECT 1 FROM selected_runtime)
-            )
-			AND NOT %s
-		RETURNING id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint, lease_expires_at
-        ),
-        increment_runtime AS (
-            UPDATE %s AS rn
-            SET running_jobs = running_jobs + 1,
-                updated_at = now() AT TIME ZONE 'utc'
-            WHERE rn.id = (SELECT runtime_node_id FROM claimed)
-            RETURNING rn.id
-        )
-		SELECT id, workflow_id, user_id, trigger, scheduled_at, dispatch_attempts, attempts, lease_token, runtime_node_id, runtime_endpoint, lease_expires_at
-        FROM claimed;
+		WITH
+			workflow AS (
+				SELECT
+					kind
+				FROM
+					%s
+				WHERE
+					id = $2
+				FOR UPDATE
+			),
+			target_job AS (
+				SELECT
+					id
+				FROM
+					%s
+				WHERE
+					id = $1
+					AND workflow_id = $2
+					AND EXISTS (
+						SELECT
+							1
+						FROM
+							workflow
+					)
+				FOR UPDATE
+			),
+			selected_runtime AS (
+				SELECT
+					rn.id,
+					rn.docker_endpoint
+				FROM
+					%s AS rn
+				WHERE
+					rn.status = 'READY'
+					AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($7::int * interval '1 second')
+					AND rn.running_jobs < rn.max_concurrency
+					AND EXISTS (
+						SELECT
+							1
+						FROM
+							workflow
+						WHERE
+							kind = 'CONTAINER'
+					)
+					AND EXISTS (
+						SELECT
+							1
+						FROM
+							target_job
+					)
+				ORDER BY
+					rn.running_jobs ASC,
+					rn.last_heartbeat_at DESC,
+					rn.id ASC
+				FOR UPDATE
+				LIMIT
+					1
+			),
+			claimed AS (
+				UPDATE %s AS j
+				SET
+					status = 'RUNNING',
+					attempts = attempts + 1,
+					lease_token = $3,
+					leased_by = $4,
+					lease_process_instance_id = $8,
+					lease_expires_at = (now() AT TIME ZONE 'utc') + ($5::int * interval '1 second'),
+					last_heartbeat_at = now() AT TIME ZONE 'utc',
+					started_at = now() AT TIME ZONE 'utc',
+					completed_at = NULL,
+					terminal_reason_code = NULL,
+					failure_kind = NULL,
+					last_error_code = NULL,
+					last_error_message = NULL,
+					runtime_node_id = CASE
+						WHEN (
+							SELECT
+								kind
+							FROM
+								workflow
+						) = 'CONTAINER' THEN (
+							SELECT
+								id
+							FROM
+								selected_runtime
+						)
+						ELSE NULL
+					END,
+					runtime_endpoint = CASE
+						WHEN (
+							SELECT
+								kind
+							FROM
+								workflow
+						) = 'CONTAINER' THEN (
+							SELECT
+								docker_endpoint
+							FROM
+								selected_runtime
+						)
+						ELSE NULL
+					END
+				WHERE
+					j.id = $1
+					AND j.workflow_id = $2
+					AND j.status = 'QUEUED'
+					AND j.dispatch_attempts = $6
+					AND EXISTS (
+						SELECT
+							1
+						FROM
+							workflow
+					)
+					AND (
+						(
+							SELECT
+								kind
+							FROM
+								workflow
+						) <> 'CONTAINER'
+						OR EXISTS (
+							SELECT
+								1
+							FROM
+								selected_runtime
+						)
+					)
+					AND NOT %s
+				RETURNING
+					id,
+					workflow_id,
+					user_id,
+					trigger,
+					scheduled_at,
+					dispatch_attempts,
+					attempts,
+					lease_token,
+					runtime_node_id,
+					runtime_endpoint,
+					lease_expires_at
+			),
+			increment_runtime AS (
+				UPDATE %s AS rn
+				SET
+					running_jobs = running_jobs + 1,
+					updated_at = now() AT TIME ZONE 'utc'
+				WHERE
+					rn.id = (
+						SELECT
+							runtime_node_id
+						FROM
+							claimed
+					)
+				RETURNING
+					rn.id
+			)
+		SELECT
+			id,
+			workflow_id,
+			user_id,
+			trigger,
+			scheduled_at,
+			dispatch_attempts,
+			attempts,
+			lease_token,
+			runtime_node_id,
+			runtime_endpoint,
+			lease_expires_at
+		FROM
+			claimed;
 	`, postgres.TableWorkflows, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs, blockedExpression, postgres.TableRuntimeNodes)
 }
 
 func deferBlockedJobQuery() string {
 	return fmt.Sprintf(`
 		UPDATE %s AS j
-		SET status = 'PENDING', queued_at = NULL, next_attempt_at=(clock_timestamp() AT TIME ZONE 'utc')+interval '30 seconds'
-		WHERE j.id = $1
-		  AND j.status = 'QUEUED'
-		  AND %s;
+		SET
+			status = 'PENDING',
+			queued_at = NULL,
+			next_attempt_at = (clock_timestamp() AT TIME ZONE 'utc') + interval '30 seconds'
+		WHERE
+			j.id = $1
+			AND j.status = 'QUEUED'
+			AND %s;
 	`, postgres.TableJobs, workflowClaimBlockedExpression("j"))
 }
 
@@ -308,12 +415,20 @@ func (r *Repository) GetReadyRuntimeNode(ctx context.Context) (node *jobsmodel.R
 
 func getReadyRuntimeNodeQuery() string {
 	return fmt.Sprintf(`
-		SELECT id, docker_endpoint
-		FROM %s
-		WHERE status = 'READY'
+		SELECT
+			id,
+			docker_endpoint
+		FROM
+			%s
+		WHERE
+			status = 'READY'
 			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
-		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC
-		LIMIT 1;
+		ORDER BY
+			running_jobs ASC,
+			last_heartbeat_at DESC,
+			id ASC
+		LIMIT
+			1;
 	`, postgres.TableRuntimeNodes)
 }
 
@@ -353,16 +468,31 @@ func listReadyRuntimeNodesQuery() string {
 	// Still every node (no LIMIT/filtering); ordered like claim preference so a
 	// capped prefetch prefix covers the most likely claim targets.
 	return fmt.Sprintf(`
-		SELECT id, docker_endpoint
-		FROM %s
-		WHERE status = 'READY'
+		SELECT
+			id,
+			docker_endpoint
+		FROM
+			%s
+		WHERE
+			status = 'READY'
 			AND last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($1::int * interval '1 second')
-		ORDER BY running_jobs ASC, last_heartbeat_at DESC, id ASC;
+		ORDER BY
+			running_jobs ASC,
+			last_heartbeat_at DESC,
+			id ASC;
 	`, postgres.TableRuntimeNodes)
 }
 
 // RenewJobLease renews a running job lease.
-func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string, leaseDuration time.Duration) (expiresAt time.Time, err error) {
+func (r *Repository) RenewJobLease(
+	ctx context.Context,
+	jobID,
+	leaseToken string,
+	leaseDuration time.Duration,
+) (
+	expiresAt time.Time,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.RenewJobLease")
 	defer func() {
 		if err != nil {
@@ -384,18 +514,24 @@ func (r *Repository) RenewJobLease(ctx context.Context, jobID, leaseToken string
 
 func renewJobLeaseQuery() string {
 	return fmt.Sprintf(`
-		WITH renewal AS (
-			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
-		)
+		WITH
+			renewal AS (
+				SELECT
+					clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
+			)
 		UPDATE %s AS job
-		SET lease_expires_at = renewal.renewed_at + ($3::int * interval '1 second'),
+		SET
+			lease_expires_at = renewal.renewed_at + ($3::int * interval '1 second'),
 			last_heartbeat_at = renewal.renewed_at
-		FROM renewal
-		WHERE job.id = $1
-		  AND job.lease_token = $2
-		  AND job.status = 'RUNNING'
-		  AND job.lease_expires_at > renewal.renewed_at
-		RETURNING job.lease_expires_at;
+		FROM
+			renewal
+		WHERE
+			job.id = $1
+			AND job.lease_token = $2
+			AND job.status = 'RUNNING'
+			AND job.lease_expires_at > renewal.renewed_at
+		RETURNING
+			job.lease_expires_at;
 	`, postgres.TableJobs)
 }
 
@@ -435,24 +571,47 @@ func (r *Repository) AttachJobContainer(ctx context.Context, jobID, leaseToken, 
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET container_id = $3
-        WHERE id = $1
-            AND lease_token = $2
-            AND status = 'RUNNING'
-            AND lease_expires_at > (clock_timestamp() AT TIME ZONE 'utc')
-            AND (container_id IS NULL OR container_id=$3)
-            AND COALESCE(runtime_node_id, '') = $4
-            AND EXISTS(SELECT 1 FROM container_creation_intents i
-                JOIN container_materializations m ON m.intent_id=i.id
-                WHERE i.job_id=$1 AND i.attempt=jobs.attempts
-                  AND i.container_id=$3 AND m.container_id=$3
-                  AND i.closed_at IS NULL
-                  AND i.process_instance_id=jobs.lease_process_instance_id
-                  AND i.original_lease_hash=encode(sha256(convert_to(jobs.lease_token,'UTF8')),'hex')
-                  AND i.runtime_node_id=jobs.runtime_node_id
-                  AND i.runtime_endpoint=jobs.runtime_endpoint
-                  AND i.workflow_generation=(SELECT generation FROM workflows WHERE id=jobs.workflow_id));
-    `, postgres.TableJobs)
+		SET
+			container_id = $3
+		WHERE
+			id = $1
+			AND lease_token = $2
+			AND status = 'RUNNING'
+			AND lease_expires_at > (clock_timestamp() AT TIME ZONE 'utc')
+			AND (
+				container_id IS NULL
+				OR container_id = $3
+			)
+			AND COALESCE(runtime_node_id, '') = $4
+			AND EXISTS (
+				SELECT
+					1
+				FROM
+					container_creation_intents i
+					JOIN container_materializations m ON m.intent_id = i.id
+				WHERE
+					i.job_id = $1
+					AND i.attempt = jobs.attempts
+					AND i.container_id = $3
+					AND m.container_id = $3
+					AND i.closed_at IS NULL
+					AND i.process_instance_id = jobs.lease_process_instance_id
+					AND i.original_lease_hash = encode(
+						sha256(convert_to(jobs.lease_token, 'UTF8')),
+						'hex'
+					)
+					AND i.runtime_node_id = jobs.runtime_node_id
+					AND i.runtime_endpoint = jobs.runtime_endpoint
+					AND i.workflow_generation = (
+						SELECT
+							generation
+						FROM
+							workflows
+						WHERE
+							id = jobs.workflow_id
+					)
+			);
+	`, postgres.TableJobs)
 
 	ct, err := tx.Exec(ctx, query, jobID, leaseToken, containerID, runtimeNodeID)
 	if err != nil {
@@ -513,17 +672,26 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 	}
 
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'COMPLETED',
-            completed_at = now() AT TIME ZONE 'utc',
+		UPDATE %s
+		SET
+			status = 'COMPLETED',
+			completed_at = now() AT TIME ZONE 'utc',
 			lease_token = NULL,
 			leased_by = NULL,
 			lease_process_instance_id = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL
-        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
-        RETURNING id, workflow_id, user_id, started_at, completed_at;
-    `, postgres.TableJobs)
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL
+		WHERE
+			id = $1
+			AND lease_token = $2
+			AND status = 'RUNNING'
+		RETURNING
+			id,
+			workflow_id,
+			user_id,
+			started_at,
+			completed_at;
+	`, postgres.TableJobs)
 
 	snapshot, err := r.scanTerminalJobSnapshot(ctx, tx, query, "complete job", jobID, leaseToken)
 	if err != nil {
@@ -545,7 +713,18 @@ func (r *Repository) CompleteJob(ctx context.Context, jobID, leaseToken, command
 }
 
 // FailJob marks a running claimed job as failed.
-func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind, errorCode, errorMessage, terminalReasonCode, commandID string) (err error) {
+func (r *Repository) FailJob(
+	ctx context.Context,
+	jobID,
+	leaseToken,
+	failureKind,
+	errorCode,
+	errorMessage,
+	terminalReasonCode,
+	commandID string,
+) (
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.FailJob")
 	defer func() {
 		if err != nil {
@@ -579,21 +758,30 @@ func (r *Repository) FailJob(ctx context.Context, jobID, leaseToken, failureKind
 	}
 
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'FAILED',
-            completed_at = now() AT TIME ZONE 'utc',
+		UPDATE %s
+		SET
+			status = 'FAILED',
+			completed_at = now() AT TIME ZONE 'utc',
 			lease_token = NULL,
 			leased_by = NULL,
 			lease_process_instance_id = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL,
-            failure_kind = $3,
-            last_error_code = $4,
-            last_error_message = $5,
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL,
+			failure_kind = $3,
+			last_error_code = $4,
+			last_error_message = $5,
 			terminal_reason_code = $6
-        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
-        RETURNING id, workflow_id, user_id, started_at, completed_at;
-    `, postgres.TableJobs)
+		WHERE
+			id = $1
+			AND lease_token = $2
+			AND status = 'RUNNING'
+		RETURNING
+			id,
+			workflow_id,
+			user_id,
+			started_at,
+			completed_at;
+	`, postgres.TableJobs)
 
 	truncatedMessage := truncateJobError(errorMessage)
 	snapshot, err := r.scanTerminalJobSnapshot(ctx, tx, query, "fail job", jobID, leaseToken, failureKind, errorCode, truncatedMessage, terminalReasonCode)
@@ -649,17 +837,21 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 	}
 
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'CANCELED',
-            completed_at = now() AT TIME ZONE 'utc',
+		UPDATE %s
+		SET
+			status = 'CANCELED',
+			completed_at = now() AT TIME ZONE 'utc',
 			lease_token = NULL,
 			leased_by = NULL,
 			lease_process_instance_id = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL,
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL,
 			terminal_reason_code = $3
-        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING';
-    `, postgres.TableJobs)
+		WHERE
+			id = $1
+			AND lease_token = $2
+			AND status = 'RUNNING';
+	`, postgres.TableJobs)
 	ct, err := tx.Exec(ctx, query, jobID, leaseToken, terminalReasonCode)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "cancel claimed job")
@@ -681,7 +873,17 @@ func (r *Repository) CancelClaimedJob(ctx context.Context, jobID, leaseToken, te
 // with WORKFLOW_TERMINATED instead of PENDING so scheduler never resurrects it.
 //
 //nolint:gocyclo // Transactional reserve/replay/release branches mirror FailJob/CompleteJob.
-func (r *Repository) ReleaseJobForRetry(ctx context.Context, jobID, leaseToken, nextAttemptAt, errorCode, errorMessage, commandID string) (err error) {
+func (r *Repository) ReleaseJobForRetry(
+	ctx context.Context,
+	jobID,
+	leaseToken,
+	nextAttemptAt,
+	errorCode,
+	errorMessage,
+	commandID string,
+) (
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.ReleaseJobForRetry")
 	defer func() {
 		if err != nil {
@@ -863,73 +1065,100 @@ func (r *Repository) renewRecoveryReplay(
 
 func validateClaimReplayQuery() string {
 	return fmt.Sprintf(`
-		SELECT job.lease_expires_at
-		FROM %s AS job
-		WHERE job.id = $1
-		  AND job.status = 'RUNNING'
-		  AND job.lease_token = $2
-		  AND job.leased_by = $3
-		  AND job.lease_process_instance_id = $4
-		  AND job.dispatch_attempts = $5
-		  AND job.lease_expires_at > clock_timestamp() AT TIME ZONE 'utc';
+		SELECT
+			job.lease_expires_at
+		FROM
+			%s AS job
+		WHERE
+			job.id = $1
+			AND job.status = 'RUNNING'
+			AND job.lease_token = $2
+			AND job.leased_by = $3
+			AND job.lease_process_instance_id = $4
+			AND job.dispatch_attempts = $5
+			AND job.lease_expires_at > clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableJobs)
 }
 
 func renewRecoveryReplayQuery() string {
 	return fmt.Sprintf(`
-		WITH requested AS (
-			SELECT id, lease_token
-			FROM jsonb_to_recordset($1::jsonb) AS identity(id UUID, lease_token TEXT)
-		), renewal AS (
-			SELECT clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
-		)
+		WITH
+			requested AS (
+				SELECT
+					id,
+					lease_token
+				FROM
+					jsonb_to_recordset($1::jsonb) AS identity (id UUID, lease_token TEXT)
+			),
+			renewal AS (
+				SELECT
+					clock_timestamp() AT TIME ZONE 'utc' AS renewed_at
+			)
 		UPDATE %s AS job
-		SET lease_expires_at = renewal.renewed_at + ($4::int * interval '1 second'),
+		SET
+			lease_expires_at = renewal.renewed_at + ($4::int * interval '1 second'),
 			last_heartbeat_at = renewal.renewed_at
-		FROM requested, renewal
-		WHERE job.id = requested.id
-		  AND job.lease_token = requested.lease_token
-		  AND job.leased_by = $2
-		  AND job.lease_process_instance_id = $3
-		  AND job.status = 'RUNNING'
-		  AND job.lease_expires_at > renewal.renewed_at
-		RETURNING job.id::text;
+		FROM
+			requested,
+			renewal
+		WHERE
+			job.id = requested.id
+			AND job.lease_token = requested.lease_token
+			AND job.leased_by = $2
+			AND job.lease_process_instance_id = $3
+			AND job.status = 'RUNNING'
+			AND job.lease_expires_at > renewal.renewed_at
+		RETURNING
+			job.id::text;
 	`, postgres.TableJobs)
 }
 
 func releaseJobForRetryQuery() string {
 	return fmt.Sprintf(`
-        WITH target AS (
-            SELECT id
-            FROM %s
-            WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING'
-            FOR UPDATE
-        ),
-        released AS (
-            UPDATE %s AS j
-            SET status = 'PENDING',
-                queued_at = NULL,
-                container_id = NULL,
-                runtime_node_id = NULL,
-                runtime_endpoint = NULL,
-                started_at = NULL,
-                completed_at = NULL,
-				lease_token = NULL,
-				leased_by = NULL,
-				lease_process_instance_id = NULL,
-                lease_expires_at = NULL,
-                last_heartbeat_at = NULL,
-				terminal_reason_code = NULL,
-                next_attempt_at = $3,
-                failure_kind = $4,
-                last_error_code = $5,
-                last_error_message = $6
-            FROM target
-            WHERE j.id = target.id
-            RETURNING j.id
-        )
-        SELECT COUNT(*) FROM released;
-    `, postgres.TableJobs, postgres.TableJobs)
+		WITH
+			target AS (
+				SELECT
+					id
+				FROM
+					%s
+				WHERE
+					id = $1
+					AND lease_token = $2
+					AND status = 'RUNNING'
+				FOR UPDATE
+			),
+			released AS (
+				UPDATE %s AS j
+				SET
+					status = 'PENDING',
+					queued_at = NULL,
+					container_id = NULL,
+					runtime_node_id = NULL,
+					runtime_endpoint = NULL,
+					started_at = NULL,
+					completed_at = NULL,
+					lease_token = NULL,
+					leased_by = NULL,
+					lease_process_instance_id = NULL,
+					lease_expires_at = NULL,
+					last_heartbeat_at = NULL,
+					terminal_reason_code = NULL,
+					next_attempt_at = $3,
+					failure_kind = $4,
+					last_error_code = $5,
+					last_error_message = $6
+				FROM
+					target
+				WHERE
+					j.id = target.id
+				RETURNING
+					j.id
+			)
+		SELECT
+			COUNT(*)
+		FROM
+			released;
+	`, postgres.TableJobs, postgres.TableJobs)
 }
 
 func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID string) (bool, error) {
@@ -938,13 +1167,18 @@ func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID 
 	// termination (job goes CANCELED), or termination waits and its async
 	// handler later cancels the PENDING job this release creates.
 	query := fmt.Sprintf(`
-        SELECT w.terminated_at IS NOT NULL
-        FROM %s AS w
-        JOIN %s AS j ON j.workflow_id = w.id
-        WHERE j.id = $1
-        LIMIT 1
-        FOR UPDATE OF w;
-    `, postgres.TableWorkflows, postgres.TableJobs)
+		SELECT
+			w.terminated_at IS NOT NULL
+		FROM
+			%s AS w
+			JOIN %s AS j ON j.workflow_id = w.id
+		WHERE
+			j.id = $1
+		LIMIT
+			1
+		FOR UPDATE OF
+			w;
+	`, postgres.TableWorkflows, postgres.TableJobs)
 	var terminated bool
 	if err := tx.QueryRow(ctx, query, jobID).Scan(&terminated); err != nil {
 		if r.pg.IsNoRows(err) {
@@ -957,17 +1191,21 @@ func (r *Repository) isWorkflowTerminated(ctx context.Context, tx pgx.Tx, jobID 
 
 func (r *Repository) cancelTerminatedRelease(ctx context.Context, tx pgx.Tx, jobID, leaseToken string) error {
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'CANCELED',
-            completed_at = now() AT TIME ZONE 'utc',
-            lease_token = NULL,
-            leased_by = NULL,
-            lease_process_instance_id = NULL,
-            lease_expires_at = NULL,
-            last_heartbeat_at = NULL,
-            terminal_reason_code = 'WORKFLOW_TERMINATED'
-        WHERE id = $1 AND lease_token = $2 AND status = 'RUNNING';
-    `, postgres.TableJobs)
+		UPDATE %s
+		SET
+			status = 'CANCELED',
+			completed_at = now() AT TIME ZONE 'utc',
+			lease_token = NULL,
+			leased_by = NULL,
+			lease_process_instance_id = NULL,
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL,
+			terminal_reason_code = 'WORKFLOW_TERMINATED'
+		WHERE
+			id = $1
+			AND lease_token = $2
+			AND status = 'RUNNING';
+	`, postgres.TableJobs)
 	ct, err := tx.Exec(ctx, query, jobID, leaseToken)
 	if err != nil {
 		return r.mapJobLeaseWriteError(err, "cancel terminated release")
@@ -1012,83 +1250,119 @@ func completeJobCommand(ctx context.Context, tx pgx.Tx, jobID, operation, comman
 
 func recoverExpiredJobLeasesQuery() string {
 	return fmt.Sprintf(`
-        WITH expired AS (
-            SELECT j.id
-            FROM %s AS j
-            LEFT JOIN %s AS rn ON rn.id = j.runtime_node_id
-            WHERE j.status = 'RUNNING'
-                AND j.lease_token IS NOT NULL
-                AND j.lease_expires_at IS NOT NULL
-                AND j.lease_expires_at < (now() AT TIME ZONE 'utc')
-                AND (
-                    j.runtime_node_id IS NULL
-                    OR rn.id IS NULL
-                    OR rn.status IN ('UNHEALTHY', 'DRAINING')
-                    OR (
-                        rn.status = 'READY'
-                        AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($5::int * interval '1 second')
-                    )
-                    OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
-                )
-            ORDER BY j.lease_expires_at ASC, j.id ASC
-            FOR UPDATE OF j SKIP LOCKED
-            LIMIT $1
-        )
-        UPDATE %s AS j
-		SET lease_token = $2,
+		WITH
+			expired AS (
+				SELECT
+					j.id
+				FROM
+					%s AS j
+					LEFT JOIN %s AS rn ON rn.id = j.runtime_node_id
+				WHERE
+					j.status = 'RUNNING'
+					AND j.lease_token IS NOT NULL
+					AND j.lease_expires_at IS NOT NULL
+					AND j.lease_expires_at < (now() AT TIME ZONE 'utc')
+					AND (
+						j.runtime_node_id IS NULL
+						OR rn.id IS NULL
+						OR rn.status IN ('UNHEALTHY', 'DRAINING')
+						OR (
+							rn.status = 'READY'
+							AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($5::int * interval '1 second')
+						)
+						OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
+					)
+				ORDER BY
+					j.lease_expires_at ASC,
+					j.id ASC
+				FOR UPDATE OF
+					j SKIP LOCKED
+				LIMIT
+					$1
+			)
+		UPDATE %s AS j
+		SET
+			lease_token = $2,
 			leased_by = $3,
 			lease_process_instance_id = $7,
-            lease_expires_at = (now() AT TIME ZONE 'utc') + ($4::int * interval '1 second'),
-            last_heartbeat_at = now() AT TIME ZONE 'utc'
-        FROM expired
-        JOIN %s AS w ON w.id = (SELECT workflow_id FROM %s WHERE id = expired.id)
-        LEFT JOIN %s AS rn ON rn.id = (SELECT runtime_node_id FROM %s WHERE id = expired.id)
-        WHERE j.id = expired.id
-        RETURNING j.id,
-            j.workflow_id,
-            j.user_id,
-            j.container_id,
-            j.lease_token,
-            j.leased_by,
-            j.trigger,
-            j.scheduled_at,
-            j.attempts,
-            w.log_retention,
-            j.runtime_node_id,
-            COALESCE(NULLIF(j.runtime_endpoint, ''), rn.docker_endpoint) AS runtime_endpoint,
-            -- DRAINING stops new claims but may still allow owner-aware Docker cleanup.
-            -- Only missing, unhealthy, or lost runtimes are treated as unavailable.
-            (
-                j.runtime_node_id IS NOT NULL
-                AND (
-                    rn.id IS NULL
-                    OR rn.status = 'UNHEALTHY'
-                    OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
-                )
-            ) AS runtime_unavailable;
-    `, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs, postgres.TableWorkflows, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs)
+			lease_expires_at = (now() AT TIME ZONE 'utc') + ($4::int * interval '1 second'),
+			last_heartbeat_at = now() AT TIME ZONE 'utc'
+		FROM
+			expired
+			JOIN %s AS w ON w.id = (
+				SELECT
+					workflow_id
+				FROM
+					%s
+				WHERE
+					id = expired.id
+			)
+			LEFT JOIN %s AS rn ON rn.id = (
+				SELECT
+					runtime_node_id
+				FROM
+					%s
+				WHERE
+					id = expired.id
+			)
+		WHERE
+			j.id = expired.id
+		RETURNING
+			j.id,
+			j.workflow_id,
+			j.user_id,
+			j.container_id,
+			j.lease_token,
+			j.leased_by,
+			j.trigger,
+			j.scheduled_at,
+			j.attempts,
+			w.log_retention,
+			j.runtime_node_id,
+			COALESCE(
+				NULLIF(j.runtime_endpoint, ''),
+				rn.docker_endpoint
+			) AS runtime_endpoint,
+			-- DRAINING stops new claims but may still allow owner-aware Docker cleanup.
+			-- Only missing, unhealthy, or lost runtimes are treated as unavailable.
+			(
+				j.runtime_node_id IS NOT NULL
+				AND (
+					rn.id IS NULL
+					OR rn.status = 'UNHEALTHY'
+					OR rn.last_heartbeat_at <= (now() AT TIME ZONE 'utc') - ($6::int * interval '1 second')
+				)
+			) AS runtime_unavailable;
+	`, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs, postgres.TableWorkflows, postgres.TableJobs, postgres.TableRuntimeNodes, postgres.TableJobs)
 }
 
 func queuedContainerJobMissingRuntimeQuery() string {
 	return fmt.Sprintf(`
-        SELECT EXISTS (
-            SELECT 1
-            FROM %s AS j
-            JOIN %s AS w ON w.id = j.workflow_id
-            WHERE j.id = $1
-                AND j.workflow_id = $2
-                AND j.status = 'QUEUED'
-                AND j.dispatch_attempts = $3
-                AND w.kind = 'CONTAINER'
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM %s AS rn
-                    WHERE rn.status = 'READY'
-                        AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($4::int * interval '1 second')
-                        AND rn.running_jobs < rn.max_concurrency
-                )
-        );
-    `, postgres.TableJobs, postgres.TableWorkflows, postgres.TableRuntimeNodes)
+		SELECT
+			EXISTS (
+				SELECT
+					1
+				FROM
+					%s AS j
+					JOIN %s AS w ON w.id = j.workflow_id
+				WHERE
+					j.id = $1
+					AND j.workflow_id = $2
+					AND j.status = 'QUEUED'
+					AND j.dispatch_attempts = $3
+					AND w.kind = 'CONTAINER'
+					AND NOT EXISTS (
+						SELECT
+							1
+						FROM
+							%s AS rn
+						WHERE
+							rn.status = 'READY'
+							AND rn.last_heartbeat_at > (now() AT TIME ZONE 'utc') - ($4::int * interval '1 second')
+							AND rn.running_jobs < rn.max_concurrency
+					)
+			);
+	`, postgres.TableJobs, postgres.TableWorkflows, postgres.TableRuntimeNodes)
 }
 
 func (r *Repository) scanTerminalJobSnapshot(
@@ -1437,7 +1711,16 @@ func (r *Repository) completeExpiredRecovery(
 
 func (r *Repository) lockJobWorkflow(ctx context.Context, tx pgx.Tx, jobID string) error {
 	var id string
-	err := tx.QueryRow(ctx, "SELECT w.id::text FROM workflows w JOIN jobs j ON j.workflow_id=w.id WHERE j.id=$1 FOR UPDATE OF w", jobID).Scan(&id)
+	err := tx.QueryRow(ctx, `
+		SELECT
+			w.id::text
+		FROM
+			workflows w
+			JOIN jobs j ON j.workflow_id = w.id
+		WHERE
+			j.id = $1
+		FOR UPDATE OF w
+	`, jobID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}

@@ -177,9 +177,32 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 		t.Helper()
 		hashCounter++
 		query := `
-			INSERT INTO command_idempotency_keys
-				(scope, operation, idempotency_key, request_hash, status, resource_id, response, created_at, updated_at, completed_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5, 'resource-1', '{}', now() AT TIME ZONE 'utc' - interval '2 hours', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc', ` + expiresAtSQL + `)
+			INSERT INTO command_idempotency_keys (
+				scope,
+				operation,
+				idempotency_key,
+				request_hash,
+				status,
+				resource_id,
+				response,
+				created_at,
+				updated_at,
+				completed_at,
+				expires_at
+			)
+			VALUES (
+				$1,
+				$2,
+				$3,
+				$4,
+				$5,
+				'resource-1',
+				'{}',
+				now() AT TIME ZONE 'utc' - interval '2 hours',
+				now() AT TIME ZONE 'utc',
+				now() AT TIME ZONE 'utc',
+				` + expiresAtSQL + `
+			)
 		`
 		if _, err := pg.Exec(ctx, query, scope, operation, key, fmt.Sprintf("%064x", hashCounter), status); err != nil {
 			t.Fatalf("seed %s/%s: %v", operation, key, err)
@@ -189,9 +212,26 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 	seedKey("op", "expired-2", "COMPLETED", "now() AT TIME ZONE 'utc' - interval '30 minutes'")
 	seedKey("op", "live", "COMPLETED", "now() AT TIME ZONE 'utc' + interval '1 hour'")
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO command_idempotency_keys
-			(scope, operation, idempotency_key, request_hash, status, created_at, updated_at)
-		VALUES ($1, 'op', 'processing', $2, 'PROCESSING', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc')
+		INSERT INTO
+			command_idempotency_keys (
+				scope,
+				operation,
+				idempotency_key,
+				request_hash,
+				status,
+				created_at,
+				updated_at
+			)
+		VALUES
+			(
+				$1,
+				'op',
+				'processing',
+				$2,
+				'PROCESSING',
+				now() AT TIME ZONE 'utc',
+				now() AT TIME ZONE 'utc'
+			)
 	`, scope, fmt.Sprintf("%064x", hashCounter+1)); err != nil {
 		t.Fatalf("seed processing key: %v", err)
 	}
@@ -213,7 +253,18 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 		t.Fatalf("deleted %d rows with batch size 1, want 1", deleted)
 	}
 	var remaining []string
-	if queryErr := pg.QueryRow(ctx, `SELECT array_agg(idempotency_key ORDER BY idempotency_key) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&remaining); queryErr != nil {
+	if queryErr := pg.QueryRow(ctx, `
+		SELECT
+			array_agg(
+				idempotency_key
+				ORDER BY
+					idempotency_key
+			)
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+	`, scope).Scan(&remaining); queryErr != nil {
 		t.Fatalf("fetch keys after first batch: %v", queryErr)
 	}
 	if want := []string{"expired-2", "live", "processing"}; !slices.Equal(remaining, want) {
@@ -229,7 +280,18 @@ func TestIntegrationCleanupCommandIdempotencyKeys(t *testing.T) {
 		t.Fatalf("deleted %d remaining expired rows, want 1", deleted)
 	}
 
-	if queryErr := pg.QueryRow(ctx, `SELECT array_agg(idempotency_key ORDER BY idempotency_key) FROM command_idempotency_keys WHERE scope = $1`, scope).Scan(&remaining); queryErr != nil {
+	if queryErr := pg.QueryRow(ctx, `
+		SELECT
+			array_agg(
+				idempotency_key
+				ORDER BY
+					idempotency_key
+			)
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+	`, scope).Scan(&remaining); queryErr != nil {
 		t.Fatalf("fetch remaining keys: %v", queryErr)
 	}
 	if want := []string{"live", "processing"}; !slices.Equal(remaining, want) {

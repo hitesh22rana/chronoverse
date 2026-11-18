@@ -557,7 +557,13 @@ func TestIntegrationDiscoveryLostCommitCannotGrantFallback(t *testing.T) {
 	repo := isolatedContainerIntentRepository(t)
 	fixture := seedRetainedCleanupOn(t, repo.pg)
 	require.NoError(t, func() error {
-		_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+		_, err := repo.pg.Exec(t.Context(), `
+			UPDATE container_creation_intents
+			SET
+				closed_at = now() AT TIME ZONE 'utc'
+			WHERE
+				id = $1
+		`, fixture.IntentID)
 		return err
 	}())
 	faulty := discoveryWireFault(t, repo, func(kind byte, body []byte) bool {
@@ -575,7 +581,13 @@ func TestIntegrationDiscoveryLostCommitCannotGrantFallback(t *testing.T) {
 	result, err = repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
 	require.NoError(t, err)
 	require.Empty(t, result, "a failed response does not authorize another grant")
-	_, err = repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET inspection_until=now() AT TIME ZONE 'utc'-interval '1 second' WHERE id=$1`, fixture.IntentID)
+	_, err = repo.pg.Exec(t.Context(), `
+		UPDATE container_creation_intents
+		SET
+			inspection_until = now() AT TIME ZONE 'utc' - interval '1 second'
+		WHERE
+			id = $1
+	`, fixture.IntentID)
 	require.NoError(t, err)
 	result, err = repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
 	require.NoError(t, err)
@@ -588,7 +600,13 @@ func TestIntegrationDiscoveryClaimFailuresRollBackTurnAndTokens(t *testing.T) {
 		t.Run(fmt.Sprint(deferred), func(t *testing.T) {
 			repo := isolatedContainerIntentRepository(t)
 			fixture := seedRetainedCleanupOn(t, repo.pg)
-			_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+			_, err := repo.pg.Exec(t.Context(), `
+				UPDATE container_creation_intents
+				SET
+					closed_at = now() AT TIME ZONE 'utc'
+				WHERE
+					id = $1
+			`, fixture.IntentID)
 			require.NoError(t, err)
 			remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_creation_intents", "UPDATE", deferred, map[string]string{"id": fixture.IntentID})
 			result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
@@ -619,15 +637,37 @@ func TestIntegrationObservationFailureRollsBackPromotionAndProof(t *testing.T) {
 				remove = scopedJobFaultTrigger(t.Context(), t, repo.pg, "outbox_events", "INSERT", false,
 					map[string]string{"event_key": cleanupEventKey(command.JobID, command.ContainerID, command.RuntimeInstance)})
 			}
-			_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET inspection_urgent=FALSE,next_inspection_at='2099-01-01' WHERE id=$1`, command.IntentID)
+			_, err := repo.pg.Exec(t.Context(), `
+				UPDATE container_creation_intents
+				SET
+					inspection_urgent = FALSE,
+					next_inspection_at = '2099-01-01'
+				WHERE
+					id = $1
+			`, command.IntentID)
 			require.NoError(t, err)
 			result, err := repo.UpdateContainerIntent(t.Context(), jobsmodel.ContainerIntentOperationObserve, command)
 			require.Error(t, err)
 			require.Nil(t, result)
 			remove()
 			var absent, preserved bool
-			require.NoError(t, repo.pg.QueryRow(t.Context(), `SELECT NOT EXISTS(SELECT 1 FROM container_materializations WHERE intent_id=$1),
- NOT inspection_urgent AND next_inspection_at='2099-01-01' FROM container_creation_intents WHERE id=$1`, command.IntentID).Scan(&absent, &preserved))
+			require.NoError(t, repo.pg.QueryRow(t.Context(), `
+				SELECT
+					NOT EXISTS (
+						SELECT
+							1
+						FROM
+							container_materializations
+						WHERE
+							intent_id = $1
+					),
+					NOT inspection_urgent
+					AND next_inspection_at = '2099-01-01'
+				FROM
+					container_creation_intents
+				WHERE
+					id = $1
+			`, command.IntentID).Scan(&absent, &preserved))
 			require.True(t, absent, "failed observation must not fabricate cleanup evidence")
 			require.True(t, preserved, "failed transaction must roll back urgency promotion")
 		})
@@ -637,7 +677,13 @@ func TestIntegrationObservationFailureRollsBackPromotionAndProof(t *testing.T) {
 func TestIntegrationDiscoveryTurnFailureCannotReturnTokens(t *testing.T) {
 	repo := isolatedContainerIntentRepository(t)
 	fixture := seedRetainedCleanupOn(t, repo.pg)
-	_, err := repo.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+	_, err := repo.pg.Exec(t.Context(), `
+		UPDATE container_creation_intents
+		SET
+			closed_at = now() AT TIME ZONE 'utc'
+		WHERE
+			id = $1
+	`, fixture.IntentID)
 	require.NoError(t, err)
 	remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, "container_discovery_turn", "UPDATE", false, map[string]string{"id": "true"})
 	result, err := repo.ListContainerIntents(t.Context(), &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)

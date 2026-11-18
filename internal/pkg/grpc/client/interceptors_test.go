@@ -121,7 +121,14 @@ func sameError(got, want error) bool {
 	return got == want //nolint:errorlint // Exact identity is the interceptor contract.
 }
 
-func interceptorInvocation(t *testing.T, kind string, cb *breaker.Breaker, stream grpc.ClientStream, rpcErr error, calls *int) func() (grpc.ClientStream, error) {
+func interceptorInvocation(
+	t *testing.T,
+	kind string,
+	cb *breaker.Breaker,
+	stream grpc.ClientStream,
+	rpcErr error,
+	calls *int,
+) func() (grpc.ClientStream, error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

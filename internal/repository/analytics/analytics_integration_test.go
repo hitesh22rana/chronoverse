@@ -29,15 +29,33 @@ func seedAnalytics(ctx context.Context, t *testing.T, pg *postgres.Postgres) (us
 
 	// workflowA: 3 jobs, 10 logs, 60s duration.
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO analytics (user_id, workflow_id, kind, total_job_execution_duration, jobs_count, logs_count)
-		VALUES ($1, $2, 'CONTAINER', 60, 3, 10)
+		INSERT INTO
+			analytics (
+				user_id,
+				workflow_id,
+				kind,
+				total_job_execution_duration,
+				jobs_count,
+				logs_count
+			)
+		VALUES
+			($1, $2, 'CONTAINER', 60, 3, 10)
 	`, userID, workflowA); err != nil {
 		t.Fatalf("seed analytics A: %v", err)
 	}
 	// workflowB: 1 job, 4 logs, 30s duration.
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO analytics (user_id, workflow_id, kind, total_job_execution_duration, jobs_count, logs_count)
-		VALUES ($1, $2, 'HEARTBEAT', 30, 1, 4)
+		INSERT INTO
+			analytics (
+				user_id,
+				workflow_id,
+				kind,
+				total_job_execution_duration,
+				jobs_count,
+				logs_count
+			)
+		VALUES
+			($1, $2, 'HEARTBEAT', 30, 1, 4)
 	`, userID, workflowB); err != nil {
 		t.Fatalf("seed analytics B: %v", err)
 	}

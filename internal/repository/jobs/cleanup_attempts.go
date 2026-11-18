@@ -47,9 +47,24 @@ func (r *Repository) UpdateContainerCleanup(
 	var storedToken sql.NullString
 	var lease, next sql.NullTime
 	var now time.Time
-	err = tx.QueryRow(ctx, `SELECT cleanup_state,cleanup_generation,cleanup_attempts,cleanup_token::text,
- cleanup_lease_until,cleanup_next_attempt_at,clock_timestamp() AT TIME ZONE 'utc'
- FROM outbox_events WHERE topic='workflows' AND event_key=$1 AND cleanup_state IS NOT NULL AND payload->'ContainerCleanup'->>'IntentID'=$2 FOR UPDATE`, key, identity.IntentID).
+	err = tx.QueryRow(ctx, `
+		SELECT
+			cleanup_state,
+			cleanup_generation,
+			cleanup_attempts,
+			cleanup_token::text,
+			cleanup_lease_until,
+			cleanup_next_attempt_at,
+			clock_timestamp() AT TIME ZONE 'utc'
+		FROM
+			outbox_events
+		WHERE
+			topic = 'workflows'
+			AND event_key = $1
+			AND cleanup_state IS NOT NULL
+			AND payload -> 'ContainerCleanup' ->> 'IntentID' = $2
+		FOR UPDATE
+	`, key, identity.IntentID).
 		Scan(&result.State, &result.Generation, &result.Attempts, &storedToken, &lease, &next, &now)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, r.mapJobLeaseReadError(err, "read cleanup attempt")
@@ -58,7 +73,20 @@ func (r *Repository) UpdateContainerCleanup(
 	var completed bool
 	if receiptErr := tx.QueryRow(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM container_cleanup_receipts WHERE job_id=$1 AND container_id=$2 AND runtime_instance=$3 AND intent_id=$4)`,
+		`
+			SELECT
+				EXISTS (
+					SELECT
+						1
+					FROM
+						container_cleanup_receipts
+					WHERE
+						job_id = $1
+						AND container_id = $2
+						AND runtime_instance = $3
+						AND intent_id = $4
+				)
+		`,
 		identity.JobID,
 		identity.ContainerID,
 		identity.RuntimeInstance,
@@ -100,20 +128,70 @@ INSERT INTO container_cleanup_redrives(
 	lease = result.lease
 	next = result.next
 	// Duplicate reports preserve the original failure timestamp and retry window.
-	_, err = tx.Exec(ctx, `UPDATE outbox_events SET cleanup_state=$2,cleanup_generation=$3,cleanup_attempts=$4,
- cleanup_token=NULLIF($5,'')::uuid,cleanup_lease_until=$6,cleanup_next_attempt_at=$7,
- cleanup_failed_at=CASE WHEN $8=$11 THEN $10 WHEN $8=$12 THEN NULL ELSE cleanup_failed_at END,
- cleanup_error_code=CASE WHEN $8=$11 THEN $9 WHEN $8=$12 THEN NULL ELSE cleanup_error_code END,
- payload=jsonb_set(payload,'{CleanupGeneration}',to_jsonb($3::bigint)),
- status=CASE WHEN $8=$12 THEN 'PENDING'::OUTBOX_STATUS ELSE status END,
- attempts=CASE WHEN $8=$12 THEN 0 ELSE attempts END,
- next_attempt_at=CASE WHEN $8=$12 THEN $10 ELSE next_attempt_at END,
- cleanup_replay_round=CASE WHEN $8=$12 THEN 0 ELSE cleanup_replay_round END,
- cleanup_replay_due_at=CASE WHEN $8=$12 THEN NULL ELSE cleanup_replay_due_at END,
- published_at=CASE WHEN $8=$12 THEN NULL ELSE published_at END,
- locked_at=CASE WHEN $8=$12 THEN NULL ELSE locked_at END,
- locked_by=CASE WHEN $8=$12 THEN NULL ELSE locked_by END
- WHERE topic='workflows' AND event_key=$1 AND ($8 <> $11 OR cleanup_state=$13)`,
+	_, err = tx.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			cleanup_state = $2,
+			cleanup_generation = $3,
+			cleanup_attempts = $4,
+			cleanup_token = NULLIF($5, '')::uuid,
+			cleanup_lease_until = $6,
+			cleanup_next_attempt_at = $7,
+			cleanup_failed_at = CASE
+				WHEN $8 = $11 THEN $10
+				WHEN $8 = $12 THEN NULL
+				ELSE cleanup_failed_at
+			END,
+			cleanup_error_code = CASE
+				WHEN $8 = $11 THEN $9
+				WHEN $8 = $12 THEN NULL
+				ELSE cleanup_error_code
+			END,
+			payload = jsonb_set(
+				payload,
+				'{CleanupGeneration}',
+				to_jsonb($3::bigint)
+			),
+			status = CASE
+				WHEN $8 = $12 THEN 'PENDING'::OUTBOX_STATUS
+				ELSE status
+			END,
+			attempts = CASE
+				WHEN $8 = $12 THEN 0
+				ELSE attempts
+			END,
+			next_attempt_at = CASE
+				WHEN $8 = $12 THEN $10
+				ELSE next_attempt_at
+			END,
+			cleanup_replay_round = CASE
+				WHEN $8 = $12 THEN 0
+				ELSE cleanup_replay_round
+			END,
+			cleanup_replay_due_at = CASE
+				WHEN $8 = $12 THEN NULL
+				ELSE cleanup_replay_due_at
+			END,
+			published_at = CASE
+				WHEN $8 = $12 THEN NULL
+				ELSE published_at
+			END,
+			locked_at = CASE
+				WHEN $8 = $12 THEN NULL
+				ELSE locked_at
+			END,
+			locked_by = CASE
+				WHEN $8 = $12 THEN NULL
+				ELSE locked_by
+			END
+		WHERE
+			topic = 'workflows'
+			AND event_key = $1
+			AND (
+				$8 <> $11
+				OR cleanup_state = $13
+			)
+	`,
 		key, result.State, result.Generation, result.Attempts, result.Token, lease, next, operation, errorCode, now,
 		jobsmodel.CleanupOperationFail, jobsmodel.CleanupOperationRedrive, jobsmodel.CleanupStateProcessing,
 	)

@@ -632,8 +632,14 @@ without secret-bearing request data:
 ```sql
 SELECT quarantined, inspection_urgent,
        count(*) AS intents,
-       count(*) FILTER (WHERE NOT quarantined AND next_inspection_at <= (clock_timestamp() AT TIME ZONE 'utc')) AS due,
-       count(*) FILTER (WHERE NOT quarantined AND inspection_until > (clock_timestamp() AT TIME ZONE 'utc')) AS leased,
+       count(*) FILTER (
+           WHERE NOT quarantined
+             AND next_inspection_at <= (clock_timestamp() AT TIME ZONE 'utc')
+       ) AS due,
+       count(*) FILTER (
+           WHERE NOT quarantined
+             AND inspection_until > (clock_timestamp() AT TIME ZONE 'utc')
+       ) AS leased,
        min(next_inspection_at) FILTER (WHERE NOT quarantined) AS oldest_due
 FROM container_creation_intents
 WHERE closed_at IS NOT NULL
@@ -1274,7 +1280,10 @@ WITH cleanup AS MATERIALIZED (
                      AND r.runtime_instance = e.payload->'ContainerCleanup'->>'RuntimeInstance'
                ), FALSE) THEN 'MATCHED'
                WHEN NOT COALESCE(pg_input_is_valid(e.payload->>'JobID', 'uuid'), FALSE)
-                 OR NOT COALESCE(pg_input_is_valid(e.payload->'ContainerCleanup'->>'IntentID', 'uuid'), FALSE)
+                 OR NOT COALESCE(
+                     pg_input_is_valid(e.payload->'ContainerCleanup'->>'IntentID', 'uuid'),
+                     FALSE
+                 )
                  OR COALESCE(e.payload->'ContainerCleanup'->>'ContainerID', '') = ''
                  OR COALESCE(e.payload->'ContainerCleanup'->>'RuntimeInstance', '') = ''
                THEN 'INVALID_IDENTITY'
@@ -1297,13 +1306,28 @@ SELECT jsonb_build_object(
     'cleanup_groups', COALESCE((SELECT jsonb_agg(to_jsonb(g)
         ORDER BY topic, publication_state, cleanup_state, receipt) FROM groups g), '[]'::jsonb),
     'cleanup_rows', (SELECT count(*) FROM cleanup),
-    'cleanup_without_exact_receipt', (SELECT count(*) FROM cleanup WHERE receipt <> 'MATCHED'),
-    'completed_without_exact_receipt', (SELECT count(*) FROM cleanup WHERE cleanup_state = 'COMPLETED' AND receipt <> 'MATCHED'),
-    'matched_receipt_without_completed_marker', (SELECT count(*) FROM cleanup WHERE receipt = 'MATCHED' AND cleanup_state IS DISTINCT FROM 'COMPLETED'),
-    'holds', (SELECT jsonb_build_object(
-        'active', count(*) FILTER (WHERE released_at IS NULL),
-        'released', count(*) FILTER (WHERE released_at IS NOT NULL)) FROM public.runtime_capacity_holds),
-    'ordinary_outbox_rows', (SELECT count(*) FROM public.outbox_events WHERE payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP'),
+    'cleanup_without_exact_receipt', (
+        SELECT count(*) FROM cleanup WHERE receipt <> 'MATCHED'
+    ),
+    'completed_without_exact_receipt', (
+        SELECT count(*) FROM cleanup
+        WHERE cleanup_state = 'COMPLETED' AND receipt <> 'MATCHED'
+    ),
+    'matched_receipt_without_completed_marker', (
+        SELECT count(*) FROM cleanup
+        WHERE receipt = 'MATCHED' AND cleanup_state IS DISTINCT FROM 'COMPLETED'
+    ),
+    'holds', (
+        SELECT jsonb_build_object(
+            'active', count(*) FILTER (WHERE released_at IS NULL),
+            'released', count(*) FILTER (WHERE released_at IS NOT NULL)
+        )
+        FROM public.runtime_capacity_holds
+    ),
+    'ordinary_outbox_rows', (
+        SELECT count(*) FROM public.outbox_events
+        WHERE payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP'
+    ),
     'non_cleanup_rows_with_cleanup_state', (SELECT count(*) FROM public.outbox_events
         WHERE payload->>'Action' IS DISTINCT FROM 'CONTAINER_CLEANUP' AND cleanup_state IS NOT NULL)
 );

@@ -16,9 +16,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
@@ -28,6 +25,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 	"github.com/hitesh22rana/chronoverse/internal/repository/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/repository/workflows"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
@@ -322,7 +321,14 @@ type durableTerminalWorkflowsClient struct {
 	repo *workflows.Repository
 }
 
-func (c durableTerminalWorkflowsClient) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest, _ ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+func (c durableTerminalWorkflowsClient) GetWorkflowByID(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowByIDRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	error,
+) {
 	res, err := c.repo.GetWorkflowByID(ctx, req.GetId())
 	if err != nil {
 		return nil, err
@@ -538,14 +544,27 @@ func durableTerminalJobCompletedEvent(fixture *durableTerminalFixture, jobID str
 
 // durableTerminalNotifications reads every durable notification row the fixture
 // user owns, so an unexpected effect cannot hide behind a narrow key allowlist.
-func durableTerminalNotifications(ctx context.Context, t *testing.T, pg *postgres.Postgres, userID string) []durableTerminalNotificationRow {
+func durableTerminalNotifications(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	userID string,
+) []durableTerminalNotificationRow {
 	t.Helper()
 
 	rows, err := pg.Query(ctx, fmt.Sprintf(`
-		SELECT id::text, kind, payload::text, idempotency_key
-		FROM %s
-		WHERE user_id = $1
-		ORDER BY created_at, id
+		SELECT
+			id::text,
+			kind,
+			payload::text,
+			idempotency_key
+		FROM
+			%s
+		WHERE
+			user_id = $1
+		ORDER BY
+			created_at,
+			id
 	`, postgres.TableNotifications), userID)
 	if err != nil {
 		t.Fatalf("read durable notifications: %v", err)
@@ -573,10 +592,16 @@ func durableTerminalEffects(ctx context.Context, t *testing.T, pg *postgres.Post
 	t.Helper()
 
 	rows, err := pg.Query(ctx, fmt.Sprintf(`
-		SELECT job_id::text, effect, threshold_reached
-		FROM %s
-		WHERE workflow_id = $1
-		ORDER BY job_id
+		SELECT
+			job_id::text,
+			effect,
+			threshold_reached
+		FROM
+			%s
+		WHERE
+			workflow_id = $1
+		ORDER BY
+			job_id
 	`, postgres.TableWorkflowTerminalEffects), workflowID)
 	if err != nil {
 		t.Fatalf("read terminal effect ledger: %v", err)
@@ -604,9 +629,14 @@ func durableTerminalTerminateEvents(ctx context.Context, t *testing.T, pg *postg
 
 	var count int
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*)
-		FROM %s
-		WHERE topic = $1 AND kafka_key = $2 AND payload->>'Action' = $3
+		SELECT
+			count(*)
+		FROM
+			%s
+		WHERE
+			topic = $1
+			AND kafka_key = $2
+			AND payload ->> 'Action' = $3
 	`, postgres.TableOutboxEvents), kafkapkg.TopicWorkflows, workflowID, workflowsmodel.ActionTerminate.ToString()).Scan(&count); err != nil {
 		t.Fatalf("count termination outbox events: %v", err)
 	}

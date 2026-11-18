@@ -8,11 +8,10 @@ import (
 	"testing"
 	"time"
 
-	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )

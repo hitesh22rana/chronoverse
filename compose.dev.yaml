@@ -2005,7 +2005,7 @@ volumes:
   firewall-state:
 
 networks:
-  # Dedicated network for tenant workload containers (VULN-004b). No platform
+  # Dedicated network for tenant workload containers. No platform
   # service attaches to it; the runtime pins workloads here and creates it on
   # demand when missing. ICC is disabled so tenants cannot reach each other.
   chronoverse-workloads:

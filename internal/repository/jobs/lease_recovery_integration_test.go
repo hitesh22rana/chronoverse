@@ -59,11 +59,25 @@ func readLeaseOwnership(ctx context.Context, t *testing.T, pg *postgres.Postgres
 
 	var ownership leaseOwnership
 	if err := pg.QueryRow(ctx, `
-		SELECT id::text, status, lease_token, leased_by, lease_process_instance_id, lease_expires_at,
-			last_heartbeat_at, container_id, runtime_node_id, runtime_endpoint, attempts,
-			dispatch_attempts, completed_at, terminal_reason_code
-		FROM jobs
-		WHERE id = $1
+		SELECT
+			id::text,
+			status,
+			lease_token,
+			leased_by,
+			lease_process_instance_id,
+			lease_expires_at,
+			last_heartbeat_at,
+			container_id,
+			runtime_node_id,
+			runtime_endpoint,
+			attempts,
+			dispatch_attempts,
+			completed_at,
+			terminal_reason_code
+		FROM
+			jobs
+		WHERE
+			id = $1
 	`, jobID).Scan(
 		&ownership.ID, &ownership.Status, &ownership.LeaseToken, &ownership.LeasedBy,
 		&ownership.LeaseProcessInstanceID, &ownership.LeaseExpiresAt, &ownership.LastHeartbeatAt,
@@ -84,9 +98,11 @@ func setLeaseMinutes(ctx context.Context, t *testing.T, pg *postgres.Postgres, j
 
 	tag, err := pg.Exec(ctx, `
 		UPDATE jobs
-		SET lease_expires_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2),
+		SET
+			lease_expires_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2),
 			last_heartbeat_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2)
-		WHERE id = $1
+		WHERE
+			id = $1
 	`, jobID, minutes)
 	if err != nil {
 		t.Fatalf("set lease expiry for %q: %v", jobID, err)
@@ -104,9 +120,11 @@ func setExpiredFixtureLeases(ctx context.Context, t *testing.T, pg *postgres.Pos
 
 	tag, err := pg.Exec(ctx, `
 		UPDATE jobs
-		SET lease_expires_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2),
+		SET
+			lease_expires_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2),
 			last_heartbeat_at = (now() AT TIME ZONE 'utc') + make_interval(mins => $2)
-		WHERE id = ANY($1::uuid[])
+		WHERE
+			id = ANY ($1::uuid[])
 	`, jobIDs, minutes)
 	if err != nil {
 		t.Fatalf("set identical lease expiries: %v", err)
@@ -135,8 +153,12 @@ func setRuntimeNodeState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 		defer cancel()
 		if _, err := pg.Exec(cleanupCtx, `
 			UPDATE runtime_nodes
-			SET status = $2::runtime_node_status, last_heartbeat_at = $3, running_jobs = $4
-			WHERE id = $1
+			SET
+				status = $2::runtime_node_status,
+				last_heartbeat_at = $3,
+				running_jobs = $4
+			WHERE
+				id = $1
 		`, nodeID, priorStatus, priorHeartbeat, priorRunningJobs); err != nil {
 			t.Errorf("restore runtime node %q: %v", nodeID, err)
 		}
@@ -144,9 +166,11 @@ func setRuntimeNodeState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 
 	if _, err := pg.Exec(ctx, `
 		UPDATE runtime_nodes
-		SET status = $2::runtime_node_status,
+		SET
+			status = $2::runtime_node_status,
 			last_heartbeat_at = (now() AT TIME ZONE 'utc') - make_interval(secs => $3)
-		WHERE id = $1
+		WHERE
+			id = $1
 	`, nodeID, status, heartbeatAgeSeconds); err != nil {
 		t.Fatalf("set runtime node %q state: %v", nodeID, err)
 	}
@@ -348,14 +372,33 @@ func assertUntouchedOwnership(t *testing.T, before, after *leaseOwnership) {
 	}
 }
 
-func readWorkerCommand(ctx context.Context, t *testing.T, pg *postgres.Postgres, processInstanceID, commandID string) (*jobCommandRow, bool) {
+func readWorkerCommand(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	processInstanceID,
+	commandID string,
+) (
+	*jobCommandRow,
+	bool,
+) {
 	t.Helper()
 
 	var row jobCommandRow
 	err := pg.QueryRow(ctx, `
-		SELECT status, request_hash, resource_id, response, completed_at, expires_at
-		FROM command_idempotency_keys
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+		SELECT
+			status,
+			request_hash,
+			resource_id,
+			response,
+			completed_at,
+			expires_at
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, commandidempotency.WorkerScope(processInstanceID), commandidempotency.OperationJobRecoverExpiredLeases, commandID,
 	).Scan(&row.Status, &row.RequestHash, &row.ResourceID, &row.Response, &row.CompletedAt, &row.ExpiresAt)
 	if pg.IsNoRows(err) {
@@ -677,12 +720,18 @@ func TestIntegrationRecoverExpiredJobLeasesReplayCannotResurrectDeadEntries(t *t
 	}
 	if _, terminalizeErr := pg.Exec(ctx, `
 		UPDATE jobs
-		SET status = 'FAILED',
+		SET
+			status = 'FAILED',
 			completed_at = now() AT TIME ZONE 'utc',
-			lease_token = NULL, leased_by = NULL, lease_process_instance_id = NULL,
-			lease_expires_at = NULL, last_heartbeat_at = NULL,
-			failure_kind = 'SYSTEM', terminal_reason_code = 'SYSTEM_ERROR'
-		WHERE id = $1
+			lease_token = NULL,
+			leased_by = NULL,
+			lease_process_instance_id = NULL,
+			lease_expires_at = NULL,
+			last_heartbeat_at = NULL,
+			failure_kind = 'SYSTEM',
+			terminal_reason_code = 'SYSTEM_ERROR'
+		WHERE
+			id = $1
 	`, terminal.JobID); terminalizeErr != nil {
 		t.Fatalf("terminalize job: %v", terminalizeErr)
 	}

@@ -114,10 +114,21 @@ func waitForRegistrationInsert(ctx context.Context, t *testing.T, pg *postgres.P
 	defer ticker.Stop()
 	for {
 		var blocked bool
-		query := `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-   WHERE datname = current_database() AND state = 'active' AND wait_event_type = 'Lock'
-   AND query ILIKE '%INSERT INTO%users%'
-   AND $1 = ANY(pg_blocking_pids(pid)))`
+		query := `
+			SELECT
+				EXISTS (
+					SELECT
+						1
+					FROM
+						pg_stat_activity
+					WHERE
+						datname = current_database()
+						AND state = 'active'
+						AND wait_event_type = 'Lock'
+						AND regexp_replace(query, '\s+', ' ', 'g') ILIKE '%INSERT INTO%users%'
+						AND $1 = ANY (pg_blocking_pids(pid))
+				)
+		`
 		if err := pg.QueryRow(probeCtx, query, blocker).Scan(&blocked); err != nil {
 			t.Fatalf("probe registration INSERT: %v", err)
 		}

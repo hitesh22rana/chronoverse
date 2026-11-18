@@ -6,10 +6,9 @@ import (
 	"io/fs"
 
 	migratepkg "github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
-
 	// Register the PostgreSQL driver for golang-migrate.
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
 // Migrate applies every pending embedded migration to the PostgreSQL database

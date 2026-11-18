@@ -22,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -88,13 +87,35 @@ func seedExpiredCommandKey(ctx context.Context, t *testing.T, pg *postgres.Postg
 	t.Helper()
 
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO command_idempotency_keys
-			(scope, operation, idempotency_key, request_hash, status, resource_id, response, created_at, updated_at, completed_at, expires_at)
-		VALUES ($1, 'op', 'expired', $2, 'COMPLETED', 'resource-1', '{}',
-		        (now() AT TIME ZONE 'utc') - interval '2 hours',
-		        now() AT TIME ZONE 'utc',
-		        now() AT TIME ZONE 'utc',
-		        (now() AT TIME ZONE 'utc') - interval '1 hour')`,
+		INSERT INTO
+			command_idempotency_keys (
+				scope,
+				operation,
+				idempotency_key,
+				request_hash,
+				status,
+				resource_id,
+				response,
+				created_at,
+				updated_at,
+				completed_at,
+				expires_at
+			)
+		VALUES
+			(
+				$1,
+				'op',
+				'expired',
+				$2,
+				'COMPLETED',
+				'resource-1',
+				'{}',
+				(now() AT TIME ZONE 'utc') - interval '2 hours',
+				now() AT TIME ZONE 'utc',
+				now() AT TIME ZONE 'utc',
+				(now() AT TIME ZONE 'utc') - interval '1 hour'
+			)
+	`,
 		scope, fmt.Sprintf("%064x", 1),
 	); err != nil {
 		t.Fatalf("seed expired command key: %v", err)
@@ -116,9 +137,14 @@ func TestIntegrationCleanupPublishedEventsRespectsRetentionAndBatch(t *testing.T
 	veryOld := now.Add(-5 * time.Hour)
 
 	seedOutboxRow(ctx, t, pg, topic, "malformed-cleanup", statusPublished, &veryOld)
-	if _, err := pg.Exec(ctx, `UPDATE outbox_events
-SET payload='{"Action":"CONTAINER_CLEANUP","JobID":"invalid","ContainerCleanup":{"ContainerID":"container"}}'
-WHERE topic=$1 AND event_key='malformed-cleanup'`, topic); err != nil {
+	if _, err := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			payload = '{"Action":"CONTAINER_CLEANUP","JobID":"invalid","ContainerCleanup":{"ContainerID":"container"}}'
+		WHERE
+			topic = $1
+			AND event_key = 'malformed-cleanup'
+	`, topic); err != nil {
 		t.Fatal(err)
 	}
 	seedOutboxRow(ctx, t, pg, topic, "old-3h", statusPublished, &old3h)
@@ -295,12 +321,46 @@ func seedPruningCleanup(t *testing.T, repo *Repository, completed bool) (eventID
 	t.Helper()
 	intent, job := uuid.NewString(), uuid.NewString()
 	_, err := repo.pg.Exec(t.Context(), `
-INSERT INTO container_creation_intents(id,job_id,workflow_id,user_id,attempt,workflow_generation,
- process_instance_id,runtime_node_id,runtime_endpoint,runtime_instance,request_hash,name,log_retention)
-VALUES($1::uuid,$2::uuid,uuidv7(),uuidv7(),1,1,uuidv7(),'node','tcp://runtime:2376','daemon','hash',$1::text,false)`, intent, job)
+		INSERT INTO
+			container_creation_intents (
+				id,
+				job_id,
+				workflow_id,
+				user_id,
+				attempt,
+				workflow_generation,
+				process_instance_id,
+				runtime_node_id,
+				runtime_endpoint,
+				runtime_instance,
+				request_hash,
+				name,
+				log_retention
+			)
+		VALUES
+			(
+				$1::uuid,
+				$2::uuid,
+				uuidv7(),
+				uuidv7(),
+				1,
+				1,
+				uuidv7(),
+				'node',
+				'tcp://runtime:2376',
+				'daemon',
+				'hash',
+				$1::text,
+				false
+			)
+	`, intent, job)
 	require.NoError(t, err)
 	_, err = repo.pg.Exec(t.Context(), `
-INSERT INTO container_materializations(intent_id,container_id,runtime_instance) VALUES($1::uuid,$1::text,'daemon')`, intent)
+		INSERT INTO
+			container_materializations (intent_id, container_id, runtime_instance)
+		VALUES
+			($1::uuid, $1::text, 'daemon')
+	`, intent)
 	require.NoError(t, err)
 	state := "READY"
 	if completed {
@@ -311,10 +371,43 @@ VALUES($1,$2::text,'daemon',$2::uuid)`, job, intent)
 	}
 	var id string
 	err = repo.pg.QueryRow(t.Context(), `
-INSERT INTO outbox_events(topic,kafka_key,event_key,payload,status,published_at,cleanup_state)
-VALUES('workflows',$1,$1,jsonb_build_object('Action','CONTAINER_CLEANUP','JobID',$2::text,
- 'ContainerCleanup',jsonb_build_object('ContainerID',$1::text,'RuntimeInstance','daemon','IntentID',$1::text)),
- 'PUBLISHED',clock_timestamp()-interval '2 hours',$3) RETURNING id`, intent, job, state).Scan(&id)
+		INSERT INTO
+			outbox_events (
+				topic,
+				kafka_key,
+				event_key,
+				payload,
+				status,
+				published_at,
+				cleanup_state
+			)
+		VALUES
+			(
+				'workflows',
+				$1,
+				$1,
+				jsonb_build_object(
+					'Action',
+					'CONTAINER_CLEANUP',
+					'JobID',
+					$2::text,
+					'ContainerCleanup',
+					jsonb_build_object(
+						'ContainerID',
+						$1::text,
+						'RuntimeInstance',
+						'daemon',
+						'IntentID',
+						$1::text
+					)
+				),
+				'PUBLISHED',
+				clock_timestamp() - interval '2 hours',
+				$3
+			)
+		RETURNING
+			id
+	`, intent, job, state).Scan(&id)
 	require.NoError(t, err)
 	return id, intent
 }
@@ -337,8 +430,19 @@ func TestIntegrationPruningBudgetFairnessAndProof(t *testing.T) {
 				require.NoError(t, err)
 				require.EqualValues(t, batch, deleted)
 				var ordinary, cleanup int
-				require.NoError(t, repo.pg.QueryRow(ctx, `SELECT count(*) FILTER(WHERE topic='ordinary'),
-count(*) FILTER(WHERE topic='workflows') FROM outbox_events`).Scan(&ordinary, &cleanup))
+				require.NoError(t, repo.pg.QueryRow(ctx, `
+					SELECT
+						count(*) FILTER (
+							WHERE
+								topic = 'ordinary'
+						),
+						count(*) FILTER (
+							WHERE
+								topic = 'workflows'
+						)
+					FROM
+						outbox_events
+				`).Scan(&ordinary, &cleanup))
 				first := batch/2 + batch%2
 				if preferred {
 					require.Equal(t, 10-first, cleanup)
@@ -375,8 +479,19 @@ func TestIntegrationPruningBorrowExcludesMismatchesAndRevisitsProof(t *testing.T
 	var remaining int
 	require.NoError(t, repo.pg.QueryRow(ctx, "SELECT count(*) FROM outbox_events").Scan(&remaining))
 	require.Equal(t, 1, remaining)
-	_, err = repo.pg.Exec(ctx, `INSERT INTO container_cleanup_receipts(job_id,container_id,runtime_instance,intent_id)
-SELECT job_id,$1::text,'daemon',id FROM container_creation_intents WHERE id=$1::uuid`, intent)
+	_, err = repo.pg.Exec(ctx, `
+		INSERT INTO
+			container_cleanup_receipts (job_id, container_id, runtime_instance, intent_id)
+		SELECT
+			job_id,
+			$1::text,
+			'daemon',
+			id
+		FROM
+			container_creation_intents
+		WHERE
+			id = $1::uuid
+	`, intent)
 	require.NoError(t, err)
 	deleted, err = repo.CleanupPublishedEvents(ctx, time.Hour, 1)
 	require.NoError(t, err)
@@ -426,9 +541,20 @@ func TestIntegrationPruningReservationAndIndependentCommits(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, n, "busy reservation must not execute a lane")
 	require.NoError(t, lock.Rollback(ctx))
-	_, err = repo.pg.Exec(ctx, `CREATE FUNCTION reject_cleanup_delete() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN IF OLD.payload->>'Action'='CONTAINER_CLEANUP' THEN RAISE EXCEPTION 'injected cleanup failure'; END IF; RETURN OLD; END $$;
-CREATE TRIGGER reject_cleanup_delete BEFORE DELETE ON outbox_events FOR EACH ROW EXECUTE FUNCTION reject_cleanup_delete()`)
+	_, err = repo.pg.Exec(ctx, `
+		CREATE FUNCTION reject_cleanup_delete () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF OLD.payload->>'Action' = 'CONTAINER_CLEANUP' THEN
+				RAISE EXCEPTION 'injected cleanup failure';
+			END IF;
+			RETURN OLD;
+		END
+		$$;
+
+		CREATE TRIGGER reject_cleanup_delete
+		BEFORE DELETE ON outbox_events FOR EACH ROW
+		EXECUTE FUNCTION reject_cleanup_delete ()
+	`)
 	require.NoError(t, err)
 	n, err = repo.CleanupPublishedEvents(ctx, time.Hour, 2)
 	require.Equal(t, codes.Internal, status.Code(err))
@@ -612,10 +738,24 @@ func TestIntegrationPruningChildDeadlinePreservesOtherLane(t *testing.T) {
 	old := time.Now().Add(-2 * time.Hour)
 	seedOutboxRow(ctx, t, repo.pg, "ordinary", "old", statusPublished, &old)
 	seedPruningCleanup(t, repo, true)
-	_, err := repo.pg.Exec(ctx, `CREATE FUNCTION stall_cleanup_delete() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN IF OLD.payload->>'Action'='CONTAINER_CLEANUP' THEN PERFORM pg_sleep(60); END IF; RETURN OLD; END $$;
-CREATE TRIGGER stall_cleanup_delete BEFORE DELETE ON outbox_events FOR EACH ROW EXECUTE FUNCTION stall_cleanup_delete();
-UPDATE outbox_cleanup_turn SET next_cleanup=true`)
+	_, err := repo.pg.Exec(ctx, `
+		CREATE FUNCTION stall_cleanup_delete () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF OLD.payload->>'Action' = 'CONTAINER_CLEANUP' THEN
+				PERFORM pg_sleep(60);
+			END IF;
+			RETURN OLD;
+		END
+		$$;
+
+		CREATE TRIGGER stall_cleanup_delete
+		BEFORE DELETE ON outbox_events FOR EACH ROW
+		EXECUTE FUNCTION stall_cleanup_delete ();
+
+		UPDATE outbox_cleanup_turn
+		SET
+			next_cleanup = true
+	`)
 	require.NoError(t, err)
 	work, cancelWork := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelWork()
@@ -729,9 +869,14 @@ func TestIntegrationPruningReservationHasIndependentDeadline(t *testing.T) {
 	defer cancel()
 	old := time.Now().Add(-2 * time.Hour)
 	seedOutboxRow(ctx, t, repo.pg, "ordinary", "old", statusPublished, &old)
-	_, err := repo.pg.Exec(ctx, `CREATE FUNCTION stall_cleanup_turn() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN PERFORM pg_sleep(60);RETURN NEW;END $$;
-CREATE TRIGGER stall_cleanup_turn BEFORE UPDATE ON outbox_cleanup_turn FOR EACH ROW EXECUTE FUNCTION stall_cleanup_turn()`)
+	_, err := repo.pg.Exec(ctx, `
+		CREATE FUNCTION stall_cleanup_turn () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN PERFORM pg_sleep(60);RETURN NEW;END $$;
+
+		CREATE TRIGGER stall_cleanup_turn
+		BEFORE UPDATE ON outbox_cleanup_turn FOR EACH ROW
+		EXECUTE FUNCTION stall_cleanup_turn ()
+	`)
 	require.NoError(t, err)
 	work, stop := context.WithTimeout(ctx, 3*time.Second)
 	defer stop()

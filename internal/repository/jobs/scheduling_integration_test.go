@@ -101,9 +101,18 @@ func readScheduledJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 
 	var row scheduledJobRow
 	err := pg.QueryRow(ctx, `
-		SELECT workflow_id, user_id, status, trigger, scheduled_at, idempotency_key, workflow_generation
-		FROM jobs
-		WHERE id = $1
+		SELECT
+			workflow_id,
+			user_id,
+			status,
+			trigger,
+			scheduled_at,
+			idempotency_key,
+			workflow_generation
+		FROM
+			jobs
+		WHERE
+			id = $1
 	`, jobID).Scan(
 		&row.WorkflowID, &row.UserID, &row.Status, &row.Trigger,
 		&row.ScheduledAt, &row.IdempotencyKey, &row.WorkflowGeneration,
@@ -129,9 +138,13 @@ func countScheduleCommands(ctx context.Context, t *testing.T, pg *postgres.Postg
 
 	var count int
 	if err := pg.QueryRow(ctx, `
-		SELECT count(*)
-		FROM command_idempotency_keys
-		WHERE scope = $1 AND operation = $2
+		SELECT
+			count(*)
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+			AND operation = $2
 	`, scope, operation).Scan(&count); err != nil {
 		t.Fatalf("count schedule command ledger rows: %v", err)
 	}
@@ -207,7 +220,14 @@ func assertScheduledJobOwnership(
 // assertNoScheduleCommandEffect asserts a refused command left neither a job nor a
 // reservation: the ledger assertion is the atomicity check, since a reservation that
 // survived the rollback would fail every retry as still processing.
-func assertNoScheduleCommandEffect(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture scheduleCommandFixture, scope, operation string) {
+func assertNoScheduleCommandEffect(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	fixture scheduleCommandFixture,
+	scope,
+	operation string,
+) {
 	t.Helper()
 
 	if count := countWorkflowJobs(ctx, t, pg, fixture.WorkflowID); count != 0 {
@@ -224,8 +244,13 @@ func expireScheduleCommand(ctx context.Context, t *testing.T, pg *postgres.Postg
 
 	tag, err := pg.Exec(ctx, `
 		UPDATE command_idempotency_keys
-		SET completed_at = completed_at - interval '30 days', expires_at = expires_at - interval '30 days'
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+		SET
+			completed_at = completed_at - interval '30 days',
+			expires_at = expires_at - interval '30 days'
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, scope, operation, key)
 	if err != nil {
 		t.Fatalf("expire schedule command %q: %v", key, err)

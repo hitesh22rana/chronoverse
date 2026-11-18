@@ -21,7 +21,13 @@ func scheduleFaultTrigger(ctx context.Context, t *testing.T, pg *postgres.Postgr
 	t.Helper()
 	name := "cv_schedule_fault_" + fixtureTag()
 	function := name + "_fn"
-	if _, err := pg.Exec(ctx, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'schedule fault'; END; $$`, function)); err != nil {
+	if _, err := pg.Exec(ctx, fmt.Sprintf(`
+		CREATE FUNCTION %s () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			RAISE EXCEPTION 'schedule fault';
+		END;
+		$$
+	`, function)); err != nil {
 		t.Fatalf("create fault function: %v", err)
 	}
 	kind, timing := "TRIGGER", ""

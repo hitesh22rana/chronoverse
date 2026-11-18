@@ -34,7 +34,14 @@ func (f *fakeJobsServiceClient) GetJob(_ context.Context, req *jobspb.GetJobRequ
 	return &jobspb.GetJobResponse{Status: "COMPLETED"}, nil
 }
 
-func (f *fakeJobsServiceClient) GetJobLogs(_ context.Context, req *jobspb.GetJobLogsRequest, _ ...grpc.CallOption) (*jobspb.GetJobLogsResponse, error) {
+func (f *fakeJobsServiceClient) GetJobLogs(
+	_ context.Context,
+	req *jobspb.GetJobLogsRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetJobLogsResponse,
+	error,
+) {
 	f.getJobLogsRequest = req
 	if f.getJobLogsResponse != nil {
 		return f.getJobLogsResponse, nil
@@ -43,7 +50,14 @@ func (f *fakeJobsServiceClient) GetJobLogs(_ context.Context, req *jobspb.GetJob
 	return &jobspb.GetJobLogsResponse{}, nil
 }
 
-func (f *fakeJobsServiceClient) SearchJobLogs(_ context.Context, req *jobspb.SearchJobLogsRequest, _ ...grpc.CallOption) (*jobspb.GetJobLogsResponse, error) {
+func (f *fakeJobsServiceClient) SearchJobLogs(
+	_ context.Context,
+	req *jobspb.SearchJobLogsRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetJobLogsResponse,
+	error,
+) {
 	f.searchJobLogsRequest = req
 	if f.searchJobLogsResponse != nil {
 		return f.searchJobLogsResponse, nil

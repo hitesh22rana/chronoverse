@@ -15,13 +15,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 type lifecycleLock struct {
@@ -32,7 +31,15 @@ type lifecycleLock struct {
 	released []string
 }
 
-func (s *lifecycleLock) AcquireDistributedLockWithToken(_ context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
+func (s *lifecycleLock) AcquireDistributedLockWithToken(
+	_ context.Context,
+	key string,
+	ttl time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	s.keys = append(s.keys, key)
 	s.ttls = append(s.ttls, ttl)
 	return "owner-token", s.acquired, s.err
@@ -276,7 +283,14 @@ type lifecycleJobsClient struct {
 	cancel func(context.Context, *jobspb.CancelJobRequest) (*jobspb.CancelJobResponse, error)
 }
 
-func (c *lifecycleJobsClient) CancelJob(ctx context.Context, req *jobspb.CancelJobRequest, _ ...grpc.CallOption) (*jobspb.CancelJobResponse, error) {
+func (c *lifecycleJobsClient) CancelJob(
+	ctx context.Context,
+	req *jobspb.CancelJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.CancelJobResponse,
+	error,
+) {
 	return c.cancel(ctx, req)
 }
 

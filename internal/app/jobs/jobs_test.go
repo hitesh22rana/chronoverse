@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,16 +19,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	"github.com/golang-jwt/jwt/v5"
-
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/app/jobs/mock"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 func TestHealthWatchBypassesAuthentication(t *testing.T) {

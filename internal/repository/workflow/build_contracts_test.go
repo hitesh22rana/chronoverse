@@ -43,7 +43,14 @@ type buildContractClient struct {
 	update func(context.Context, *workflowspb.UpdateWorkflowBuildStatusRequest) error
 }
 
-func (c buildContractClient) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest, _ ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+func (c buildContractClient) GetWorkflowByID(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowByIDRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	error,
+) {
 	return c.get(ctx, req)
 }
 
@@ -301,7 +308,12 @@ func TestImagePrefetchContinuesAfterTargetFailuresAndCapsDefaultFanout(t *testin
 	}
 }
 
-func assertSkippedCompletion(t *testing.T, req *workflowspb.UpdateWorkflowBuildStatusRequest, workflow *workflowspb.GetWorkflowByIDResponse, event *workflowsmodel.WorkflowEvent) {
+func assertSkippedCompletion(
+	t *testing.T,
+	req *workflowspb.UpdateWorkflowBuildStatusRequest,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	event *workflowsmodel.WorkflowEvent,
+) {
 	t.Helper()
 	if req.GetId() != workflow.GetId() || req.GetUserId() != workflow.GetUserId() || req.GetGeneration() != event.Generation {
 		t.Errorf("incorrect completion identity: %v", req)
@@ -311,7 +323,13 @@ func assertSkippedCompletion(t *testing.T, req *workflowspb.UpdateWorkflowBuildS
 	}
 }
 
-func assertSkippedSchedule(t *testing.T, req *jobspb.ScheduleJobRequest, workflow *workflowspb.GetWorkflowByIDResponse, event *workflowsmodel.WorkflowEvent, key string) {
+func assertSkippedSchedule(
+	t *testing.T,
+	req *jobspb.ScheduleJobRequest,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	event *workflowsmodel.WorkflowEvent,
+	key string,
+) {
 	t.Helper()
 	if req.GetWorkflowId() != workflow.GetId() || req.GetUserId() != workflow.GetUserId() || req.GetWorkflowGeneration() != event.Generation {
 		t.Errorf("incorrect schedule identity: %v", req)

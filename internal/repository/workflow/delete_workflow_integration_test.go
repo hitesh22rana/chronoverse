@@ -44,8 +44,19 @@ func deleteWorkflowSeedClickHouseLog(
 	t.Helper()
 
 	if err := ch.Exec(ctx, `
-		INSERT INTO job_logs (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO
+			job_logs (
+				event_id,
+				user_id,
+				workflow_id,
+				job_id,
+				timestamp,
+				message,
+				sequence_num,
+				stream
+			)
+		VALUES
+			(?, ?, ?, ?, ?, ?, ?, ?)
 	`, eventID, userID, workflowID, jobID, time.Now().UTC(), "message "+eventID, sequence, "stdout"); err != nil {
 		t.Fatalf("seed clickhouse log %q: %v", eventID, err)
 	}

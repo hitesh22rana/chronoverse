@@ -40,17 +40,74 @@ func (r *Repository) registerContainerIntentMetrics(meter metric.Meter) error {
 		var urgentDue, surveillanceDue, quarantineCount, heldCount int64
 		var urgentAge, surveillanceAge float64
 		queryErr := r.pg.QueryRow(ctx, `
-SELECT
- count(*) FILTER (WHERE NOT quarantined AND inspection_urgent AND next_inspection_at <= clock_timestamp() AT TIME ZONE 'utc'),
- count(*) FILTER (WHERE NOT quarantined AND NOT inspection_urgent AND next_inspection_at <= clock_timestamp() AT TIME ZONE 'utc'),
- GREATEST(0,COALESCE(max(EXTRACT(EPOCH FROM ((clock_timestamp() AT TIME ZONE 'utc')-next_inspection_at)))
-   FILTER (WHERE NOT quarantined AND inspection_urgent),0)),
- GREATEST(0,COALESCE(max(EXTRACT(EPOCH FROM ((clock_timestamp() AT TIME ZONE 'utc')-next_inspection_at)))
-   FILTER (WHERE NOT quarantined AND NOT inspection_urgent),0)),
- count(*) FILTER (WHERE quarantined),
- (SELECT count(*) FROM runtime_capacity_holds WHERE released_at IS NULL)
-FROM container_creation_intents
-WHERE closed_at IS NOT NULL`).
+			SELECT
+				count(*) FILTER (
+					WHERE
+						NOT quarantined
+						AND inspection_urgent
+						AND next_inspection_at <= clock_timestamp() AT TIME ZONE 'utc'
+				),
+				count(*) FILTER (
+					WHERE
+						NOT quarantined
+						AND NOT inspection_urgent
+						AND next_inspection_at <= clock_timestamp() AT TIME ZONE 'utc'
+				),
+				GREATEST(
+					0,
+					COALESCE(
+						max(
+							EXTRACT(
+								EPOCH
+								FROM
+									(
+										(clock_timestamp() AT TIME ZONE 'utc') - next_inspection_at
+									)
+							)
+						) FILTER (
+							WHERE
+								NOT quarantined
+								AND inspection_urgent
+						),
+						0
+					)
+				),
+				GREATEST(
+					0,
+					COALESCE(
+						max(
+							EXTRACT(
+								EPOCH
+								FROM
+									(
+										(clock_timestamp() AT TIME ZONE 'utc') - next_inspection_at
+									)
+							)
+						) FILTER (
+							WHERE
+								NOT quarantined
+								AND NOT inspection_urgent
+						),
+						0
+					)
+				),
+				count(*) FILTER (
+					WHERE
+						quarantined
+				),
+				(
+					SELECT
+						count(*)
+					FROM
+						runtime_capacity_holds
+					WHERE
+						released_at IS NULL
+				)
+			FROM
+				container_creation_intents
+			WHERE
+				closed_at IS NOT NULL
+		`).
 			Scan(&urgentDue, &surveillanceDue, &urgentAge, &surveillanceAge, &quarantineCount, &heldCount)
 		if queryErr != nil {
 			return queryErr

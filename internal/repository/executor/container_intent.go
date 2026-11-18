@@ -109,7 +109,15 @@ func (r *Repository) resolveIntentContainer(ctx context.Context, csvc ContainerS
 	return r.verifyIntentContainer(ctx, csvc, intent, intent.GetName())
 }
 
-func (r *Repository) verifyIntentContainer(ctx context.Context, csvc ContainerSvc, intent *jobspb.ContainerIntent, id string) (string, error) {
+func (r *Repository) verifyIntentContainer(
+	ctx context.Context,
+	csvc ContainerSvc,
+	intent *jobspb.ContainerIntent,
+	id string,
+) (
+	string,
+	error,
+) {
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	instance, err := containerInstance(readCtx, csvc)

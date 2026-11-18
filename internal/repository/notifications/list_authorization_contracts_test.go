@@ -22,7 +22,14 @@ type notificationListUsersClient struct {
 	get func(context.Context, *userspb.GetUserRequest) (*userspb.GetUserResponse, error)
 }
 
-func (c *notificationListUsersClient) GetUser(ctx context.Context, req *userspb.GetUserRequest, _ ...grpc.CallOption) (*userspb.GetUserResponse, error) {
+func (c *notificationListUsersClient) GetUser(
+	ctx context.Context,
+	req *userspb.GetUserRequest,
+	_ ...grpc.CallOption,
+) (
+	*userspb.GetUserResponse,
+	error,
+) {
 	return c.get(ctx, req)
 }
 

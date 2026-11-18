@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/jackc/pgx/v5"
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -44,7 +43,16 @@ func New(auth auth.IAuth, pg *postgres.Postgres) *Repository {
 // RegisterUser a new user.
 //
 //nolint:gocritic,gocyclo,nestif // Registration keeps hashing, replay verification, insertion, and commit ordering explicit.
-func (r *Repository) RegisterUser(ctx context.Context, email, password, idempotencyKey string) (res *usersmodel.GetUserResponse, authToken string, err error) {
+func (r *Repository) RegisterUser(
+	ctx context.Context,
+	email,
+	password,
+	idempotencyKey string,
+) (
+	res *usersmodel.GetUserResponse,
+	authToken string,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.RegisterUser")
 	defer func() {
 		if err != nil {
@@ -93,10 +101,19 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	if reservation.Replay {
 		var storedPassword string
 		query := fmt.Sprintf(`
-			SELECT id, email, password, notification_preference, created_at, updated_at
-			FROM %s
-			WHERE id = $1
-			LIMIT 1;
+			SELECT
+				id,
+				email,
+				password,
+				notification_preference,
+				created_at,
+				updated_at
+			FROM
+				%s
+			WHERE
+				id = $1
+			LIMIT
+				1;
 		`, postgres.TableUsers)
 		res = &usersmodel.GetUserResponse{}
 		if err = tx.QueryRow(ctx, query, reservation.ResourceID).Scan(
@@ -127,9 +144,16 @@ func (r *Repository) RegisterUser(ctx context.Context, email, password, idempote
 	}
 
 	query := fmt.Sprintf(`
-		INSERT INTO %s (email, password) 
-		VALUES ($1, $2)
-		RETURNING id, email, notification_preference, created_at, updated_at;
+		INSERT INTO
+			%s (email, password)
+		VALUES
+			($1, $2)
+		RETURNING
+			id,
+			email,
+			notification_preference,
+			created_at,
+			updated_at;
 	`, postgres.TableUsers)
 	args := []any{email, string(hashedPassword)}
 
@@ -195,9 +219,19 @@ func (r *Repository) LoginUser(ctx context.Context, email, pass string) (res *us
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, email, password, notification_preference, created_at, updated_at
-		FROM %s WHERE email = $1
-		LIMIT 1;
+		SELECT
+			id,
+			email,
+			password,
+			notification_preference,
+			created_at,
+			updated_at
+		FROM
+			%s
+		WHERE
+			email = $1
+		LIMIT
+			1;
 	`, postgres.TableUsers)
 	args := []any{email}
 
@@ -281,9 +315,18 @@ func (r *Repository) GetUser(ctx context.Context, id string) (res *usersmodel.Ge
 	}()
 
 	query := fmt.Sprintf(`
-		SELECT id, email, notification_preference, created_at, updated_at
-		FROM %s WHERE id = $1
-		LIMIT 1;
+		SELECT
+			id,
+			email,
+			notification_preference,
+			created_at,
+			updated_at
+		FROM
+			%s
+		WHERE
+			id = $1
+		LIMIT
+			1;
 	`, postgres.TableUsers)
 	args := []any{id}
 
@@ -326,8 +369,11 @@ func (r *Repository) UpdateUser(ctx context.Context, id, notificationPreference 
 
 	query := fmt.Sprintf(`
 		UPDATE %s
-		SET notification_preference = $1
-		WHERE id = $2 AND notification_preference IS DISTINCT FROM $1;
+		SET
+			notification_preference = $1
+		WHERE
+			id = $2
+			AND notification_preference IS DISTINCT FROM $1;
 	`, postgres.TableUsers)
 	args := []any{notificationPreference, id}
 

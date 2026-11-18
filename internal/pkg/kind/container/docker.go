@@ -82,7 +82,7 @@ const (
 	platformNetwork = "chronoverse"
 
 	// DefaultWorkloadNetwork is the ICC-disabled bridge every workload is pinned
-	// to; created on demand (VULN-004a/b).
+	// to; created on demand.
 	DefaultWorkloadNetwork = "chronoverse-workloads"
 
 	// DefaultWorkloadSubnet pins the workload bridge to unrouted RFC 2544 space
@@ -442,7 +442,14 @@ func (w *DockerWorkflow) DockerHost() string {
 	return w.Client.DaemonHost()
 }
 
-func (w *DockerWorkflow) watchContainer(ctx context.Context, timeout time.Duration, containerID string) (logStream <-chan *jobsmodel.JobLog, errorStream <-chan error) {
+func (w *DockerWorkflow) watchContainer(
+	ctx context.Context,
+	timeout time.Duration,
+	containerID string,
+) (
+	logStream <-chan *jobsmodel.JobLog,
+	errorStream <-chan error,
+) {
 	logs := make(chan *jobsmodel.JobLog)
 	// Sized for every stream failure plus one terminal result, so neither blocks
 	// on a consumer that stopped draining. The terminal result is sent
@@ -528,8 +535,8 @@ func (w *DockerWorkflow) publishExecutionFailure(ctx context.Context, containerI
 }
 
 func (w *DockerWorkflow) hostConfig() *container.HostConfig {
-	// Workload isolation (VULN-004a): dedicated network, no capabilities, no
-	// privilege escalation, read-only rootfs with a writable /tmp.
+	// Workload isolation: dedicated network, no capabilities, no privilege
+	// escalation, read-only rootfs with a writable /tmp.
 	networkMode := DefaultWorkloadNetwork
 	if w.workloadNetwork != "" {
 		networkMode = w.workloadNetwork
@@ -595,7 +602,13 @@ type containerLogLine struct {
 // contiguous, zero-based sequence however the two streams interleave. Every send
 // selects on ctx and the daemon read is aborted on ctx, so it always returns:
 // callers that own the channels may join it before closing them.
-func (w *DockerWorkflow) streamContainerLogs(ctx context.Context, containerID string, logCh chan<- *jobsmodel.JobLog, errs chan<- error, follow bool) {
+func (w *DockerWorkflow) streamContainerLogs(
+	ctx context.Context,
+	containerID string,
+	logCh chan<- *jobsmodel.JobLog,
+	errs chan<- error,
+	follow bool,
+) {
 	reader, err := w.Client.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -866,7 +879,14 @@ func (w *DockerWorkflow) ImageExists(ctx context.Context, imageName string) (boo
 }
 
 // ResolveImageDigest ensures an image can be resolved and returns an immutable image reference.
-func (w *DockerWorkflow) ResolveImageDigest(ctx context.Context, imageName string) (resolvedImageRef, resolvedImageDigest string, err error) {
+func (w *DockerWorkflow) ResolveImageDigest(
+	ctx context.Context,
+	imageName string,
+) (
+	resolvedImageRef,
+	resolvedImageDigest string,
+	err error,
+) {
 	alreadyDigested := strings.Contains(imageName, "@sha256:")
 	if buildErr := w.Build(ctx, imageName); buildErr != nil {
 		return imageName, "", buildErr

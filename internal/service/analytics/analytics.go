@@ -49,7 +49,13 @@ type GetUserAnalyticsRequest struct {
 }
 
 // GetUserAnalytics retrieves analytics data for a specific user.
-func (s *Service) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUserAnalyticsRequest) (res *analyticsmodel.GetUserAnalyticsResponse, err error) {
+func (s *Service) GetUserAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetUserAnalyticsRequest,
+) (
+	res *analyticsmodel.GetUserAnalyticsResponse,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.GetUserAnalytics")
 	defer func() {
 		if err != nil {
@@ -86,7 +92,13 @@ type GetWorkflowAnalyticsRequest struct {
 }
 
 // GetWorkflowAnalytics retrieves analytics data for a specific workflow.
-func (s *Service) GetWorkflowAnalytics(ctx context.Context, req *analyticspb.GetWorkflowAnalyticsRequest) (res *analyticsmodel.GetWorkflowAnalyticsResponse, err error) {
+func (s *Service) GetWorkflowAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetWorkflowAnalyticsRequest,
+) (
+	res *analyticsmodel.GetWorkflowAnalyticsResponse,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflowAnalytics")
 	defer func() {
 		if err != nil {

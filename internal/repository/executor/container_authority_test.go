@@ -39,7 +39,14 @@ type failingIntentReportClient struct {
 	reports int
 }
 
-func (c *failingIntentReportClient) CloseContainerIntent(context.Context, *jobspb.ContainerIntentCommand, ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *failingIntentReportClient) CloseContainerIntent(
+	context.Context,
+	*jobspb.ContainerIntentCommand,
+	...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	c.reports++
 	return nil, status.Error(codes.Unavailable, "report response lost")
 }

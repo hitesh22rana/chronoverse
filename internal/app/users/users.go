@@ -21,8 +21,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -30,6 +28,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 // Service provides user related operations.

@@ -27,7 +27,18 @@ func (s *boundaryContainer) Build(_ context.Context, image string) error {
 	return s.buildErr
 }
 
-func (s *boundaryContainer) Execute(ctx context.Context, timeout time.Duration, image string, cmd, env []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *boundaryContainer) Execute(
+	ctx context.Context,
+	timeout time.Duration,
+	image string,
+	cmd,
+	env []string,
+) (
+	containerID string,
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	containerID, logs, errs, err = s.observedContainerSvc.Execute(ctx, timeout, image, cmd, env)
 	if err != nil {
 		return containerID, logs, errs, err

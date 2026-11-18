@@ -25,7 +25,14 @@ func (s *imagePullLockedContainerSvc) Build(ctx context.Context, imageName strin
 	return imagepull.Ensure(ctx, s.ContainerSvc, s.locks, imageName, s.cfg)
 }
 
-func (s *imagePullLockedContainerSvc) ResolveImageDigest(ctx context.Context, imageName string) (resolvedImageRef, resolvedImageDigest string, err error) {
+func (s *imagePullLockedContainerSvc) ResolveImageDigest(
+	ctx context.Context,
+	imageName string,
+) (
+	resolvedImageRef,
+	resolvedImageDigest string,
+	err error,
+) {
 	if err := s.Build(ctx, imageName); err != nil {
 		return imageName, "", err
 	}

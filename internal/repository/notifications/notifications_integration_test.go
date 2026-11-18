@@ -12,12 +12,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 func TestMain(m *testing.M) {
@@ -30,7 +29,14 @@ type fakeUsersService struct {
 	preference string
 }
 
-func (f *fakeUsersService) RegisterUser(context.Context, *userspb.RegisterUserRequest, ...grpc.CallOption) (*userspb.RegisterUserResponse, error) {
+func (f *fakeUsersService) RegisterUser(
+	context.Context,
+	*userspb.RegisterUserRequest,
+	...grpc.CallOption,
+) (
+	*userspb.RegisterUserResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -42,7 +48,14 @@ func (f *fakeUsersService) GetUser(context.Context, *userspb.GetUserRequest, ...
 	return &userspb.GetUserResponse{NotificationPreference: f.preference}, nil
 }
 
-func (f *fakeUsersService) UpdateUser(context.Context, *userspb.UpdateUserRequest, ...grpc.CallOption) (*userspb.UpdateUserResponse, error) {
+func (f *fakeUsersService) UpdateUser(
+	context.Context,
+	*userspb.UpdateUserRequest,
+	...grpc.CallOption,
+) (
+	*userspb.UpdateUserResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 

@@ -100,12 +100,27 @@ func TestIntegrationNotificationReplayCommitCancellationPreservesCommand(t *test
 func readNotificationCommandSnapshot(t *testing.T, repo *Repository, user, key string) [2]string {
 	t.Helper()
 	var snapshot [2]string
-	if err := repo.pg.QueryRow(t.Context(), `SELECT row_to_json(notification)::text FROM notifications AS notification
- WHERE user_id=$1 AND idempotency_key=$2`, user, key).Scan(&snapshot[0]); err != nil {
+	if err := repo.pg.QueryRow(t.Context(), `
+		SELECT
+			row_to_json(notification)::text
+		FROM
+			notifications AS notification
+		WHERE
+			user_id = $1
+			AND idempotency_key = $2
+	`, user, key).Scan(&snapshot[0]); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.pg.QueryRow(t.Context(), `SELECT row_to_json(command)::text FROM command_idempotency_keys AS command
- WHERE scope=$1 AND operation='notification.create' AND idempotency_key=$2`, "user:"+user, key).Scan(&snapshot[1]); err != nil {
+	if err := repo.pg.QueryRow(t.Context(), `
+		SELECT
+			row_to_json(command)::text
+		FROM
+			command_idempotency_keys AS command
+		WHERE
+			scope = $1
+			AND operation = 'notification.create'
+			AND idempotency_key = $2
+	`, "user:"+user, key).Scan(&snapshot[1]); err != nil {
 		t.Fatal(err)
 	}
 	return snapshot

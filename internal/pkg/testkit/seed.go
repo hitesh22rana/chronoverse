@@ -31,9 +31,20 @@ func SeedWorkflow(ctx context.Context, t *testing.T, pg *postgrespkg.Postgres, u
 
 	var workflowID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO workflows (user_id, name, payload, kind, build_status, interval, log_retention)
-		VALUES ($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1, TRUE)
-		RETURNING id
+		INSERT INTO
+			workflows (
+				user_id,
+				name,
+				payload,
+				kind,
+				build_status,
+				interval,
+				log_retention
+			)
+		VALUES
+			($1, $2, '{}', 'CONTAINER', 'COMPLETED', 1, TRUE)
+		RETURNING
+			id
 	`, userID, name).Scan(&workflowID); err != nil {
 		t.Fatalf("seed workflow: %v", err)
 	}

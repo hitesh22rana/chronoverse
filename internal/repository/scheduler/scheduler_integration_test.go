@@ -30,9 +30,17 @@ func seedUserWorkflowJob(ctx context.Context, t *testing.T, pg *postgres.Postgre
 	workflowID = testkit.SeedWorkflow(ctx, t, pg, userID, t.Name()+"-workflow")
 
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (workflow_id, user_id, status, scheduled_at)
-		VALUES ($1, $2, 'PENDING', (now() AT TIME ZONE 'utc') + make_interval(secs => $3))
-		RETURNING id
+		INSERT INTO
+			jobs (workflow_id, user_id, status, scheduled_at)
+		VALUES
+			(
+				$1,
+				$2,
+				'PENDING',
+				(now() AT TIME ZONE 'utc') + make_interval(secs => $3)
+			)
+		RETURNING
+			id
 	`, workflowID, userID, scheduledIn.Seconds()).Scan(&jobID); err != nil {
 		t.Fatalf("seed job: %v", err)
 	}
@@ -46,9 +54,17 @@ func insertJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, workflo
 
 	var jobID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (workflow_id, user_id, status, scheduled_at)
-		VALUES ($1, $2, 'PENDING', (now() AT TIME ZONE 'utc') + make_interval(secs => $3))
-		RETURNING id
+		INSERT INTO
+			jobs (workflow_id, user_id, status, scheduled_at)
+		VALUES
+			(
+				$1,
+				$2,
+				'PENDING',
+				(now() AT TIME ZONE 'utc') + make_interval(secs => $3)
+			)
+		RETURNING
+			id
 	`, workflowID, userID, scheduledIn.Seconds()).Scan(&jobID); err != nil {
 		t.Fatalf("insert job: %v", err)
 	}
@@ -87,8 +103,15 @@ func TestIntegrationScheduleDueJobs(t *testing.T) {
 	var topic, eventKey string
 	var payload []byte
 	if err := pg.QueryRow(ctx, `
-		SELECT topic, event_key, payload FROM outbox_events
-		WHERE topic = $1 AND payload::text LIKE '%' || $2 || '%'
+		SELECT
+			topic,
+			event_key,
+			payload
+		FROM
+			outbox_events
+		WHERE
+			topic = $1
+			AND payload::text LIKE '%' || $2 || '%'
 	`, kafka.TopicJobs, jobID).Scan(&topic, &eventKey, &payload); err != nil {
 		t.Fatalf("fetch outbox event: %v", err)
 	}
@@ -177,9 +200,17 @@ func TestIntegrationScheduleSkipsJobsOwnedByDifferentUser(t *testing.T) {
 
 	var forgedJobID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (workflow_id, user_id, status, scheduled_at)
-		VALUES ($1, $2, 'PENDING', (now() AT TIME ZONE 'utc') - interval '1 minute')
-		RETURNING id
+		INSERT INTO
+			jobs (workflow_id, user_id, status, scheduled_at)
+		VALUES
+			(
+				$1,
+				$2,
+				'PENDING',
+				(now() AT TIME ZONE 'utc') - interval '1 minute'
+			)
+		RETURNING
+			id
 	`, workflowID, forgeUserID).Scan(&forgedJobID); err != nil {
 		t.Fatalf("seed forged job: %v", err)
 	}

@@ -21,10 +21,33 @@ import (
 func assertCreateEffects(ctx context.Context, t *testing.T, repo *Repository, userID string, wantWorkflows, wantEvents, wantCommands int) {
 	t.Helper()
 	var workflows, events, commands int
-	err := repo.pg.QueryRow(ctx, `SELECT
-  (SELECT count(*) FROM workflows WHERE user_id=$1::uuid),
-  (SELECT count(*) FROM outbox_events WHERE payload->>'UserID'=$1::text),
-  (SELECT count(*) FROM command_idempotency_keys WHERE scope=$2)`, userID, commandidempotency.UserScope(userID)).Scan(&workflows, &events, &commands)
+	err := repo.pg.QueryRow(ctx, `
+		SELECT
+			(
+				SELECT
+					count(*)
+				FROM
+					workflows
+				WHERE
+					user_id = $1::uuid
+			),
+			(
+				SELECT
+					count(*)
+				FROM
+					outbox_events
+				WHERE
+					payload ->> 'UserID' = $1::text
+			),
+			(
+				SELECT
+					count(*)
+				FROM
+					command_idempotency_keys
+				WHERE
+					scope = $2
+			)
+	`, userID, commandidempotency.UserScope(userID)).Scan(&workflows, &events, &commands)
 	if err != nil {
 		t.Fatal(err)
 	}

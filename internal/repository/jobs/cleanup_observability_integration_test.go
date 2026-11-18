@@ -88,10 +88,14 @@ VALUES('workflows','ordinary','ordinary','{}','DEAD')`); err != nil {
 		}
 		return got
 	}
-	if _, err := repo.pg.Exec(t.Context(), `UPDATE outbox_events SET
- created_at=(clock_timestamp() AT TIME ZONE 'utc')-interval '2 hours',
- cleanup_replay_due_at=(clock_timestamp() AT TIME ZONE 'utc')+interval '1 hour'
- WHERE event_key=$1`, fixture.Key); err != nil {
+	if _, err := repo.pg.Exec(t.Context(), `
+		UPDATE outbox_events
+		SET
+			created_at = (clock_timestamp() AT TIME ZONE 'utc') - interval '2 hours',
+			cleanup_replay_due_at = (clock_timestamp() AT TIME ZONE 'utc') + interval '1 hour'
+		WHERE
+			event_key = $1
+	`, fixture.Key); err != nil {
 		t.Fatal(err)
 	}
 	if got := check(1, 0, 0); got["chronoverse.container_cleanup.oldest_due"] < 7190 {
@@ -139,8 +143,17 @@ VALUES('workflows','ordinary','ordinary','{}','DEAD')`); err != nil {
 	var from, to int64
 	var at time.Time
 	if err := repo.pg.QueryRow(t.Context(), `
-SELECT actor,reason,expected_generation,generation,created_at
-FROM container_cleanup_redrives WHERE event_key=$1`, fixture.Key).Scan(&actor, &reason, &from, &to, &at); err != nil {
+		SELECT
+			actor,
+			reason,
+			expected_generation,
+			generation,
+			created_at
+		FROM
+			container_cleanup_redrives
+		WHERE
+			event_key = $1
+	`, fixture.Key).Scan(&actor, &reason, &from, &to, &at); err != nil {
 		t.Fatal(err)
 	}
 	if actor != audit.Actor || reason != audit.Reason || from != 1 || to != 2 || at.IsZero() {
@@ -188,7 +201,14 @@ func TestIntegrationCleanupAuditRollsBackWithRedrive(t *testing.T) {
 				Actor:  "operations/alice",
 				Reason: "runtime repaired",
 			}
-			if _, err := repo.pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_replay_round=8,cleanup_replay_due_at=now()+interval '1 hour' WHERE event_key=$1`, fixture.Key); err != nil {
+			if _, err := repo.pg.Exec(t.Context(), `
+				UPDATE outbox_events
+				SET
+					cleanup_replay_round = 8,
+					cleanup_replay_due_at = now() + interval '1 hour'
+				WHERE
+					event_key = $1
+			`, fixture.Key); err != nil {
 				t.Fatal(err)
 			}
 			remove := scopedJobFaultTrigger(t.Context(), t, repo.pg, fault.table, fault.event, fault.deferred, map[string]string{"event_key": fixture.Key})
@@ -200,15 +220,37 @@ func TestIntegrationCleanupAuditRollsBackWithRedrive(t *testing.T) {
 			var round int
 			var due bool
 			if err := repo.pg.QueryRow(t.Context(), `
-SELECT cleanup_generation,(SELECT count(*) FROM container_cleanup_redrives WHERE event_key=$1),cleanup_replay_round,cleanup_replay_due_at IS NOT NULL
-FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&generation, &history, &round, &due); err != nil || generation != 1 || history != 0 || round != 8 || !due {
+				SELECT
+					cleanup_generation,
+					(
+						SELECT
+							count(*)
+						FROM
+							container_cleanup_redrives
+						WHERE
+							event_key = $1
+					),
+					cleanup_replay_round,
+					cleanup_replay_due_at IS NOT NULL
+				FROM
+					outbox_events
+				WHERE
+					event_key = $1
+			`, fixture.Key).Scan(&generation, &history, &round, &due); err != nil || generation != 1 || history != 0 || round != 8 || !due {
 				t.Fatalf("partial audit persisted: generation=%d history=%d error=%v", generation, history, err)
 			}
 			if _, err := repo.UpdateContainerCleanup(t.Context(), jobsmodel.CleanupOperationRedrive, identity, 1, "", "", false, audit); err != nil {
 				t.Fatal(err)
 			}
-			if err := repo.pg.QueryRow(t.Context(), `SELECT cleanup_replay_round,cleanup_replay_due_at IS NOT NULL
- FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&round, &due); err != nil || round != 0 || due {
+			if err := repo.pg.QueryRow(t.Context(), `
+				SELECT
+					cleanup_replay_round,
+					cleanup_replay_due_at IS NOT NULL
+				FROM
+					outbox_events
+				WHERE
+					event_key = $1
+			`, fixture.Key).Scan(&round, &due); err != nil || round != 0 || due {
 				t.Fatalf("accepted redrive retained pacing: %d/%v/%v", round, due, err)
 			}
 		})

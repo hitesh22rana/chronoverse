@@ -11,12 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
@@ -51,7 +50,8 @@ func (*commitCancelProcessor) OnStart(ctx context.Context, span sdktrace.ReadWri
 		return
 	}
 	for _, attribute := range span.Attributes() {
-		if attribute.Key != "db.query.text" || !strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), target.sqlPrefix) {
+		normalized := strings.Join(strings.Fields(attribute.Value.AsString()), " ")
+		if attribute.Key != "db.query.text" || !strings.HasPrefix(normalized, target.sqlPrefix) {
 			continue
 		}
 		if target.nth > 0 && target.seen.Add(1) != target.nth {
@@ -234,7 +234,7 @@ func cancelAtQueryContext(t *testing.T, operation, sqlPrefix string) (context.Co
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	target := &queryCancelTarget{operation: operation, sqlPrefix: strings.TrimSpace(sqlPrefix), cancel: cancel}
+	target := &queryCancelTarget{operation: operation, sqlPrefix: strings.Join(strings.Fields(sqlPrefix), " "), cancel: cancel}
 	return context.WithValue(ctx, queryCancelContextKey{}, target), target
 }
 
@@ -256,7 +256,14 @@ func discoveryArrivalBetweenAllocations(t *testing.T, fail bool) {
 	late := seedRetainedCleanupOn(t, base.pg)
 	for range 2 {
 		fixture := seedRetainedCleanupOn(t, base.pg)
-		if _, err := base.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc',inspection_urgent=FALSE WHERE id=$1`, fixture.IntentID); err != nil {
+		if _, err := base.pg.Exec(t.Context(), `
+			UPDATE container_creation_intents
+			SET
+				closed_at = now() AT TIME ZONE 'utc',
+				inspection_urgent = FALSE
+			WHERE
+				id = $1
+		`, fixture.IntentID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -265,7 +272,13 @@ func discoveryArrivalBetweenAllocations(t *testing.T, fail bool) {
 		defer remove()
 	}
 	target := &queryCancelTarget{operation: "WITH", sqlPrefix: "WITH due AS MATERIALIZED", nth: 3, before: func() {
-		if _, err := base.pg.Exec(t.Context(), `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, late.IntentID); err != nil {
+		if _, err := base.pg.Exec(t.Context(), `
+			UPDATE container_creation_intents
+			SET
+				closed_at = now() AT TIME ZONE 'utc'
+			WHERE
+				id = $1
+		`, late.IntentID); err != nil {
 			t.Error(err)
 		}
 	}}
@@ -278,8 +291,17 @@ func discoveryArrivalBetweenAllocations(t *testing.T, fail bool) {
 		}
 		var next, unclaimed bool
 		readErr := base.pg.QueryRow(t.Context(), `
-SELECT next_urgent,(SELECT bool_and(inspection_token IS NULL) FROM container_creation_intents)
-FROM container_discovery_turn`).Scan(&next, &unclaimed)
+			SELECT
+				next_urgent,
+				(
+					SELECT
+						bool_and(inspection_token IS NULL)
+					FROM
+						container_creation_intents
+				)
+			FROM
+				container_discovery_turn
+		`).Scan(&next, &unclaimed)
 		if readErr != nil || !next || !unclaimed {
 			t.Fatalf("failed borrow partially committed: turn=%v unclaimed=%v err=%v", next, unclaimed, readErr)
 		}

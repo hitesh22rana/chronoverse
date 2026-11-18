@@ -83,7 +83,14 @@ type boundaryReconciliationClient struct {
 	err   error
 }
 
-func (c *boundaryReconciliationClient) ClaimJob(_ context.Context, _ *jobspb.ClaimJobRequest, _ ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+func (c *boundaryReconciliationClient) ClaimJob(
+	_ context.Context,
+	_ *jobspb.ClaimJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ClaimJobResponse,
+	error,
+) {
 	c.calls++
 	return &jobspb.ClaimJobResponse{Claimed: true}, c.err
 }

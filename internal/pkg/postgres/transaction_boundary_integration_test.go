@@ -103,7 +103,14 @@ func TestIntegrationDirtyMigrationRequiresRepairBeforeReplay(t *testing.T) {
 	fresh, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(fresh.Close)
-	_, err = fresh.Exec(t.Context(), "CREATE TABLE schema_migrations(version bigint PRIMARY KEY,dirty boolean NOT NULL); INSERT INTO schema_migrations VALUES(1,true)")
+	_, err = fresh.Exec(t.Context(), `
+		CREATE TABLE schema_migrations (
+			version bigint PRIMARY KEY,
+			dirty boolean NOT NULL
+		);
+		INSERT INTO schema_migrations
+		VALUES (1, true)
+	`)
 	require.NoError(t, err)
 	dsn, parseErr := url.Parse(testkit.PostgresDSN(t))
 	require.NoError(t, parseErr)

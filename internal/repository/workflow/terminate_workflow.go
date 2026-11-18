@@ -10,9 +10,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
@@ -20,6 +17,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
@@ -169,7 +168,13 @@ func (r *Repository) cleanupCanceledJobContainers(
 	return firstErr
 }
 
-func (r *Repository) cleanupCanceledJobContainer(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, job *jobspb.JobsResponse) (cleanupErr error) {
+func (r *Repository) cleanupCanceledJobContainer(
+	parentCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	job *jobspb.JobsResponse,
+) (
+	cleanupErr error,
+) {
 	defer func() {
 		if errors.Is(cleanupErr, context.Canceled) || errors.Is(cleanupErr, context.DeadlineExceeded) {
 			cleanupErr = status.FromContextError(cleanupErr).Err()
@@ -308,7 +313,12 @@ func (r *Repository) publishCanceledJobLog(
 	return nil
 }
 
-func (r *Repository) cleanupJobsWithStatus(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string) error {
+func (r *Repository) cleanupJobsWithStatus(
+	parentCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	userID,
+	status string,
+) error {
 	cursor := ""
 	var firstErr error
 	for {
@@ -346,11 +356,22 @@ func (r *Repository) cleanupJobsWithStatus(parentCtx context.Context, workflow *
 }
 
 // cancelJobs cancels the jobs of the workflow with the specified status.
-func (r *Repository) cancelJobsWithStatus(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string) error {
+func (r *Repository) cancelJobsWithStatus(
+	parentCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	userID,
+	status string,
+) error {
 	return r.cancelJobsWithStatusExcept(parentCtx, workflow, userID, status)
 }
 
-func (r *Repository) cancelJobsWithStatusExcept(parentCtx context.Context, workflow *workflowspb.GetWorkflowByIDResponse, userID, status string, excludedJobIDs ...string) error {
+func (r *Repository) cancelJobsWithStatusExcept(
+	parentCtx context.Context,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+	userID,
+	status string,
+	excludedJobIDs ...string,
+) error {
 	return r.cancelJobsWithStatusAndTriggerExcept(parentCtx, workflow, userID, status, "", excludedJobIDs...)
 }
 

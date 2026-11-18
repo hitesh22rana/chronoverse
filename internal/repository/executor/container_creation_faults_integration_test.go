@@ -54,7 +54,15 @@ func (r *creationFaultRuntime) Create(ctx context.Context, req containerpkg.Crea
 	return id, err
 }
 
-func (r *creationFaultRuntime) Start(ctx context.Context, timeout time.Duration, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (r *creationFaultRuntime) Start(
+	ctx context.Context,
+	timeout time.Duration,
+	id string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	r.starts++
 	return r.DockerWorkflow.Start(ctx, timeout, id)
 }
@@ -71,22 +79,50 @@ func lostIntentReply(mode, op string, result *jobspb.ContainerIntentResponse, er
 	return result, err
 }
 
-func (j *creationFaultJobs) EnsureContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *creationFaultJobs) EnsureContainerIntent(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	res, err := j.durableJobsClient.EnsureContainerIntent(ctx, req)
 	return lostIntentReply(j.mode, "Ensure reply lost", res, err)
 }
 
-func (j *creationFaultJobs) ObserveContainer(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *creationFaultJobs) ObserveContainer(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	res, err := j.durableJobsClient.ObserveContainer(ctx, req)
 	return lostIntentReply(j.mode, "Observe reply lost", res, err)
 }
 
-func (j *creationFaultJobs) ReserveContainerStart(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *creationFaultJobs) ReserveContainerStart(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	res, err := j.durableJobsClient.ReserveContainerStart(ctx, req)
 	return lostIntentReply(j.mode, "Start grant reply lost", res, err)
 }
 
-func (j *creationFaultJobs) AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest, _ ...grpc.CallOption) (*jobspb.AttachJobContainerResponse, error) {
+func (j *creationFaultJobs) AttachJobContainer(
+	ctx context.Context,
+	req *jobspb.AttachJobContainerRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.AttachJobContainerResponse,
+	error,
+) {
 	err := j.repo.AttachJobContainer(ctx, req.GetId(), req.GetLeaseToken(), req.GetContainerId(), req.GetRuntimeNodeId(), req.GetCommandId())
 	if err == nil && j.mode == "Attach reply lost" {
 		err = status.Error(codes.Unavailable, "attachment committed but response lost")
@@ -94,7 +130,14 @@ func (j *creationFaultJobs) AttachJobContainer(ctx context.Context, req *jobspb.
 	return &jobspb.AttachJobContainerResponse{}, err
 }
 
-func (j *creationFaultJobs) ReportContainerInspection(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *creationFaultJobs) ReportContainerInspection(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return j.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req)
 }
 
@@ -127,7 +170,14 @@ func testContainerCreationFault(t *testing.T, daemon *containerpkg.DockerWorkflo
  VALUES($1,$1,$2,'READY',clock_timestamp() AT TIME ZONE 'utc',1)`, node, daemon.DockerHost()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pg.Exec(ctx, `UPDATE workflows SET kind='CONTAINER',payload='{"image":"alpine:3.24.2","cmd":["true"],"timeout":"5s"}' WHERE id=$1`, fixture.WorkflowID); err != nil {
+	if _, err := pg.Exec(ctx, `
+		UPDATE workflows
+		SET
+			kind = 'CONTAINER',
+			payload = '{"image":"alpine:3.24.2","cmd":["true"],"timeout":"5s"}'
+		WHERE
+			id = $1
+	`, fixture.WorkflowID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pg.Exec(ctx, "UPDATE jobs SET runtime_node_id=$2,runtime_endpoint=$3 WHERE id=$1", fixture.JobID, node, daemon.DockerHost()); err != nil {
@@ -178,7 +228,13 @@ func testContainerCreationFault(t *testing.T, daemon *containerpkg.DockerWorkflo
 			t.Fatal(inspectErr)
 		}
 		runtime.id = state.ID
-		if _, err = pg.Exec(ctx, "UPDATE jobs SET lease_expires_at=(clock_timestamp() AT TIME ZONE 'utc')-interval '1 second' WHERE id=$1", fixture.JobID); err != nil {
+		if _, err = pg.Exec(ctx, `
+			UPDATE jobs
+			SET
+				lease_expires_at = (clock_timestamp() AT TIME ZONE 'utc') - interval '1 second'
+			WHERE
+				id = $1
+		`, fixture.JobID); err != nil {
 			t.Fatal(err)
 		}
 		recovered, recoveryErr := jobs.RecoverExpiredJobLeases(ctx, 1, "recovery", uuid.NewString(), uuid.NewString(), time.Minute)

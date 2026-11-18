@@ -19,7 +19,18 @@ import (
 
 // seedRunningJob schedules, queues, and claims a job, returning its id and
 // lease token.
-func seedRunningJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *Repository, workflowID, userID, tag string) (jobID, leaseToken string) {
+func seedRunningJob(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	repo *Repository,
+	workflowID,
+	userID,
+	tag string,
+) (
+	jobID,
+	leaseToken string,
+) {
 	t.Helper()
 
 	scheduledAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
@@ -50,12 +61,29 @@ func releaseForRetry(t *testing.T, repo *Repository, jobID, leaseToken, tag stri
 	}
 }
 
-func jobReleaseState(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID string) (status string, reason, lease sql.NullString, nextAttemptAt sql.NullTime) {
+func jobReleaseState(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	jobID string,
+) (
+	status string,
+	reason,
+	lease sql.NullString,
+	nextAttemptAt sql.NullTime,
+) {
 	t.Helper()
 
 	if err := pg.QueryRow(ctx, `
-		SELECT status, terminal_reason_code, lease_token, next_attempt_at
-		FROM jobs WHERE id = $1
+		SELECT
+			status,
+			terminal_reason_code,
+			lease_token,
+			next_attempt_at
+		FROM
+			jobs
+		WHERE
+			id = $1
 	`, jobID).Scan(&status, &reason, &lease, &nextAttemptAt); err != nil {
 		t.Fatalf("fetch job state: %v", err)
 	}

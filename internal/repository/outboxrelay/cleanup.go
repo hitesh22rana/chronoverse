@@ -171,7 +171,16 @@ func (r *Repository) reserveCleanupTurn(ctx context.Context) (nextCleanup, reser
 		_ = tx.Rollback(ctx)
 	}()
 	var cleanup bool
-	err = tx.QueryRow(ctx, `SELECT next_cleanup FROM outbox_cleanup_turn WHERE id=TRUE FOR UPDATE SKIP LOCKED`).Scan(&cleanup)
+	err = tx.QueryRow(ctx, `
+		SELECT
+			next_cleanup
+		FROM
+			outbox_cleanup_turn
+		WHERE
+			id = TRUE
+		FOR UPDATE
+			SKIP LOCKED
+	`).Scan(&cleanup)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var exists bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM outbox_cleanup_turn WHERE id=TRUE)`).Scan(&exists); err != nil {
@@ -229,19 +238,44 @@ func (r *Repository) cleanupPublishedLane(
 		)=events.payload->'ContainerCleanup'->>'IntentID'`
 	}
 	query := fmt.Sprintf(`
-		WITH candidates AS MATERIALIZED (
-			SELECT id FROM outbox_events
-			WHERE status='PUBLISHED' AND published_at<$1 AND %s
-				AND NOT (id=ANY($3::uuid[]))
-			ORDER BY published_at,id
-			LIMIT $2 FOR UPDATE SKIP LOCKED
-		), removed AS (
-			DELETE FROM outbox_events events USING candidates candidate
-			WHERE events.id=candidate.id AND %s
-			RETURNING events.id
-		)
-		SELECT COALESCE(array_agg(id::text),'{}'::text[]), (SELECT count(*) FROM removed)
-		FROM candidates`, predicate, proof)
+		WITH
+			candidates AS MATERIALIZED (
+				SELECT
+					id
+				FROM
+					outbox_events
+				WHERE
+					status = 'PUBLISHED'
+					AND published_at < $1
+					AND %s
+					AND NOT (id = ANY ($3::uuid[]))
+				ORDER BY
+					published_at,
+					id
+				LIMIT
+					$2
+				FOR UPDATE
+					SKIP LOCKED
+			),
+			removed AS (
+				DELETE FROM outbox_events events USING candidates candidate
+				WHERE
+					events.id = candidate.id
+					AND %s
+				RETURNING
+					events.id
+			)
+		SELECT
+			COALESCE(array_agg(id::text), '{}'::text[]),
+			(
+				SELECT
+					count(*)
+				FROM
+					removed
+			)
+		FROM
+			candidates
+	`, predicate, proof)
 	var ids []string
 	var deleted int64
 	if err = tx.QueryRow(ctx, query, cutoff, allowance, excluded).Scan(&ids, &deleted); err != nil {
@@ -262,18 +296,30 @@ func (r *Repository) CleanupCommandIdempotencyKeys(ctx context.Context, batchSiz
 	}
 
 	query := fmt.Sprintf(`
-		WITH expired AS (
-			SELECT scope, operation, idempotency_key
-			FROM %s
-			WHERE expires_at IS NOT NULL
-				AND expires_at <= (clock_timestamp() AT TIME ZONE 'utc')
-			ORDER BY expires_at, scope, operation, idempotency_key
-			FOR UPDATE SKIP LOCKED
-			LIMIT $1
-		)
-		DELETE FROM %s AS ledger
-		USING expired
-		WHERE ledger.scope = expired.scope
+		WITH
+			expired AS (
+				SELECT
+					scope,
+					operation,
+					idempotency_key
+				FROM
+					%s
+				WHERE
+					expires_at IS NOT NULL
+					AND expires_at <= (clock_timestamp() AT TIME ZONE 'utc')
+				ORDER BY
+					expires_at,
+					scope,
+					operation,
+					idempotency_key
+				FOR UPDATE
+					SKIP LOCKED
+				LIMIT
+					$1
+			)
+		DELETE FROM %s AS ledger USING expired
+		WHERE
+			ledger.scope = expired.scope
 			AND ledger.operation = expired.operation
 			AND ledger.idempotency_key = expired.idempotency_key;
 	`, postgres.TableCommandIdempotencyKeys, postgres.TableCommandIdempotencyKeys)

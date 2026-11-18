@@ -33,9 +33,23 @@ type ledgerSnapshotReader interface {
 func readBoundaryLedger(t *testing.T, reader ledgerSnapshotReader, scope string) boundaryLedgerSnapshot {
 	t.Helper()
 	var state boundaryLedgerSnapshot
-	err := reader.QueryRow(t.Context(), `SELECT request_hash,status,resource_id,response::text,
- created_at,updated_at,completed_at,expires_at FROM command_idempotency_keys
- WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`, scope, ledger.OperationUserRegister, "command").Scan(
+	err := reader.QueryRow(t.Context(), `
+		SELECT
+			request_hash,
+			status,
+			resource_id,
+			response::text,
+			created_at,
+			updated_at,
+			completed_at,
+			expires_at
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
+	`, scope, ledger.OperationUserRegister, "command").Scan(
 		&state.Hash, &state.Status, &state.Resource, &state.Response, &state.Created, &state.Updated, &state.Completed, &state.Expires,
 	)
 	require.NoError(t, err)

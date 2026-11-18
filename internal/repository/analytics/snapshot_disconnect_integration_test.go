@@ -132,8 +132,17 @@ VALUES($1,$2,'HEARTBEAT',1,2,3)`, userID, workflowID); err != nil {
 		t.Fatal("snapshot did not reach the aggregate boundary")
 	}
 
-	if _, err := pg.Exec(ctx, `UPDATE analytics SET kind='CONTAINER',jobs_count=9,logs_count=12,total_job_execution_duration=15
-WHERE user_id=$1 AND workflow_id=$2`, userID, workflowID); err != nil {
+	if _, err := pg.Exec(ctx, `
+		UPDATE analytics
+		SET
+			kind = 'CONTAINER',
+			jobs_count = 9,
+			logs_count = 12,
+			total_job_execution_duration = 15
+		WHERE
+			user_id = $1
+			AND workflow_id = $2
+	`, userID, workflowID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pg.Exec(ctx, `UPDATE workflows SET name='after update' WHERE user_id=$1 AND id=$2`, userID, workflowID); err != nil {
@@ -175,7 +184,14 @@ WHERE user_id=$1 AND workflow_id=$2`, userID, workflowID); err != nil {
 	require.Equal(t, updated, current)
 }
 
-func snapshotReader(t *testing.T, boundary snapshotBoundary, beforeContinue func()) (reader *postgres.Postgres, disconnected <-chan struct{}) {
+func snapshotReader(
+	t *testing.T,
+	boundary snapshotBoundary,
+	beforeContinue func(),
+) (
+	reader *postgres.Postgres,
+	disconnected <-chan struct{},
+) {
 	t.Helper()
 	cfg, err := pgxpool.ParseConfig(testkit.PostgresDSN(t))
 	if err != nil {
@@ -203,7 +219,15 @@ func snapshotReader(t *testing.T, boundary snapshotBoundary, beforeContinue func
 
 // At the selected boundary, disconnect or pause before forwarding the final frame.
 // Every pool connection is served so a health-check retry cannot stall on the listen backlog.
-func snapshotProxy(t *testing.T, upstream string, boundary snapshotBoundary, beforeContinue func()) (address string, disconnected <-chan struct{}) {
+func snapshotProxy(
+	t *testing.T,
+	upstream string,
+	boundary snapshotBoundary,
+	beforeContinue func(),
+) (
+	address string,
+	disconnected <-chan struct{},
+) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

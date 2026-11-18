@@ -38,7 +38,7 @@ func TestNewDefaultsMaxConcurrencyToOne(t *testing.T) {
 func assertRuntimeQueryContains(t *testing.T, value, want string) {
 	t.Helper()
 
-	if !strings.Contains(value, want) {
+	if !strings.Contains(strings.Join(strings.Fields(value), " "), strings.Join(strings.Fields(want), " ")) {
 		t.Fatalf("expected query to contain %q:\n%s", want, value)
 	}
 }

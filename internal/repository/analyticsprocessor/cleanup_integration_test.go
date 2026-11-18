@@ -35,7 +35,16 @@ func seedCleanupRows(t *testing.T, pg *postgres.Postgres, consumers []string, ro
 
 func assertCleanupRows(t *testing.T, pg *postgres.Postgres, consumers []string, want map[string]time.Time) {
 	t.Helper()
-	rows, err := pg.Query(t.Context(), `SELECT consumer, event_key, created_at FROM processed_events WHERE consumer = ANY($1::text[])`, consumers)
+	rows, err := pg.Query(t.Context(), `
+		SELECT
+			consumer,
+			event_key,
+			created_at
+		FROM
+			processed_events
+		WHERE
+			consumer = ANY ($1::text[])
+	`, consumers)
 	if err != nil {
 		t.Fatalf("read processed events: %v", err)
 	}

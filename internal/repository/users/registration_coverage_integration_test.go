@@ -59,7 +59,13 @@ func TestIntegrationRegistrationBeginFailures(t *testing.T) {
 
 func TestIntegrationRegistrationReplayRejectsMissingOrCorruptUser(t *testing.T) {
 	for _, tc := range []struct{ name, mutation, message string }{
-		{"missing", "UPDATE command_idempotency_keys SET resource_id = '00000000-0000-0000-0000-000000000000' WHERE idempotency_key = $1", "load registration replay"},
+		{"missing", `
+			UPDATE command_idempotency_keys
+			SET
+				resource_id = '00000000-0000-0000-0000-000000000000'
+			WHERE
+				idempotency_key = $1
+		`, "load registration replay"},
 		{"corrupt hash", "UPDATE users SET password = 'corrupt' WHERE email = $1", "verify registration replay"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,16 +207,33 @@ func assertRegistrationState(ctx context.Context, t *testing.T, pg *postgres.Pos
 	if err := pg.QueryRow(ctx, "SELECT count(*) FROM users WHERE email = $1", email).Scan(&users); err != nil {
 		t.Fatal(err)
 	}
-	query := `SELECT count(*) FROM command_idempotency_keys
- WHERE scope = 'public' AND operation = 'user.register' AND idempotency_key = $1`
+	query := `
+		SELECT
+			count(*)
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = 'public'
+			AND operation = 'user.register'
+			AND idempotency_key = $1
+	`
 	if err := pg.QueryRow(ctx, query, key).Scan(&commands); err != nil {
 		t.Fatal(err)
 	}
 	if wantCommands == 1 {
 		var completed bool
-		query := `SELECT keys.status = 'COMPLETED' AND keys.resource_id = users.id::text
-  FROM command_idempotency_keys AS keys JOIN users ON users.email = $2
-  WHERE keys.scope = 'public' AND keys.operation = 'user.register' AND keys.idempotency_key = $1`
+		query := `
+			SELECT
+				keys.status = 'COMPLETED'
+				AND keys.resource_id = users.id::text
+			FROM
+				command_idempotency_keys AS keys
+				JOIN users ON users.email = $2
+			WHERE
+				keys.scope = 'public'
+				AND keys.operation = 'user.register'
+				AND keys.idempotency_key = $1
+		`
 		if err := pg.QueryRow(ctx, query, key, email).Scan(&completed); err != nil || !completed {
 			t.Fatalf("completed ledger/account identity = %t, %v", completed, err)
 		}
@@ -232,7 +255,14 @@ func installRegistrationReplayCommitFault(t *testing.T, pg *postgres.Postgres) f
 		"DROP TABLE IF EXISTS " + table,
 		fmt.Sprintf("CREATE TABLE %s (id int PRIMARY KEY DEFERRABLE INITIALLY DEFERRED)", table),
 		fmt.Sprintf("INSERT INTO %s VALUES (1)", table),
-		fmt.Sprintf(`CREATE FUNCTION %s_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO %s VALUES (1); RETURN NEW; END $$`, table, table),
+		fmt.Sprintf(`
+			CREATE FUNCTION %s_fault () RETURNS trigger LANGUAGE plpgsql AS $$
+			BEGIN
+				INSERT INTO %s VALUES (1);
+				RETURN NEW;
+			END
+			$$
+		`, table, table),
 		fmt.Sprintf("CREATE TRIGGER %s_fault BEFORE INSERT ON %s FOR EACH ROW EXECUTE FUNCTION %s_fault()", table, postgres.TableCommandIdempotencyKeys, table),
 	}
 	remove := func() {

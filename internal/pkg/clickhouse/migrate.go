@@ -150,7 +150,10 @@ func getPendingMigrations(source fs.FS, applied map[int]bool) ([]migration, erro
 
 // applyMigration applies a single migration.
 func applyMigration(ctx context.Context, client *Client, migration migration) error {
-	if err := client.Exec(ctx, "INSERT INTO schema_migrations (version, dirty) VALUES (?, 1)", migration.Version); err != nil {
+	if err := client.Exec(ctx, `
+		INSERT INTO schema_migrations (version, dirty)
+		VALUES (?, 1)
+	`, migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d dirty: %w", migration.Version, err)
 	}
 
@@ -164,7 +167,14 @@ func applyMigration(ctx context.Context, client *Client, migration migration) er
 	// The mutation is made synchronous so that subsequent runs never observe a
 	// stale dirty flag. Note that mutations_sync = 1 only waits on the local
 	// server; a replicated cluster would need mutations_sync = 2.
-	if err := client.Exec(ctx, "ALTER TABLE schema_migrations UPDATE dirty = 0 WHERE version = ? SETTINGS mutations_sync = 1", migration.Version); err != nil {
+	if err := client.Exec(ctx, `
+		ALTER TABLE schema_migrations
+		UPDATE dirty = 0
+		WHERE
+			version = ?
+		SETTINGS
+			mutations_sync = 1
+	`, migration.Version); err != nil {
 		return fmt.Errorf("mark migration %d clean: %w", migration.Version, err)
 	}
 

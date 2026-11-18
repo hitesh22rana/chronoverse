@@ -74,7 +74,17 @@ func TestIntegrationAnalyticsDeliveryContracts(t *testing.T) {
 	}
 }
 
-func assertAnalyticsState(t *testing.T, repo *Repository, user, workflow, wantKind string, wantJobs, wantLogs, wantDuration int64, exists bool) {
+func assertAnalyticsState(
+	t *testing.T,
+	repo *Repository,
+	user,
+	workflow,
+	wantKind string,
+	wantJobs,
+	wantLogs,
+	wantDuration int64,
+	exists bool,
+) {
 	t.Helper()
 	var count int
 	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM analytics WHERE user_id=$1 AND workflow_id=$2`, user, workflow).Scan(&count); err != nil {
@@ -88,7 +98,18 @@ func assertAnalyticsState(t *testing.T, repo *Repository, user, workflow, wantKi
 	}
 	var kind string
 	var jobs, logs, duration int64
-	query := `SELECT kind,jobs_count,logs_count,total_job_execution_duration FROM analytics WHERE user_id=$1 AND workflow_id=$2`
+	query := `
+		SELECT
+			kind,
+			jobs_count,
+			logs_count,
+			total_job_execution_duration
+		FROM
+			analytics
+		WHERE
+			user_id = $1
+			AND workflow_id = $2
+	`
 	if err := repo.pg.QueryRow(t.Context(), query, user, workflow).Scan(&kind, &jobs, &logs, &duration); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +157,15 @@ func assertAnalyticsFailureRetry(
 		t.Fatalf("failed SQL key=%q: %v", failedKey, err)
 	}
 
-	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer='analytics-processor' AND event_key=$1`, failedKey).Scan(&ledger); err != nil || ledger != 0 {
+	if err := repo.pg.QueryRow(t.Context(), `
+		SELECT
+			count(*)
+		FROM
+			processed_events
+		WHERE
+			consumer = 'analytics-processor'
+			AND event_key = $1
+	`, failedKey).Scan(&ledger); err != nil || ledger != 0 {
 		t.Fatalf("failed ledger=%d error=%v", ledger, err)
 	}
 	event.UserID, event.WorkflowID, event.Data = user, uuid.NewString(), json.RawMessage(payload)
@@ -157,7 +186,15 @@ func assertAnalyticsFailureRetry(
 func assertAnalyticsLedgerCount(t *testing.T, repo *Repository, key string, want int) {
 	t.Helper()
 	var count int
-	if err := repo.pg.QueryRow(t.Context(), `SELECT count(*) FROM processed_events WHERE consumer='analytics-processor' AND event_key=$1`, key).Scan(&count); err != nil || count != want {
+	if err := repo.pg.QueryRow(t.Context(), `
+		SELECT
+			count(*)
+		FROM
+			processed_events
+		WHERE
+			consumer = 'analytics-processor'
+			AND event_key = $1
+	`, key).Scan(&count); err != nil || count != want {
 		t.Fatalf("ledger=%d error=%v, want %d", count, err, want)
 	}
 }

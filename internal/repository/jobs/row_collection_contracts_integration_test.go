@@ -25,10 +25,22 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 	pg := testkit.Postgres(t)
 	repo := New(&Config{}, nil, pg, nil, nil, nil, nil)
 	scope := commandidempotency.WorkerScope(uuid.NewString())
-	projection := `SELECT 'id'::text AS id, 'workflow'::text AS workflow_id, 'user'::text AS user_id,
- NULL::text AS container_id, 'token'::text AS lease_token, NULL::text AS leased_by, 'MANUAL'::text AS trigger,
- now() AS scheduled_at, 1::int4 AS attempts, true AS log_retention, NULL::text AS runtime_node_id,
- NULL::text AS runtime_endpoint, false AS runtime_unavailable`
+	projection := `
+		SELECT
+			'id'::text AS id,
+			'workflow'::text AS workflow_id,
+			'user'::text AS user_id,
+			NULL::text AS container_id,
+			'token'::text AS lease_token,
+			NULL::text AS leased_by,
+			'MANUAL'::text AS trigger,
+			now() AS scheduled_at,
+			1::int4 AS attempts,
+			true AS log_retention,
+			NULL::text AS runtime_node_id,
+			NULL::text AS runtime_endpoint,
+			false AS runtime_unavailable
+	`
 	for _, tc := range []struct {
 		name, query, message string
 		collect              func(*testing.T, pgx.Tx, pgx.Rows) error
@@ -45,7 +57,15 @@ func TestIntegrationRecoveryCollectionDriverFailures(t *testing.T) {
 			},
 		},
 		{
-			name: "replay stream error", query: `SELECT CASE WHEN i=1 THEN 'first' ELSE (1/(i-i))::text END FROM generate_series(1,2) AS i`, message: "division by zero",
+			name: "replay stream error", query: `
+				SELECT
+					CASE
+						WHEN i = 1 THEN 'first'
+						ELSE (1 / (i - i))::text
+					END
+				FROM
+					generate_series(1, 2) AS i
+			`, message: "division by zero",
 			collect: func(t *testing.T, _ pgx.Tx, rows pgx.Rows) error {
 				t.Helper()
 				result, err := collectRenewedRecoveryJobs(rows, []*jobsmodel.ExpiredJobLease{{ID: "first", LeaseToken: "token"}})
@@ -152,8 +172,19 @@ func TestIntegrationLogCollectionRejectsStreamingServerFailure(t *testing.T) {
 	ch := testkit.ClickHouse(t)
 	// One-row blocks let the driver receive a valid row before the next block's
 	// integer division fails. This is a real Rows.Err contract, not a schema mock.
-	rows, err := ch.Query(t.Context(), `SELECT now64(9), toString(intDiv(1, toInt64(number)-1)), toUInt32(number), 'stdout', toString(number)
- FROM numbers(2) SETTINGS max_block_size=1, max_threads=1`)
+	rows, err := ch.Query(t.Context(), `
+		SELECT
+			now64(9),
+			toString(intDiv(1, toInt64(number) -1)),
+			toUInt32(number),
+			'stdout',
+			toString(number)
+		FROM
+			numbers(2)
+		SETTINGS
+			max_block_size = 1,
+			max_threads = 1
+	`)
 	if err != nil {
 		t.Fatalf("query must return Rows before stream failure: %v", err)
 	}

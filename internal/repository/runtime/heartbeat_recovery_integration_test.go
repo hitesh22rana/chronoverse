@@ -49,8 +49,19 @@ func TestIntegrationHeartbeatRegistersMissingNode(t *testing.T) {
 	var name, endpoint, nodeStatus string
 	var concurrency, running int
 	var fresh bool
-	if err := repo.pg.QueryRow(ctx, `SELECT node_name, docker_endpoint, status, max_concurrency, running_jobs,
-		last_heartbeat_at > now() AT TIME ZONE 'utc' - interval '1 minute' FROM runtime_nodes WHERE id=$1`, repo.cfg.ID).
+	if err := repo.pg.QueryRow(ctx, `
+		SELECT
+			node_name,
+			docker_endpoint,
+			status,
+			max_concurrency,
+			running_jobs,
+			last_heartbeat_at > now() AT TIME ZONE 'utc' - interval '1 minute'
+		FROM
+			runtime_nodes
+		WHERE
+			id = $1
+	`, repo.cfg.ID).
 		Scan(&name, &endpoint, &nodeStatus, &concurrency, &running, &fresh); err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +110,34 @@ func TestIntegrationHeartbeatReconcilesOnlyOwnedRunningJobs(t *testing.T) {
 	}
 	user := testkit.SeedUser(ctx, t, repo.pg, "heartbeat-"+heartbeatTag()+"@example.test")
 	workflow := testkit.SeedWorkflow(ctx, t, repo.pg, user, t.Name())
-	if _, err := repo.pg.Exec(ctx, `INSERT INTO jobs (workflow_id,user_id,status,scheduled_at,runtime_node_id,trigger)
-		VALUES ($1,$2,'RUNNING',now(),$3,'MANUAL'),($1,$2,'RUNNING',now(),$3,'MANUAL'),($1,$2,'COMPLETED',now(),$3,'MANUAL'),
-		($1,$2,'RUNNING',now(),$4,'MANUAL'),($1,$2,'RUNNING',now(),NULL,'MANUAL')`, workflow, user, repo.cfg.ID, other.cfg.ID); err != nil {
+	if _, err := repo.pg.Exec(ctx, `
+		INSERT INTO
+			jobs (
+				workflow_id,
+				user_id,
+				status,
+				scheduled_at,
+				runtime_node_id,
+				trigger
+			)
+		VALUES
+			($1, $2, 'RUNNING', now(), $3, 'MANUAL'),
+			($1, $2, 'RUNNING', now(), $3, 'MANUAL'),
+			($1, $2, 'COMPLETED', now(), $3, 'MANUAL'),
+			($1, $2, 'RUNNING', now(), $4, 'MANUAL'),
+			($1, $2, 'RUNNING', now(), NULL, 'MANUAL')
+	`, workflow, user, repo.cfg.ID, other.cfg.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.pg.Exec(ctx, `UPDATE runtime_nodes SET running_jobs=17,status='UNHEALTHY',last_heartbeat_at='2000-01-01' WHERE id IN ($1,$2)`, repo.cfg.ID, other.cfg.ID); err != nil {
+	if _, err := repo.pg.Exec(ctx, `
+		UPDATE runtime_nodes
+		SET
+			running_jobs = 17,
+			status = 'UNHEALTHY',
+			last_heartbeat_at = '2000-01-01'
+		WHERE
+			id IN ($1, $2)
+	`, repo.cfg.ID, other.cfg.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.Heartbeat(ctx); err != nil {
@@ -112,11 +145,29 @@ func TestIntegrationHeartbeatReconcilesOnlyOwnedRunningJobs(t *testing.T) {
 	}
 	var running int
 	var ready bool
-	if err := repo.pg.QueryRow(ctx, `SELECT running_jobs,status='READY' AND last_heartbeat_at > '2000-01-01' FROM runtime_nodes WHERE id=$1`, repo.cfg.ID).
+	if err := repo.pg.QueryRow(ctx, `
+		SELECT
+			running_jobs,
+			status = 'READY'
+			AND last_heartbeat_at > '2000-01-01'
+		FROM
+			runtime_nodes
+		WHERE
+			id = $1
+	`, repo.cfg.ID).
 		Scan(&running, &ready); err != nil || running != 2 || !ready {
 		t.Fatalf("reconciled running=%d ready=%v error=%v", running, ready, err)
 	}
-	if err := repo.pg.QueryRow(ctx, `SELECT running_jobs,status='UNHEALTHY' AND last_heartbeat_at='2000-01-01' FROM runtime_nodes WHERE id=$1`, other.cfg.ID).
+	if err := repo.pg.QueryRow(ctx, `
+		SELECT
+			running_jobs,
+			status = 'UNHEALTHY'
+			AND last_heartbeat_at = '2000-01-01'
+		FROM
+			runtime_nodes
+		WHERE
+			id = $1
+	`, other.cfg.ID).
 		Scan(&running, &ready); err != nil || running != 17 || !ready {
 		t.Fatalf("other node changed: running=%d unchanged=%v error=%v", running, ready, err)
 	}
@@ -132,7 +183,17 @@ type nodeState struct {
 func readNodeState(t *testing.T, repo *Repository) nodeState {
 	t.Helper()
 	var s nodeState
-	if err := repo.pg.QueryRow(t.Context(), `SELECT status,running_jobs,last_heartbeat_at,updated_at FROM runtime_nodes WHERE id=$1`, repo.cfg.ID).
+	if err := repo.pg.QueryRow(t.Context(), `
+		SELECT
+			status,
+			running_jobs,
+			last_heartbeat_at,
+			updated_at
+		FROM
+			runtime_nodes
+		WHERE
+			id = $1
+	`, repo.cfg.ID).
 		Scan(&s.status, &s.running, &s.heartbeat, &s.updated); err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +204,16 @@ func readNodeState(t *testing.T, repo *Repository) nodeState {
 // running count so a successful write is observable.
 func markNodeStaleAndUnhealthy(t *testing.T, repo *Repository) {
 	t.Helper()
-	if _, err := repo.pg.Exec(t.Context(), `UPDATE runtime_nodes
-		SET status='UNHEALTHY',running_jobs=17,last_heartbeat_at='2000-01-01',updated_at='2000-01-01' WHERE id=$1`, repo.cfg.ID); err != nil {
+	if _, err := repo.pg.Exec(t.Context(), `
+		UPDATE runtime_nodes
+		SET
+			status = 'UNHEALTHY',
+			running_jobs = 17,
+			last_heartbeat_at = '2000-01-01',
+			updated_at = '2000-01-01'
+		WHERE
+			id = $1
+	`, repo.cfg.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -264,16 +333,30 @@ func installRuntimeNodeFailure(t *testing.T, pg *postgres.Postgres, id, clause, 
 	if strings.Contains(clause, "DEFERRABLE") {
 		constraint = "CONSTRAINT "
 	}
-	ddl := fmt.Sprintf(`CREATE FUNCTION test_runtime_node_failure() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION '%s'; END; $$ LANGUAGE plpgsql;
-		CREATE %sTRIGGER test_runtime_node_failure_trigger %s FOR EACH ROW
-		WHEN (NEW.id = '%s' AND (%s)) EXECUTE FUNCTION test_runtime_node_failure();`, runtimeNodeFailureMessage, constraint, clause, strings.ReplaceAll(id, "'", "''"), condition)
+	ddl := fmt.Sprintf(`
+		CREATE FUNCTION test_runtime_node_failure () RETURNS trigger AS $$
+		BEGIN
+			RAISE EXCEPTION '%s';
+		END;
+		$$ LANGUAGE plpgsql;
+
+		CREATE %sTRIGGER test_runtime_node_failure_trigger %s FOR EACH ROW WHEN (
+			NEW.id = '%s'
+			AND (%s)
+		)
+		EXECUTE FUNCTION test_runtime_node_failure ();
+	`, runtimeNodeFailureMessage, constraint, clause, strings.ReplaceAll(id, "'", "''"), condition)
 	if _, err := pg.Exec(t.Context(), ddl); err != nil {
 		t.Fatalf("install failure: %v", err)
 	}
 	remove := func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
-		if _, err := pg.Exec(ctx, `DROP TRIGGER IF EXISTS test_runtime_node_failure_trigger ON runtime_nodes; DROP FUNCTION IF EXISTS test_runtime_node_failure();`); err != nil {
+		if _, err := pg.Exec(ctx, `
+			DROP TRIGGER IF EXISTS test_runtime_node_failure_trigger ON runtime_nodes;
+
+			DROP FUNCTION IF EXISTS test_runtime_node_failure ();
+		`); err != nil {
 			t.Errorf("remove failure trigger: %v", err)
 		}
 	}
@@ -285,16 +368,28 @@ func installRuntimeNodeFailure(t *testing.T, pg *postgres.Postgres, id, clause, 
 // success without writing a row, exercising the post-upsert missing-row guard.
 func installInsertSuppression(t *testing.T, pg *postgres.Postgres, id string) func() {
 	t.Helper()
-	ddl := fmt.Sprintf(`CREATE FUNCTION test_runtime_insert_suppression() RETURNS trigger AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;
-		CREATE TRIGGER test_runtime_insert_suppression_trigger BEFORE INSERT ON runtime_nodes
-		FOR EACH ROW WHEN (NEW.id = '%s') EXECUTE FUNCTION test_runtime_insert_suppression();`, strings.ReplaceAll(id, "'", "''"))
+	ddl := fmt.Sprintf(`
+		CREATE FUNCTION test_runtime_insert_suppression () RETURNS trigger AS $$
+		BEGIN
+			RETURN NULL;
+		END;
+		$$ LANGUAGE plpgsql;
+
+		CREATE TRIGGER test_runtime_insert_suppression_trigger
+		BEFORE INSERT ON runtime_nodes FOR EACH ROW WHEN (NEW.id = '%s')
+		EXECUTE FUNCTION test_runtime_insert_suppression ();
+	`, strings.ReplaceAll(id, "'", "''"))
 	if _, err := pg.Exec(t.Context(), ddl); err != nil {
 		t.Fatalf("install insert suppression: %v", err)
 	}
 	remove := func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
-		if _, err := pg.Exec(ctx, `DROP TRIGGER IF EXISTS test_runtime_insert_suppression_trigger ON runtime_nodes; DROP FUNCTION IF EXISTS test_runtime_insert_suppression();`); err != nil {
+		if _, err := pg.Exec(ctx, `
+			DROP TRIGGER IF EXISTS test_runtime_insert_suppression_trigger ON runtime_nodes;
+
+			DROP FUNCTION IF EXISTS test_runtime_insert_suppression ();
+		`); err != nil {
 			t.Errorf("remove insert suppression: %v", err)
 		}
 	}
@@ -370,7 +465,17 @@ func waitForHeartbeatLock(t *testing.T, pg *postgres.Postgres, blocker int) {
 	defer ticker.Stop()
 	for {
 		var waiting bool
-		if err := pg.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, blocker).Scan(&waiting); err != nil {
+		if err := pg.QueryRow(ctx, `
+			SELECT
+				EXISTS (
+					SELECT
+						1
+					FROM
+						pg_stat_activity
+					WHERE
+						$1 = ANY (pg_blocking_pids(pid))
+				)
+		`, blocker).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
 		if waiting {

@@ -20,14 +20,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
@@ -340,7 +339,13 @@ type GetWorkflowRequest struct {
 }
 
 // GetWorkflow returns the workflow details by ID and user ID.
-func (s *Service) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowsmodel.GetWorkflowResponse, err error) {
+func (s *Service) GetWorkflow(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowRequest,
+) (
+	res *workflowsmodel.GetWorkflowResponse,
+	err error,
+) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.GetWorkflow"),
 	)
@@ -421,7 +426,13 @@ type GetWorkflowByIDRequest struct {
 
 // GetWorkflowByID returns the workflow details by ID.
 // This is a internal API and we don't want the cached workflow details, so we don't use the cache here.
-func (s *Service) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowsmodel.GetWorkflowByIDResponse, err error) {
+func (s *Service) GetWorkflowByID(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowByIDRequest,
+) (
+	res *workflowsmodel.GetWorkflowByIDResponse,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflowByID")
 	defer func() {
 		if err != nil {
@@ -510,7 +521,12 @@ type ResetWorkflowConsecutiveJobFailuresCountRequest struct {
 }
 
 // ResetWorkflowConsecutiveJobFailuresCount resets the job consecutive failures count.
-func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(ctx context.Context, req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest) (err error) {
+func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(
+	ctx context.Context,
+	req *workflowspb.ResetWorkflowConsecutiveJobFailuresCountRequest,
+) (
+	err error,
+) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.ResetWorkflowConsecutiveJobFailuresCount"),
 	)
@@ -654,7 +670,13 @@ type ListWorkflowsRequest struct {
 }
 
 // ListWorkflows returns workflows by user ID.
-func (s *Service) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowsmodel.ListWorkflowsResponse, err error) {
+func (s *Service) ListWorkflows(
+	ctx context.Context,
+	req *workflowspb.ListWorkflowsRequest,
+) (
+	res *workflowsmodel.ListWorkflowsResponse,
+	err error,
+) {
 	logger := loggerpkg.FromContext(ctx).With(
 		zap.String("method", "Service.ListWorkflows"),
 	)

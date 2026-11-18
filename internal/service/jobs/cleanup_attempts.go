@@ -13,7 +13,14 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
-func (s *Service) updateContainerCleanup(ctx context.Context, operation string, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (s *Service) updateContainerCleanup(
+	ctx context.Context,
+	operation string,
+	req *jobspb.ContainerCleanupAttemptRequest,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	if err := s.validateCleanupReceipt(&jobspb.ContainerCleanupReceiptRequest{
 		JobId:           req.GetJobId(),
 		ContainerId:     req.GetContainerId(),
@@ -62,16 +69,34 @@ func (s *Service) updateContainerCleanup(ctx context.Context, operation string, 
 }
 
 // BeginContainerCleanupAttempt grants one bounded attempt or returns durable disposition.
-func (s *Service) BeginContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (s *Service) BeginContainerCleanupAttempt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupAttemptRequest,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	return s.updateContainerCleanup(ctx, jobsmodel.CleanupOperationBegin, req)
 }
 
 // FailContainerCleanupAttempt persists failure before a worker may acknowledge quarantine.
-func (s *Service) FailContainerCleanupAttempt(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (s *Service) FailContainerCleanupAttempt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupAttemptRequest,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	return s.updateContainerCleanup(ctx, jobsmodel.CleanupOperationFail, req)
 }
 
 // RedriveContainerCleanup requeues the retained snapshot with a fresh execution generation.
-func (s *Service) RedriveContainerCleanup(ctx context.Context, req *jobspb.ContainerCleanupAttemptRequest) (*jobspb.ContainerCleanupAttemptResponse, error) {
+func (s *Service) RedriveContainerCleanup(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupAttemptRequest,
+) (
+	*jobspb.ContainerCleanupAttemptResponse,
+	error,
+) {
 	return s.updateContainerCleanup(ctx, jobsmodel.CleanupOperationRedrive, req)
 }

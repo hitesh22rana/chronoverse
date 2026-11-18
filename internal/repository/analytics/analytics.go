@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/jackc/pgx/v5"
 
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -64,8 +63,10 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 			COALESCE(SUM(jobs_count), 0) AS total_jobs,
 			COALESCE(SUM(logs_count), 0) AS total_joblogs,
 			COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
-		FROM %s
-		WHERE user_id = $1
+		FROM
+			%s
+		WHERE
+			user_id = $1
 	`, postgres.TableAnalytics)
 
 	rows, err := tx.Query(ctx, query, userID)
@@ -85,17 +86,22 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 	}
 
 	workflowKindsQuery := fmt.Sprintf(`
-        SELECT
-            COALESCE(kind, '') AS kind,
-            COUNT(*) AS total_workflows,
-            COALESCE(SUM(jobs_count), 0) AS total_jobs,
-            COALESCE(SUM(logs_count), 0) AS total_joblogs,
-            COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
-        FROM %s
-        WHERE user_id = $1
-        GROUP BY COALESCE(kind, '')
-        ORDER BY total_jobs DESC, COALESCE(kind, '') ASC
-    `, postgres.TableAnalytics)
+		SELECT
+			COALESCE(kind, '') AS kind,
+			COUNT(*) AS total_workflows,
+			COALESCE(SUM(jobs_count), 0) AS total_jobs,
+			COALESCE(SUM(logs_count), 0) AS total_joblogs,
+			COALESCE(SUM(total_job_execution_duration), 0) AS total_job_execution_duration
+		FROM
+			%s
+		WHERE
+			user_id = $1
+		GROUP BY
+			COALESCE(kind, '')
+		ORDER BY
+			total_jobs DESC,
+			COALESCE(kind, '') ASC
+	`, postgres.TableAnalytics)
 
 	workflowKindRows, err := tx.Query(ctx, workflowKindsQuery, userID)
 	if err != nil {
@@ -111,19 +117,27 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 	}
 
 	topWorkflowsQuery := fmt.Sprintf(`
-        SELECT
-            a.workflow_id,
-            COALESCE(w.name, 'Deleted workflow') AS workflow_name,
-            COALESCE(a.kind, '') AS kind,
-            a.jobs_count AS total_jobs,
-            a.logs_count AS total_joblogs,
-            a.total_job_execution_duration
-        FROM %s a
-        LEFT JOIN %s w ON w.id = a.workflow_id AND w.user_id = a.user_id
-        WHERE a.user_id = $1 AND a.jobs_count > 0
-        ORDER BY a.jobs_count DESC, a.logs_count DESC, a.workflow_id ASC
-        LIMIT $2
-    `, postgres.TableAnalytics, postgres.TableWorkflows)
+		SELECT
+			a.workflow_id,
+			COALESCE(w.name, 'Deleted workflow') AS workflow_name,
+			COALESCE(a.kind, '') AS kind,
+			a.jobs_count AS total_jobs,
+			a.logs_count AS total_joblogs,
+			a.total_job_execution_duration
+		FROM
+			%s a
+			LEFT JOIN %s w ON w.id = a.workflow_id
+			AND w.user_id = a.user_id
+		WHERE
+			a.user_id = $1
+			AND a.jobs_count > 0
+		ORDER BY
+			a.jobs_count DESC,
+			a.logs_count DESC,
+			a.workflow_id ASC
+		LIMIT
+			$2
+	`, postgres.TableAnalytics, postgres.TableWorkflows)
 
 	topWorkflowRows, err := tx.Query(ctx, topWorkflowsQuery, userID, topWorkflowsLimit)
 	if err != nil {
@@ -157,7 +171,14 @@ func analyticsRepositoryError(err error, operation string) error {
 }
 
 // GetWorkflowAnalytics retrieves analytics data for a specific workflow.
-func (r *Repository) GetWorkflowAnalytics(ctx context.Context, userID, workflowID string) (res *analyticsmodel.GetWorkflowAnalyticsResponse, err error) {
+func (r *Repository) GetWorkflowAnalytics(
+	ctx context.Context,
+	userID,
+	workflowID string,
+) (
+	res *analyticsmodel.GetWorkflowAnalyticsResponse,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetWorkflowAnalytics")
 	defer func() {
 		if err != nil {
@@ -173,9 +194,13 @@ func (r *Repository) GetWorkflowAnalytics(ctx context.Context, userID, workflowI
 			jobs_count AS total_jobs,
 			logs_count AS total_joblogs,
 			total_job_execution_duration
-		FROM %s
-		WHERE user_id = $1 AND workflow_id = $2
-		LIMIT 1
+		FROM
+			%s
+		WHERE
+			user_id = $1
+			AND workflow_id = $2
+		LIMIT
+			1
 	`, postgres.TableAnalytics)
 
 	rows, err := r.pg.Query(ctx, query, userID, workflowID)

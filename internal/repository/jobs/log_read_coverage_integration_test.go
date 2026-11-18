@@ -89,7 +89,21 @@ func TestIntegrationGetJobLogsOrderingAndStatus(t *testing.T) {
 		{"one", 1, "stdout"}, {"two-error", 2, "stderr"}, {"two-a", 2, "stdout"}, {"two-b", 2, "stdout"}, {"three", 3, "stdout"},
 	} {
 		if insertErr := ch.Exec(ctx,
-			`INSERT INTO job_logs (event_id,user_id,workflow_id,job_id,timestamp,message,sequence_num,stream) VALUES (?,?,?,?,?,?,?,?)`,
+			`
+				INSERT INTO
+					job_logs (
+						event_id,
+						user_id,
+						workflow_id,
+						job_id,
+						timestamp,
+						message,
+						sequence_num,
+						stream
+					)
+				VALUES
+					(?, ?, ?, ?, ?, ?, ?, ?)
+			`,
 			jobID+f.id, userID, workflowID, jobID, time.Now().UTC(), f.id, f.seq, f.stream); insertErr != nil {
 			t.Fatal(insertErr)
 		}

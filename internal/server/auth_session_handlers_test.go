@@ -41,7 +41,14 @@ func (c *sessionUsersClient) reply(options []grpc.CallOption) {
 	}
 }
 
-func (c *sessionUsersClient) RegisterUser(ctx context.Context, request *userspb.RegisterUserRequest, options ...grpc.CallOption) (*userspb.RegisterUserResponse, error) {
+func (c *sessionUsersClient) RegisterUser(
+	ctx context.Context,
+	request *userspb.RegisterUserRequest,
+	options ...grpc.CallOption,
+) (
+	*userspb.RegisterUserResponse,
+	error,
+) {
 	c.reply(options)
 	if c.captureContext != nil {
 		c.captureContext(ctx)
@@ -53,7 +60,14 @@ func (c *sessionUsersClient) RegisterUser(ctx context.Context, request *userspb.
 	return &userspb.RegisterUserResponse{UserId: testSessionUserID}, c.err
 }
 
-func (c *sessionUsersClient) LoginUser(ctx context.Context, request *userspb.LoginUserRequest, options ...grpc.CallOption) (*userspb.LoginUserResponse, error) {
+func (c *sessionUsersClient) LoginUser(
+	ctx context.Context,
+	request *userspb.LoginUserRequest,
+	options ...grpc.CallOption,
+) (
+	*userspb.LoginUserResponse,
+	error,
+) {
 	c.reply(options)
 	if c.captureContext != nil {
 		c.captureContext(ctx)

@@ -36,10 +36,29 @@ type publicClaimState struct {
 func readPublicClaimState(ctx context.Context, t *testing.T, pg *postgres.Postgres, jobID, nodeID string) publicClaimState {
 	t.Helper()
 	var state publicClaimState
-	err := pg.QueryRow(ctx, `SELECT status, attempts, lease_token, lease_process_instance_id,
-  leased_by, lease_expires_at, started_at, runtime_node_id,
-  (SELECT COALESCE(sum(running_jobs),0) FROM runtime_nodes WHERE id=$2)
-  FROM jobs WHERE id=$1`, jobID, nodeID).Scan(
+	err := pg.QueryRow(ctx, `
+		SELECT
+			status,
+			attempts,
+			lease_token,
+			lease_process_instance_id,
+			leased_by,
+			lease_expires_at,
+			started_at,
+			runtime_node_id,
+			(
+				SELECT
+					COALESCE(sum(running_jobs), 0)
+				FROM
+					runtime_nodes
+				WHERE
+					id = $2
+			)
+		FROM
+			jobs
+		WHERE
+			id = $1
+	`, jobID, nodeID).Scan(
 		&state.Status, &state.Attempts, &state.LeaseToken, &state.Process, &state.LeasedBy,
 		&state.ExpiresAt, &state.StartedAt, &state.RuntimeNode, &state.NodeRunning,
 	)
@@ -54,8 +73,16 @@ func readPublicClaimState(ctx context.Context, t *testing.T, pg *postgres.Postgr
 func assertPublicClaimLedgerCount(ctx context.Context, t *testing.T, pg *postgres.Postgres, process, command string, want int) {
 	t.Helper()
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM command_idempotency_keys
- WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`, commandidempotency.WorkerScope(process), commandidempotency.OperationJobClaim, command).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, `
+		SELECT
+			count(*)
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
+	`, commandidempotency.WorkerScope(process), commandidempotency.OperationJobClaim, command).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != want {
@@ -131,8 +158,17 @@ func TestIntegrationClaimJobFaultsRollBackAndAllowRetry(t *testing.T) {
 			}
 			assertPublicClaimLedgerCount(ctx, t, pg, process, command, 1)
 			var ledgerStatus, resourceID string
-			if ledgerErr := pg.QueryRow(ctx, `SELECT status, resource_id FROM command_idempotency_keys
-            WHERE scope=$1 AND operation=$2 AND idempotency_key=$3`,
+			if ledgerErr := pg.QueryRow(ctx, `
+				SELECT
+					status,
+					resource_id
+				FROM
+					command_idempotency_keys
+				WHERE
+					scope = $1
+					AND operation = $2
+					AND idempotency_key = $3
+			`,
 				commandidempotency.WorkerScope(process), commandidempotency.OperationJobClaim, command).Scan(&ledgerStatus, &resourceID); ledgerErr != nil {
 				t.Fatal(ledgerErr)
 			}

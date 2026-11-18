@@ -86,11 +86,14 @@ func insertProcessedLogAnalyticsEvents(
 	}
 
 	rows, err := tx.Query(ctx, fmt.Sprintf(`
-            INSERT INTO %s (consumer, event_key)
-            VALUES %s
-            ON CONFLICT DO NOTHING
-            RETURNING event_key;
-        `, postgres.TableProcessedEvents, strings.Join(placeholders, ",")), args...)
+		INSERT INTO
+			%s (consumer, event_key)
+		VALUES
+			%s
+		ON CONFLICT DO NOTHING
+		RETURNING
+			event_key;
+	`, postgres.TableProcessedEvents, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to insert processed log analytics events: %v", err)
 	}
@@ -122,13 +125,14 @@ func updatePartitionLogCounts(
 		}
 
 		if _, err := tx.Exec(ctx, fmt.Sprintf(`
-            INSERT INTO %s
-                (user_id, workflow_id, logs_count)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id, workflow_id)
-            DO UPDATE SET
-                logs_count = %s.logs_count + EXCLUDED.logs_count;
-        `, postgres.TableAnalytics, postgres.TableAnalytics), entry.userID, workflowID, entry.count); err != nil {
+			INSERT INTO
+				%s (user_id, workflow_id, logs_count)
+			VALUES
+				($1, $2, $3)
+			ON CONFLICT (user_id, workflow_id) DO UPDATE
+			SET
+				logs_count = %s.logs_count + EXCLUDED.logs_count;
+		`, postgres.TableAnalytics, postgres.TableAnalytics), entry.userID, workflowID, entry.count); err != nil {
 			return status.Errorf(codes.Internal, "failed to update logs analytics: %v", err)
 		}
 	}

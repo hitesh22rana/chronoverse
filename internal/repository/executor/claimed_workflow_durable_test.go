@@ -150,7 +150,14 @@ func (c *durableJobsClient) CompleteJob(
 	return &jobspb.CompleteJobResponse{}, nil
 }
 
-func (c *durableJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+func (c *durableJobsClient) GetContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetContainerCleanupReceiptResponse,
+	error,
+) {
 	completed, err := c.repo.GetContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
 		JobID:           req.GetJobId(),
 		ContainerID:     req.GetContainerId(),
@@ -249,27 +256,69 @@ func (c *durableJobsClient) updateContainerIntent(
 	return &jobspb.ContainerIntentResponse{Intent: containerIntentProto(result.Intent), Granted: result.Granted}, nil
 }
 
-func (c *durableJobsClient) EnsureContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) EnsureContainerIntent(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)
 }
 
-func (c *durableJobsClient) GetContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) GetContainerIntent(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationGet, req)
 }
 
-func (c *durableJobsClient) ReserveContainerCreate(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) ReserveContainerCreate(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveCreate, req)
 }
 
-func (c *durableJobsClient) ObserveContainer(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) ObserveContainer(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, req)
 }
 
-func (c *durableJobsClient) ReserveContainerStart(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) ReserveContainerStart(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationReserveStart, req)
 }
 
-func (c *durableJobsClient) CloseContainerIntent(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (c *durableJobsClient) CloseContainerIntent(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return c.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationClose, req)
 }
 
@@ -365,7 +414,14 @@ func durableFixtureTag() string {
 // seedDurableClaim seeds an isolated user and workflow, then schedules, queues and
 // claims one AUTOMATIC job through the real jobs repository. Cleanup deletes the
 // fixture user, which cascades to exactly this workflow and its jobs.
-func seedDurableClaim(ctx context.Context, t *testing.T, pg *postgres.Postgres, repo *jobsrepo.Repository, buildStatus string, generation int64) *durableFixture {
+func seedDurableClaim(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	repo *jobsrepo.Repository,
+	buildStatus string,
+	generation int64,
+) *durableFixture {
 	t.Helper()
 
 	tag := durableFixtureTag()
@@ -384,9 +440,21 @@ func seedDurableClaim(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 	const interval = 5
 	var workflowID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO workflows (user_id, name, payload, kind, build_status, interval, generation, log_retention)
-		VALUES ($1, $2, $3::jsonb, 'HEARTBEAT', $4, $5, $6, FALSE)
-		RETURNING id
+		INSERT INTO
+			workflows (
+				user_id,
+				name,
+				payload,
+				kind,
+				build_status,
+				interval,
+				generation,
+				log_retention
+			)
+		VALUES
+			($1, $2, $3::jsonb, 'HEARTBEAT', $4, $5, $6, FALSE)
+		RETURNING
+			id
 	`, userID, "cv-durable-"+tag, durableHeartbeatPayload, buildStatus, interval, generation).Scan(&workflowID); err != nil {
 		t.Fatalf("seed workflow: %v", err)
 	}
@@ -510,10 +578,20 @@ func readDurableJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 
 	var state durableJobState
 	if err := pg.QueryRow(ctx, `
-		SELECT status, lease_token, leased_by, terminal_reason_code, failure_kind,
-			last_error_code, next_attempt_at, completed_at, attempts
-		FROM jobs
-		WHERE id = $1
+		SELECT
+			status,
+			lease_token,
+			leased_by,
+			terminal_reason_code,
+			failure_kind,
+			last_error_code,
+			next_attempt_at,
+			completed_at,
+			attempts
+		FROM
+			jobs
+		WHERE
+			id = $1
 	`, jobID).Scan(
 		&state.Status,
 		&state.LeaseToken,
@@ -552,8 +630,12 @@ func stealJobLease(ctx context.Context, t *testing.T, pg *postgres.Postgres, job
 
 	if _, err := pg.Exec(ctx, `
 		UPDATE jobs
-		SET lease_token = $2, leased_by = 'thief-worker', lease_process_instance_id = $3
-		WHERE id = $1
+		SET
+			lease_token = $2,
+			leased_by = 'thief-worker',
+			lease_process_instance_id = $3
+		WHERE
+			id = $1
 	`, jobID, thiefToken, uuid.NewString()); err != nil {
 		t.Fatalf("steal job lease: %v", err)
 	}
@@ -849,11 +931,22 @@ func assertDurableFollowUp(ctx context.Context, t *testing.T, pg *postgres.Postg
 		observedJobs int
 	)
 	if err := pg.QueryRow(ctx, `
-		SELECT user_id, trigger, workflow_generation, scheduled_at, status, count(*) OVER ()
-		FROM jobs
-		WHERE workflow_id = $1 AND trigger = 'AUTOMATIC'
-		ORDER BY scheduled_at DESC
-		LIMIT 1
+		SELECT
+			user_id,
+			trigger,
+			workflow_generation,
+			scheduled_at,
+			status,
+			count(*) OVER ()
+		FROM
+			jobs
+		WHERE
+			workflow_id = $1
+			AND trigger = 'AUTOMATIC'
+		ORDER BY
+			scheduled_at DESC
+		LIMIT
+			1
 	`, fixture.WorkflowID).Scan(&userID, &trigger, &generation, &scheduledAt, &status, &observedJobs); err != nil {
 		t.Fatalf("read durable follow-up job: %v", err)
 	}

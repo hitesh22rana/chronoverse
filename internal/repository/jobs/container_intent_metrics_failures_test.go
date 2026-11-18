@@ -18,14 +18,26 @@ type intentRejectingMeter struct {
 	err  error
 }
 
-func (m intentRejectingMeter) Int64ObservableGauge(name string, options ...metric.Int64ObservableGaugeOption) (metric.Int64ObservableGauge, error) {
+func (m intentRejectingMeter) Int64ObservableGauge(
+	name string,
+	options ...metric.Int64ObservableGaugeOption,
+) (
+	metric.Int64ObservableGauge,
+	error,
+) {
 	if name == m.fail {
 		return nil, m.err
 	}
 	return m.Meter.Int64ObservableGauge(name, options...)
 }
 
-func (m intentRejectingMeter) Float64ObservableGauge(name string, options ...metric.Float64ObservableGaugeOption) (metric.Float64ObservableGauge, error) {
+func (m intentRejectingMeter) Float64ObservableGauge(
+	name string,
+	options ...metric.Float64ObservableGaugeOption,
+) (
+	metric.Float64ObservableGauge,
+	error,
+) {
 	if name == m.fail {
 		return nil, m.err
 	}

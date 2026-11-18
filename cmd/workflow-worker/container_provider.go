@@ -8,7 +8,13 @@ import (
 )
 
 // newContainerProvider binds runtime identity, endpoint reuse and image-pull policy.
-func newContainerProvider(cfg *config.WorkflowWorker, locks imagepull.LockStore) (provider func(string, string) (workflowrepo.ContainerSvc, error), closeClients func() error) {
+func newContainerProvider(
+	cfg *config.WorkflowWorker,
+	locks imagepull.LockStore,
+) (
+	provider func(string, string) (workflowrepo.ContainerSvc, error),
+	closeClients func() error,
+) {
 	cache := container.NewEndpointCache(func(endpoint string) (*container.DockerWorkflow, error) {
 		return container.NewDockerWorkflow(
 			container.WithDockerHost(endpoint),

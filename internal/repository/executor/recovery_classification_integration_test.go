@@ -155,7 +155,14 @@ func seedDurableRecovery(
 	if err != nil || !start.Granted {
 		t.Fatalf("reserve container start: %v granted=%v", err, start != nil && start.Granted)
 	}
-	if _, expireErr := pg.Exec(ctx, `UPDATE jobs SET attempts=$2,lease_expires_at=clock_timestamp() AT TIME ZONE 'utc'-interval '1 second' WHERE id=$1`, jobID, attempts); expireErr != nil {
+	if _, expireErr := pg.Exec(ctx, `
+		UPDATE jobs
+		SET
+			attempts = $2,
+			lease_expires_at = clock_timestamp() AT TIME ZONE 'utc' - interval '1 second'
+		WHERE
+			id = $1
+	`, jobID, attempts); expireErr != nil {
 		t.Fatal(expireErr)
 	}
 	if runtimeUnavailable {

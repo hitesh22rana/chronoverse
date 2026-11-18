@@ -82,7 +82,13 @@ func TestIntegrationCancelJobFaultsRollback(t *testing.T) {
 func installCancelFault(ctx context.Context, t *testing.T, pg *postgres.Postgres, table, condition string, deferred bool) func() {
 	t.Helper()
 	name := "cancel_fault_" + fixtureTag()
-	statement := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'cancel coverage fault'; END $$`, name)
+	statement := fmt.Sprintf(`
+		CREATE FUNCTION %s () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			RAISE EXCEPTION 'cancel coverage fault';
+		END
+		$$
+	`, name)
 	if _, err := pg.Exec(ctx, statement); err != nil {
 		t.Fatalf("create fault function: %v", err)
 	}
@@ -102,7 +108,14 @@ func installCancelFault(ctx context.Context, t *testing.T, pg *postgres.Postgres
 		kind = "CONSTRAINT "
 		timing = "DEFERRABLE INITIALLY DEFERRED"
 	}
-	statement = fmt.Sprintf("CREATE %sTRIGGER %s AFTER UPDATE ON %s %s FOR EACH ROW WHEN (%s) EXECUTE FUNCTION %s()", kind, name, table, timing, condition, name)
+	statement = fmt.Sprintf(`
+		CREATE %sTRIGGER %s
+		AFTER UPDATE ON %s
+		%s
+		FOR EACH ROW
+		WHEN (%s)
+		EXECUTE FUNCTION %s()
+	`, kind, name, table, timing, condition, name)
 	if _, err := pg.Exec(ctx, statement); err != nil {
 		t.Fatalf("create fault trigger: %v", err)
 	}
@@ -128,8 +141,13 @@ func TestIntegrationCancelJobRejectsMalformedReplay(t *testing.T) {
 	}
 	before := readTerminalJobState(ctx, t, pg, fixture.JobID)
 	if _, err := pg.Exec(ctx, `
-		UPDATE command_idempotency_keys SET response = '"invalid snapshot"'::jsonb
-		WHERE scope=$1 AND operation=$2 AND idempotency_key=$3
+		UPDATE command_idempotency_keys
+		SET
+			response = '"invalid snapshot"'::jsonb
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, commandidempotency.JobScope(fixture.JobID), commandidempotency.OperationJobCancel, commandID); err != nil {
 		t.Fatalf("corrupt replay: %v", err)
 	}

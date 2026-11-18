@@ -185,7 +185,15 @@ type fakeLockStore struct {
 	keys           []string
 }
 
-func (s *fakeLockStore) AcquireDistributedLockWithToken(_ context.Context, key string, _ time.Duration) (token string, acquired bool, err error) {
+func (s *fakeLockStore) AcquireDistributedLockWithToken(
+	_ context.Context,
+	key string,
+	_ time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

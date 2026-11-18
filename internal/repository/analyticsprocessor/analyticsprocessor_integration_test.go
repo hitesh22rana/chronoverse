@@ -77,8 +77,16 @@ func TestIntegrationProcessesAnalyticsEvents(t *testing.T) {
 		var kind string
 		var jobs, logs, duration int64
 		if err := pg.QueryRow(ctx, `
-			SELECT kind, jobs_count, logs_count, total_job_execution_duration
-			FROM analytics WHERE user_id = $1 AND workflow_id = $2
+			SELECT
+				kind,
+				jobs_count,
+				logs_count,
+				total_job_execution_duration
+			FROM
+				analytics
+			WHERE
+				user_id = $1
+				AND workflow_id = $2
 		`, userID, workflowID).Scan(&kind, &jobs, &logs, &duration); err != nil {
 			return false
 		}

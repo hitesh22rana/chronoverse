@@ -56,7 +56,15 @@ func assertBatchAnalytics(t *testing.T, repo *Repository, item *queueData, want 
 	t.Helper()
 	var count int64
 	if err := repo.pg.QueryRow(t.Context(),
-		`SELECT COALESCE(sum(logs_count), 0) FROM analytics WHERE user_id=$1 AND workflow_id=$2`,
+		`
+			SELECT
+				COALESCE(sum(logs_count), 0)
+			FROM
+				analytics
+			WHERE
+				user_id = $1
+				AND workflow_id = $2
+		`,
 		item.logEntry.UserID, item.logEntry.WorkflowID).Scan(&count); err != nil {
 		t.Fatalf("read analytics: %v", err)
 	}
@@ -319,7 +327,14 @@ type afterBatchIndexing struct {
 	after func()
 }
 
-func (client *afterBatchIndexing) WaitForTaskWithContext(ctx context.Context, uid int64, interval time.Duration) (*meilisearch.Task, error) {
+func (client *afterBatchIndexing) WaitForTaskWithContext(
+	ctx context.Context,
+	uid int64,
+	interval time.Duration,
+) (
+	*meilisearch.Task,
+	error,
+) {
 	task, err := client.ServiceManager.WaitForTaskWithContext(ctx, uid, interval)
 	if err == nil && task.Status == meilisearch.TaskStatusSucceeded && client.after != nil {
 		after := client.after
@@ -441,15 +456,24 @@ func TestIntegrationBatchAnalyticsFailureRollsBackReplayIdentity(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if _, err := repo.pg.Exec(ctx, `DROP TRIGGER IF EXISTS reject_batch_analytics ON analytics; DROP FUNCTION IF EXISTS reject_batch_analytics()`); err != nil {
+		if _, err := repo.pg.Exec(ctx, `
+			DROP TRIGGER IF EXISTS reject_batch_analytics ON analytics;
+
+			DROP FUNCTION IF EXISTS reject_batch_analytics ()
+		`); err != nil {
 			t.Errorf("remove analytics failure: %v", err)
 		}
 	})
-	if _, err := repo.pg.Exec(t.Context(), fmt.Sprintf(`CREATE FUNCTION reject_batch_analytics() RETURNS trigger LANGUAGE plpgsql AS $$
- BEGIN
- IF NEW.workflow_id = '%s'::uuid THEN RAISE EXCEPTION 'analytics storage unavailable'; END IF;
- RETURN NEW; END $$;
- CREATE TRIGGER reject_batch_analytics BEFORE INSERT OR UPDATE ON analytics FOR EACH ROW EXECUTE FUNCTION reject_batch_analytics()`, item.logEntry.WorkflowID)); err != nil {
+	if _, err := repo.pg.Exec(t.Context(), fmt.Sprintf(`
+		CREATE FUNCTION reject_batch_analytics () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+		IF NEW.workflow_id = '%s'::uuid THEN RAISE EXCEPTION 'analytics storage unavailable'; END IF;
+		RETURN NEW; END $$;
+
+		CREATE TRIGGER reject_batch_analytics
+		BEFORE INSERT OR UPDATE ON analytics FOR EACH ROW
+		EXECUTE FUNCTION reject_batch_analytics ()
+	`, item.logEntry.WorkflowID)); err != nil {
 		t.Fatalf("install analytics failure: %v", err)
 	}
 	got, err := repo.processLogsBatch(t.Context(), []*queueData{item})

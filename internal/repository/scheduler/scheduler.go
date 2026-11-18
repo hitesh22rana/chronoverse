@@ -83,110 +83,193 @@ func (r *Repository) Run(ctx context.Context) (total int, err error) {
 	defer tx.Rollback(ctx)
 
 	query := fmt.Sprintf(`
-            WITH candidate_workflows AS (
-                SELECT w.id, w.user_id, w.generation
-            FROM %s AS w
-            WHERE w.build_status = 'COMPLETED'
-                AND w.terminated_at IS NULL
-                AND (w.kind<>'CONTAINER' OR NOT workflow_container_blocked(w.id))
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM %s AS active
-                    WHERE active.workflow_id = w.id
-                        AND active.status IN ('QUEUED', 'RUNNING')
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM %s AS due
-                    WHERE due.workflow_id = w.id
-                        AND due.status = 'PENDING'
-                        AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
-                        AND (due.next_attempt_at IS NULL OR due.next_attempt_at <= (now() AT TIME ZONE 'utc'))
-                        AND NOT EXISTS (
-                            SELECT 1
-                            FROM %s AS blocker
-                            WHERE blocker.workflow_id = due.workflow_id
-                                AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
-                                AND (
-                                    blocker.scheduled_at < due.scheduled_at
-                                    OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at < due.created_at)
-                                    OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at = due.created_at AND blocker.id < due.id)
-                                )
-                        )
-                )
-            ORDER BY (
-                SELECT due.scheduled_at
-                FROM %s AS due
-                WHERE due.workflow_id = w.id
-                    AND due.status = 'PENDING'
-                    AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
-                    AND (due.next_attempt_at IS NULL OR due.next_attempt_at <= (now() AT TIME ZONE 'utc'))
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM %s AS blocker
-                        WHERE blocker.workflow_id = due.workflow_id
-                            AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
-                            AND (
-                                blocker.scheduled_at < due.scheduled_at
-                                OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at < due.created_at)
-                                OR (blocker.scheduled_at = due.scheduled_at AND blocker.created_at = due.created_at AND blocker.id < due.id)
-                            )
-                    )
-                ORDER BY
-                    due.scheduled_at ASC,
-                    due.created_at ASC,
-                    due.id ASC
-                LIMIT 1
-            ) ASC
-            FOR UPDATE OF w SKIP LOCKED
-            LIMIT %d
-        ),
-            selected AS (
-                SELECT due.id, w.generation
-            FROM candidate_workflows AS w
-            CROSS JOIN LATERAL (
-                SELECT j.id
-                FROM %s AS j
-                WHERE j.workflow_id = w.id
-                    AND j.user_id = w.user_id
-                    AND j.status = 'PENDING'
-                    AND j.scheduled_at <= (now() AT TIME ZONE 'utc')
-                    AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= (now() AT TIME ZONE 'utc'))
-                    AND NOT EXISTS (
-                        SELECT 1
-                        FROM %s AS blocker
-                        WHERE blocker.workflow_id = j.workflow_id
-                            AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
-                            AND (
-                                blocker.scheduled_at < j.scheduled_at
-                                OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at < j.created_at)
-                                OR (blocker.scheduled_at = j.scheduled_at AND blocker.created_at = j.created_at AND blocker.id < j.id)
-                            )
-                    )
-                ORDER BY
-                    j.scheduled_at ASC,
-                    j.created_at ASC,
-                    j.id ASC
-                FOR UPDATE OF j SKIP LOCKED
-                LIMIT 1
-            ) AS due
-        )
-            UPDATE %s AS j
-            SET status = 'QUEUED',
-                queued_at = now() AT TIME ZONE 'utc',
-                dispatch_attempts = dispatch_attempts + 1
-            FROM selected
-            WHERE j.id = selected.id
-                -- Re-check termination at UPDATE so a concurrent terminate cannot resurrect PENDING.
-                AND EXISTS (
-                    SELECT 1
-                    FROM %s AS w
-                    WHERE w.id = j.workflow_id
-                        AND w.terminated_at IS NULL
-                AND (w.kind<>'CONTAINER' OR NOT workflow_container_blocked(w.id))
-                )
-            RETURNING j.id, j.workflow_id, j.scheduled_at, j.dispatch_attempts, selected.generation;
-    `,
+		WITH
+			candidate_workflows AS (
+				SELECT
+					w.id,
+					w.user_id,
+					w.generation
+				FROM
+					%s AS w
+				WHERE
+					w.build_status = 'COMPLETED'
+					AND w.terminated_at IS NULL
+					AND (
+						w.kind <> 'CONTAINER'
+						OR NOT workflow_container_blocked (w.id)
+					)
+					AND NOT EXISTS (
+						SELECT
+							1
+						FROM
+							%s AS active
+						WHERE
+							active.workflow_id = w.id
+							AND active.status IN ('QUEUED', 'RUNNING')
+					)
+					AND EXISTS (
+						SELECT
+							1
+						FROM
+							%s AS due
+						WHERE
+							due.workflow_id = w.id
+							AND due.status = 'PENDING'
+							AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
+							AND (
+								due.next_attempt_at IS NULL
+								OR due.next_attempt_at <= (now() AT TIME ZONE 'utc')
+							)
+							AND NOT EXISTS (
+								SELECT
+									1
+								FROM
+									%s AS blocker
+								WHERE
+									blocker.workflow_id = due.workflow_id
+									AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+									AND (
+										blocker.scheduled_at < due.scheduled_at
+										OR (
+											blocker.scheduled_at = due.scheduled_at
+											AND blocker.created_at < due.created_at
+										)
+										OR (
+											blocker.scheduled_at = due.scheduled_at
+											AND blocker.created_at = due.created_at
+											AND blocker.id < due.id
+										)
+									)
+							)
+					)
+				ORDER BY
+					(
+						SELECT
+							due.scheduled_at
+						FROM
+							%s AS due
+						WHERE
+							due.workflow_id = w.id
+							AND due.status = 'PENDING'
+							AND due.scheduled_at <= (now() AT TIME ZONE 'utc')
+							AND (
+								due.next_attempt_at IS NULL
+								OR due.next_attempt_at <= (now() AT TIME ZONE 'utc')
+							)
+							AND NOT EXISTS (
+								SELECT
+									1
+								FROM
+									%s AS blocker
+								WHERE
+									blocker.workflow_id = due.workflow_id
+									AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+									AND (
+										blocker.scheduled_at < due.scheduled_at
+										OR (
+											blocker.scheduled_at = due.scheduled_at
+											AND blocker.created_at < due.created_at
+										)
+										OR (
+											blocker.scheduled_at = due.scheduled_at
+											AND blocker.created_at = due.created_at
+											AND blocker.id < due.id
+										)
+									)
+							)
+						ORDER BY
+							due.scheduled_at ASC,
+							due.created_at ASC,
+							due.id ASC
+						LIMIT
+							1
+					) ASC
+				FOR UPDATE OF
+					w SKIP LOCKED
+				LIMIT
+					%d
+			),
+			selected AS (
+				SELECT
+					due.id,
+					w.generation
+				FROM
+					candidate_workflows AS w
+					CROSS JOIN LATERAL (
+						SELECT
+							j.id
+						FROM
+							%s AS j
+						WHERE
+							j.workflow_id = w.id
+							AND j.user_id = w.user_id
+							AND j.status = 'PENDING'
+							AND j.scheduled_at <= (now() AT TIME ZONE 'utc')
+							AND (
+								j.next_attempt_at IS NULL
+								OR j.next_attempt_at <= (now() AT TIME ZONE 'utc')
+							)
+							AND NOT EXISTS (
+								SELECT
+									1
+								FROM
+									%s AS blocker
+								WHERE
+									blocker.workflow_id = j.workflow_id
+									AND blocker.status IN ('PENDING', 'QUEUED', 'RUNNING')
+									AND (
+										blocker.scheduled_at < j.scheduled_at
+										OR (
+											blocker.scheduled_at = j.scheduled_at
+											AND blocker.created_at < j.created_at
+										)
+										OR (
+											blocker.scheduled_at = j.scheduled_at
+											AND blocker.created_at = j.created_at
+											AND blocker.id < j.id
+										)
+									)
+							)
+						ORDER BY
+							j.scheduled_at ASC,
+							j.created_at ASC,
+							j.id ASC
+						FOR UPDATE OF
+							j SKIP LOCKED
+						LIMIT
+							1
+					) AS due
+			)
+		UPDATE %s AS j
+		SET
+			status = 'QUEUED',
+			queued_at = now() AT TIME ZONE 'utc',
+			dispatch_attempts = dispatch_attempts + 1
+		FROM
+			selected
+		WHERE
+			j.id = selected.id
+			-- Re-check termination at UPDATE so a concurrent terminate cannot resurrect PENDING.
+			AND EXISTS (
+				SELECT
+					1
+				FROM
+					%s AS w
+				WHERE
+					w.id = j.workflow_id
+					AND w.terminated_at IS NULL
+					AND (
+						w.kind <> 'CONTAINER'
+						OR NOT workflow_container_blocked (w.id)
+					)
+			)
+		RETURNING
+			j.id,
+			j.workflow_id,
+			j.scheduled_at,
+			j.dispatch_attempts,
+			selected.generation;
+	`,
 		postgres.TableWorkflows,
 		postgres.TableJobs,
 		postgres.TableJobs,

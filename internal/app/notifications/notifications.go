@@ -19,8 +19,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
-
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -28,6 +26,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
 // internalAPIs contains the list of internal APIs that require admin role.

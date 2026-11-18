@@ -14,7 +14,15 @@ import (
 type imagePullReleaseLocks struct{ *Store }
 
 // Acquisition is a prerequisite here; only release socket behavior is under test.
-func (imagePullReleaseLocks) AcquireDistributedLockWithToken(context.Context, string, time.Duration) (token string, acquired bool, err error) {
+func (imagePullReleaseLocks) AcquireDistributedLockWithToken(
+	context.Context,
+	string,
+	time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	return "owner", true, nil
 }
 

@@ -90,7 +90,18 @@ func (*FakeContainerSvc) ImageExists(context.Context, string) (bool, error) { re
 func (*FakeContainerSvc) DockerHost() string { return "tcp://fake:2375" }
 
 // Execute is not implemented by the double.
-func (*FakeContainerSvc) Execute(context.Context, time.Duration, string, []string, []string) (output string, logs <-chan *jobsmodel.JobLog, errCh <-chan error, err error) {
+func (*FakeContainerSvc) Execute(
+	context.Context,
+	time.Duration,
+	string,
+	[]string,
+	[]string,
+) (
+	output string,
+	logs <-chan *jobsmodel.JobLog,
+	errCh <-chan error,
+	err error,
+) {
 	return "", nil, nil, status.Error(codes.Unimplemented, "not implemented")
 }
 

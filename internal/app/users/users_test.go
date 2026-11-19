@@ -17,13 +17,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/users"
 	usersmock "github.com/hitesh22rana/chronoverse/internal/app/users/mock"
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 func initClient(server *grpc.Server) (client userpb.UsersServiceClient, _close func()) {

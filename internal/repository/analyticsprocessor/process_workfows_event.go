@@ -32,20 +32,33 @@ func (r *Repository) processWorkflowsEvent(ctx context.Context, event *analytics
 	}
 
 	query := fmt.Sprintf(`
-		WITH processed AS (
-			INSERT INTO %s (consumer, event_key)
-			VALUES ($1, $2)
-			ON CONFLICT DO NOTHING
-			RETURNING event_key
-		)
-        INSERT INTO %s
-        (user_id, workflow_id, kind)
-        SELECT $3, $4, $5
-		WHERE EXISTS (SELECT 1 FROM processed)
-        ON CONFLICT (user_id, workflow_id)
-        DO UPDATE SET 
-            kind = EXCLUDED.kind
-    `, postgres.TableProcessedEvents, postgres.TableAnalytics)
+		WITH
+			processed AS (
+				INSERT INTO
+					%s (consumer, event_key)
+				VALUES
+					($1, $2)
+				ON CONFLICT DO NOTHING
+				RETURNING
+					event_key
+			)
+		INSERT INTO
+			%s (user_id, workflow_id, kind)
+		SELECT
+			$3,
+			$4,
+			$5
+		WHERE
+			EXISTS (
+				SELECT
+					1
+				FROM
+					processed
+			)
+		ON CONFLICT (user_id, workflow_id) DO UPDATE
+		SET
+			kind = EXCLUDED.kind
+	`, postgres.TableProcessedEvents, postgres.TableAnalytics)
 
 	if _, err := r.pg.Exec(ctx, query, "analytics-processor", event.EventKey, event.UserID, event.WorkflowID, data.Kind); err != nil {
 		return status.Error(codes.Internal, "failed to insert/update workflows analytics")

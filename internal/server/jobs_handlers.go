@@ -13,9 +13,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 const (
@@ -639,7 +638,12 @@ func (s *Server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	s.forwardJobLogEvents(ctx, w, rc, stream)
 }
 
-func (s *Server) forwardJobLogEvents(ctx context.Context, w http.ResponseWriter, rc http.Flusher, stream jobspb.JobsService_StreamJobLogsClient) {
+func (s *Server) forwardJobLogEvents(
+	ctx context.Context,
+	w http.ResponseWriter,
+	rc http.Flusher,
+	stream jobspb.JobsService_StreamJobLogsClient,
+) {
 	for {
 		select {
 		case <-ctx.Done():

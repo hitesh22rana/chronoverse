@@ -189,10 +189,14 @@ func (r *Repository) fetchActiveWorkflowLogPairs(ctx context.Context, pairs []wo
 	}
 
 	query := fmt.Sprintf(`
-        SELECT id::text, user_id::text
-        FROM %s
-        WHERE (id, user_id) IN (%s);
-    `, postgres.TableWorkflows, strings.Join(placeholders, ","))
+		SELECT
+			id::text,
+			user_id::text
+		FROM
+			%s
+		WHERE
+			(id, user_id) IN (%s);
+	`, postgres.TableWorkflows, strings.Join(placeholders, ","))
 
 	rows, err := r.pg.Query(ctx, query, args...)
 	if err != nil {
@@ -421,7 +425,7 @@ func (r *Repository) insertLogsBatchToClickhouse(ctx context.Context, logs []*jo
 	}
 
 	stmt := fmt.Sprintf(`
-        INSERT INTO %s 
+        INSERT INTO %s
         (event_id, job_id, workflow_id, user_id, timestamp, message, sequence_num, stream)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?);
     `, clickhouse.TableJobLogs)

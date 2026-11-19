@@ -162,41 +162,98 @@ func (r *Repository) claim(ctx context.Context, topic string) ([]*Event, error) 
 	return events, nil
 }
 
-func (r *Repository) claimBatch(ctx context.Context, tx pgx.Tx, topic, claimToken string, limit int, replay *bool, excluded []string) ([]*Event, error) {
+func (r *Repository) claimBatch(
+	ctx context.Context,
+	tx pgx.Tx,
+	topic,
+	claimToken string,
+	limit int,
+	replay *bool,
+	excluded []string,
+) (
+	[]*Event,
+	error,
+) {
 	query := fmt.Sprintf(`
-        WITH picked AS (
-            SELECT e.id, e.created_at
-            FROM %s AS e
-            WHERE e.topic = $1
-                AND (
-                    (e.status = 'PENDING' AND e.next_attempt_at <= (now() AT TIME ZONE 'utc'))
-                    OR (e.status = 'FAILED' AND e.next_attempt_at <= (now() AT TIME ZONE 'utc'))
-                    OR (e.status = 'PROCESSING' AND e.locked_at <= (now() AT TIME ZONE 'utc') - $4::interval)
-                )
-                AND ($5::boolean IS NULL OR (e.cleanup_state IS NOT NULL AND e.cleanup_replay_round > 0) = $5)
-                AND NOT (e.id = ANY($6::uuid[]))
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM %s AS earlier
-                    WHERE earlier.topic = e.topic
-                        AND earlier.kafka_key = e.kafka_key
-                        AND earlier.status <> 'PUBLISHED'
-                        AND (earlier.created_at, earlier.id) < (e.created_at, e.id)
-                )
-            ORDER BY e.created_at, e.id
-            FOR UPDATE SKIP LOCKED
-            LIMIT $2
-        )
-        , claimed AS (UPDATE %s e
-        SET status = 'PROCESSING',
-            locked_at = statement_timestamp() AT TIME ZONE 'utc',
-            locked_by = $3,
-            attempts = attempts + 1
-        FROM picked
-        WHERE e.id = picked.id
-        RETURNING e.id, e.topic, e.kafka_key, e.event_key, e.payload::text, e.attempts, e.cleanup_replay_round
-        ) SELECT claimed.* FROM claimed JOIN picked USING(id) ORDER BY picked.created_at, picked.id;
-    `, postgres.TableOutboxEvents, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
+		WITH
+			picked AS (
+				SELECT
+					e.id,
+					e.created_at
+				FROM
+					%s AS e
+				WHERE
+					e.topic = $1
+					AND (
+						(
+							e.status = 'PENDING'
+							AND e.next_attempt_at <= (now() AT TIME ZONE 'utc')
+						)
+						OR (
+							e.status = 'FAILED'
+							AND e.next_attempt_at <= (now() AT TIME ZONE 'utc')
+						)
+						OR (
+							e.status = 'PROCESSING'
+							AND e.locked_at <= (now() AT TIME ZONE 'utc') - $4::interval
+						)
+					)
+					AND (
+						$5::boolean IS NULL
+						OR (
+							e.cleanup_state IS NOT NULL
+							AND e.cleanup_replay_round > 0
+						) = $5
+					)
+					AND NOT (e.id = ANY ($6::uuid[]))
+					AND NOT EXISTS (
+						SELECT
+							1
+						FROM
+							%s AS earlier
+						WHERE
+							earlier.topic = e.topic
+							AND earlier.kafka_key = e.kafka_key
+							AND earlier.status <> 'PUBLISHED'
+							AND (earlier.created_at, earlier.id) < (e.created_at, e.id)
+					)
+				ORDER BY
+					e.created_at,
+					e.id
+				FOR UPDATE
+					SKIP LOCKED
+				LIMIT
+					$2
+			),
+			claimed AS (
+				UPDATE %s e
+				SET
+					status = 'PROCESSING',
+					locked_at = statement_timestamp() AT TIME ZONE 'utc',
+					locked_by = $3,
+					attempts = attempts + 1
+				FROM
+					picked
+				WHERE
+					e.id = picked.id
+				RETURNING
+					e.id,
+					e.topic,
+					e.kafka_key,
+					e.event_key,
+					e.payload::text,
+					e.attempts,
+					e.cleanup_replay_round
+			)
+		SELECT
+			claimed.*
+		FROM
+			claimed
+			JOIN picked USING (id)
+		ORDER BY
+			picked.created_at,
+			picked.id;
+	`, postgres.TableOutboxEvents, postgres.TableOutboxEvents, postgres.TableOutboxEvents)
 
 	rows, err := tx.Query(ctx, query, topic, limit, claimToken, postgresInterval(r.cfg.ProcessingLease), replay, excluded)
 	if err != nil {
@@ -230,16 +287,22 @@ func (r *Repository) markPublished(ctx context.Context, event *Event) error {
 		delay = replayDelay(base, maximum, event.ReplayRound)
 	}
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = 'PUBLISHED',
-            published_at = now() AT TIME ZONE 'utc',
-            cleanup_replay_due_at = CASE WHEN cleanup_state IN ('READY','RETRY','PROCESSING') THEN (now() AT TIME ZONE 'utc') + $3::interval ELSE NULL END,
-            locked_at = NULL,
-            locked_by = NULL
-        WHERE id = $1
-            AND status = 'PROCESSING'
-            AND locked_by = $2;
-    `, postgres.TableOutboxEvents)
+		UPDATE %s
+		SET
+			status = 'PUBLISHED',
+			published_at = now() AT TIME ZONE 'utc',
+			cleanup_replay_due_at = CASE
+				WHEN cleanup_state IN ('READY', 'RETRY', 'PROCESSING') THEN
+					(now() AT TIME ZONE 'utc') + $3::interval
+				ELSE NULL
+			END,
+			locked_at = NULL,
+			locked_by = NULL
+		WHERE
+			id = $1
+			AND status = 'PROCESSING'
+			AND locked_by = $2;
+	`, postgres.TableOutboxEvents)
 	ct, err := r.pg.Exec(ctx, query, event.ID, event.Claim, postgresInterval(delay))
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event published: %v", err)
@@ -257,15 +320,17 @@ func (r *Repository) markFailed(ctx context.Context, event *Event) error {
 	}
 
 	query := fmt.Sprintf(`
-        UPDATE %s
-        SET status = $2,
-            next_attempt_at = (now() AT TIME ZONE 'utc') + $3::interval,
-            locked_at = NULL,
-            locked_by = NULL
-        WHERE id = $1
-            AND status = 'PROCESSING'
-            AND locked_by = $4;
-    `, postgres.TableOutboxEvents)
+		UPDATE %s
+		SET
+			status = $2,
+			next_attempt_at = (now() AT TIME ZONE 'utc') + $3::interval,
+			locked_at = NULL,
+			locked_by = NULL
+		WHERE
+			id = $1
+			AND status = 'PROCESSING'
+			AND locked_by = $4;
+	`, postgres.TableOutboxEvents)
 	ct, err := r.pg.Exec(ctx, query, event.ID, statusValue, postgresInterval(r.cfg.RetryBackoff), event.Claim)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to mark outbox event failed: %v", err)

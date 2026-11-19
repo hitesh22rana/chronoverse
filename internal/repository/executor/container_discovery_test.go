@@ -23,7 +23,14 @@ type discoveryQueueJobs struct {
 	reportBound time.Duration
 }
 
-func (j *discoveryQueueJobs) ClaimContainerIntents(context.Context, *jobspb.ContainerIntentCommand, ...grpc.CallOption) (*jobspb.ListContainerIntentsResponse, error) {
+func (j *discoveryQueueJobs) ClaimContainerIntents(
+	context.Context,
+	*jobspb.ContainerIntentCommand,
+	...grpc.CallOption,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	if j.claimed {
 		return &jobspb.ListContainerIntentsResponse{}, nil
 	}
@@ -33,7 +40,14 @@ func (j *discoveryQueueJobs) ClaimContainerIntents(context.Context, *jobspb.Cont
 	}}}, nil
 }
 
-func (j *discoveryQueueJobs) ReportContainerInspection(ctx context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *discoveryQueueJobs) ReportContainerInspection(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	j.report = req
 	if deadline, ok := ctx.Deadline(); ok && ctx.Err() == nil {
 		j.reportBound = time.Until(deadline)
@@ -41,7 +55,14 @@ func (j *discoveryQueueJobs) ReportContainerInspection(ctx context.Context, req 
 	return &jobspb.ContainerIntentResponse{}, nil
 }
 
-func (j *discoveryQueueJobs) RecoverExpiredJobLeases(context.Context, *jobspb.RecoverExpiredJobLeasesRequest, ...grpc.CallOption) (*jobspb.RecoverExpiredJobLeasesResponse, error) {
+func (j *discoveryQueueJobs) RecoverExpiredJobLeases(
+	context.Context,
+	*jobspb.RecoverExpiredJobLeasesRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.RecoverExpiredJobLeasesResponse,
+	error,
+) {
 	j.recovered++
 	return &jobspb.RecoverExpiredJobLeasesResponse{}, nil
 }

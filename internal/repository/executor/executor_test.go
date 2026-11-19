@@ -579,7 +579,14 @@ type renewingRecoveryJobsClient struct {
 	released        chan struct{}
 }
 
-func (c *renewingRecoveryJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *renewingRecoveryJobsClient) RenewJobLease(
+	context.Context,
+	*jobspb.RenewJobLeaseRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	if c.renewals.Add(1) >= 2 {
 		c.replayCloseOnce.Do(func() { close(c.replayCanFinish) })
 	}
@@ -587,7 +594,14 @@ func (c *renewingRecoveryJobsClient) RenewJobLease(context.Context, *jobspb.Rene
 	return &jobspb.RenewJobLeaseResponse{}, nil
 }
 
-func (c *renewingRecoveryJobsClient) ReleaseJobForRetry(context.Context, *jobspb.ReleaseJobForRetryRequest, ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+func (c *renewingRecoveryJobsClient) ReleaseJobForRetry(
+	context.Context,
+	*jobspb.ReleaseJobForRetryRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.ReleaseJobForRetryResponse,
+	error,
+) {
 	c.releaseOnce.Do(func() { close(c.released) })
 
 	return &jobspb.ReleaseJobForRetryResponse{}, nil
@@ -611,18 +625,39 @@ type reconciliationJobsClient struct {
 	calls atomic.Int32
 }
 
-func (c *reconciliationJobsClient) ClaimJob(context.Context, *jobspb.ClaimJobRequest, ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+func (c *reconciliationJobsClient) ClaimJob(
+	context.Context,
+	*jobspb.ClaimJobRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.ClaimJobResponse,
+	error,
+) {
 	if c.calls.Add(1) == 1 {
 		return &jobspb.ClaimJobResponse{Claimed: true, Id: "job-1", LeaseToken: "lease-1"}, nil
 	}
 	return &jobspb.ClaimJobResponse{Claimed: false, Reason: "stored lease is no longer active"}, nil
 }
 
-func (*failedImmediateRenewalJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (*failedImmediateRenewalJobsClient) RenewJobLease(
+	context.Context,
+	*jobspb.RenewJobLeaseRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	return nil, status.Error(codes.FailedPrecondition, "lease not held")
 }
 
-func (c *lateFailingRenewalJobsClient) RenewJobLease(context.Context, *jobspb.RenewJobLeaseRequest, ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *lateFailingRenewalJobsClient) RenewJobLease(
+	context.Context,
+	*jobspb.RenewJobLeaseRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	if c.renewals.Add(1) == 1 {
 		return &jobspb.RenewJobLeaseResponse{}, nil
 	}
@@ -644,7 +679,14 @@ type batchRecoveryJobsClient struct {
 	renewed map[string]struct{}
 }
 
-func (c *batchRecoveryJobsClient) RecoverExpiredJobLeases(_ context.Context, req *jobspb.RecoverExpiredJobLeasesRequest, _ ...grpc.CallOption) (*jobspb.RecoverExpiredJobLeasesResponse, error) {
+func (c *batchRecoveryJobsClient) RecoverExpiredJobLeases(
+	_ context.Context,
+	req *jobspb.RecoverExpiredJobLeasesRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RecoverExpiredJobLeasesResponse,
+	error,
+) {
 	if c.claimCalls.Add(1) > 1 {
 		return &jobspb.RecoverExpiredJobLeasesResponse{}, nil
 	}
@@ -676,7 +718,14 @@ func (c *batchRecoveryJobsClient) RecoverExpiredJobLeases(_ context.Context, req
 	}, nil
 }
 
-func (c *batchRecoveryJobsClient) RenewJobLease(_ context.Context, req *jobspb.RenewJobLeaseRequest, _ ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *batchRecoveryJobsClient) RenewJobLease(
+	_ context.Context,
+	req *jobspb.RenewJobLeaseRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	c.mu.Lock()
 	c.renewed[req.GetId()] = struct{}{}
 	renewedCount := len(c.renewed)
@@ -689,7 +738,14 @@ func (c *batchRecoveryJobsClient) RenewJobLease(_ context.Context, req *jobspb.R
 	return &jobspb.RenewJobLeaseResponse{}, nil
 }
 
-func (c *batchRecoveryJobsClient) ReleaseJobForRetry(context.Context, *jobspb.ReleaseJobForRetryRequest, ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+func (c *batchRecoveryJobsClient) ReleaseJobForRetry(
+	context.Context,
+	*jobspb.ReleaseJobForRetryRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.ReleaseJobForRetryResponse,
+	error,
+) {
 	c.releases.Add(1)
 
 	return &jobspb.ReleaseJobForRetryResponse{}, nil
@@ -712,7 +768,18 @@ func (*blockingRecoveryContainerSvc) DockerHost() string {
 	return "tcp://docker-proxy:2375"
 }
 
-func (*blockingRecoveryContainerSvc) Execute(context.Context, time.Duration, string, []string, []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (*blockingRecoveryContainerSvc) Execute(
+	context.Context,
+	time.Duration,
+	string,
+	[]string,
+	[]string,
+) (
+	containerID string,
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	return "", nil, nil, nil
 }
 
@@ -766,7 +833,18 @@ func (*recordingContainerSvc) DockerHost() string {
 	return "tcp://docker-proxy:2375"
 }
 
-func (s *recordingContainerSvc) Execute(_ context.Context, _ time.Duration, image string, _, _ []string) (containerID string, logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (s *recordingContainerSvc) Execute(
+	_ context.Context,
+	_ time.Duration,
+	image string,
+	_,
+	_ []string,
+) (
+	containerID string,
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	s.executeImage = image
 	s.buildBeforeExecute = s.buildImage != ""
 	return "", s.logs, s.errs, nil
@@ -795,7 +873,14 @@ type retryExhaustionJobsClient struct {
 	fails    atomic.Int32
 }
 
-func (c *retryExhaustionJobsClient) ReleaseJobForRetry(context.Context, *jobspb.ReleaseJobForRetryRequest, ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+func (c *retryExhaustionJobsClient) ReleaseJobForRetry(
+	context.Context,
+	*jobspb.ReleaseJobForRetryRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.ReleaseJobForRetryResponse,
+	error,
+) {
 	c.releases.Add(1)
 	return &jobspb.ReleaseJobForRetryResponse{}, nil
 }

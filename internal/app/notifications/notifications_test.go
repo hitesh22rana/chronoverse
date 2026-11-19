@@ -18,13 +18,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/notifications"
 	notificationsmock "github.com/hitesh22rana/chronoverse/internal/app/notifications/mock"
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 )
 
 func initClient(server *grpc.Server) (client notificationspb.NotificationsServiceClient, _close func()) {

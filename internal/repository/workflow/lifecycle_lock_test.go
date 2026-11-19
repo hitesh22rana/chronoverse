@@ -279,7 +279,15 @@ type delayedAcquireLock struct {
 	delay time.Duration
 }
 
-func (s delayedAcquireLock) AcquireDistributedLockWithToken(ctx context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
+func (s delayedAcquireLock) AcquireDistributedLockWithToken(
+	ctx context.Context,
+	key string,
+	ttl time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	time.Sleep(s.delay)
 	return s.workflowLockStore.AcquireDistributedLockWithToken(ctx, key, ttl)
 }

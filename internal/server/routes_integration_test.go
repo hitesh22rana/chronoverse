@@ -36,7 +36,14 @@ func (c *routeNotificationsClient) check(ctx context.Context, userID string) {
 	}
 }
 
-func (c *routeNotificationsClient) ListNotifications(ctx context.Context, req *notificationspb.ListNotificationsRequest, _ ...grpc.CallOption) (*notificationspb.ListNotificationsResponse, error) {
+func (c *routeNotificationsClient) ListNotifications(
+	ctx context.Context,
+	req *notificationspb.ListNotificationsRequest,
+	_ ...grpc.CallOption,
+) (
+	*notificationspb.ListNotificationsResponse,
+	error,
+) {
 	c.check(ctx, req.GetUserId())
 	if req.GetCursor() != "next-page" {
 		c.t.Fatalf("cursor=%q", req.GetCursor())
@@ -62,7 +69,14 @@ type routeAnalyticsClient struct {
 	calls    int
 }
 
-func (c *routeAnalyticsClient) GetWorkflowAnalytics(ctx context.Context, req *analyticspb.GetWorkflowAnalyticsRequest, _ ...grpc.CallOption) (*analyticspb.GetWorkflowAnalyticsResponse, error) {
+func (c *routeAnalyticsClient) GetWorkflowAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetWorkflowAnalyticsRequest,
+	_ ...grpc.CallOption,
+) (
+	*analyticspb.GetWorkflowAnalyticsResponse,
+	error,
+) {
 	c.recorder.check(ctx, req.GetUserId())
 	if req.GetWorkflowId() != "workflow-42" {
 		c.recorder.t.Fatalf("workflow ID=%q", req.GetWorkflowId())

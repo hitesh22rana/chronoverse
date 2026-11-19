@@ -99,7 +99,14 @@ func (c *downloadFailureClient) GetJob(context.Context, *jobspb.GetJobRequest, .
 	return &jobspb.GetJobResponse{Status: c.jobStatus}, c.jobError
 }
 
-func (c *downloadFailureClient) GetJobLogs(context.Context, *jobspb.GetJobLogsRequest, ...grpc.CallOption) (*jobspb.GetJobLogsResponse, error) {
+func (c *downloadFailureClient) GetJobLogs(
+	context.Context,
+	*jobspb.GetJobLogsRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.GetJobLogsResponse,
+	error,
+) {
 	c.fetchCalls++
 	return nil, status.Error(codes.Unavailable, "private backend failure")
 }

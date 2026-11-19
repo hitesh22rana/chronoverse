@@ -27,7 +27,14 @@ type dispatchJobsClient struct {
 	renew func(context.Context, *jobspb.RenewJobLeaseRequest) (*jobspb.RenewJobLeaseResponse, error)
 }
 
-func (c *dispatchJobsClient) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest, _ ...grpc.CallOption) (*jobspb.ClaimJobResponse, error) {
+func (c *dispatchJobsClient) ClaimJob(
+	ctx context.Context,
+	req *jobspb.ClaimJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ClaimJobResponse,
+	error,
+) {
 	return c.claim(ctx, req)
 }
 
@@ -301,7 +308,14 @@ func TestExecutorDuplicateWaiterObservesCancellation(t *testing.T) {
 	}
 }
 
-func (c *dispatchJobsClient) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest, _ ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *dispatchJobsClient) RenewJobLease(
+	ctx context.Context,
+	req *jobspb.RenewJobLeaseRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	return c.renew(ctx, req)
 }
 

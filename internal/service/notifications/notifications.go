@@ -55,7 +55,13 @@ type CreateNotificationRequest struct {
 }
 
 // CreateNotification creates a new notification.
-func (s *Service) CreateNotification(ctx context.Context, req *notificationspb.CreateNotificationRequest) (notificationID string, err error) {
+func (s *Service) CreateNotification(
+	ctx context.Context,
+	req *notificationspb.CreateNotificationRequest,
+) (
+	notificationID string,
+	err error,
+) {
 	ctx, span := s.tp.Start(ctx, "Service.CreateNotification")
 	defer func() {
 		if err != nil {

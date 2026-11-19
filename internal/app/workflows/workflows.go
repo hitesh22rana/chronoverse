@@ -19,8 +19,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
 
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -28,6 +26,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 // internalAPIs contains the list of internal APIs that require admin role.
@@ -178,7 +177,13 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 }
 
 // CreateWorkflow creates a new workflow.
-func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (res *workflowspb.CreateWorkflowResponse, err error) {
+func (w *Workflows) CreateWorkflow(
+	ctx context.Context,
+	req *workflowspb.CreateWorkflowRequest,
+) (
+	res *workflowspb.CreateWorkflowResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.CreateWorkflow",
@@ -212,7 +217,13 @@ func (w *Workflows) CreateWorkflow(ctx context.Context, req *workflowspb.CreateW
 }
 
 // UpdateWorkflow updates an existing workflow.
-func (w *Workflows) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (res *workflowspb.UpdateWorkflowResponse, err error) {
+func (w *Workflows) UpdateWorkflow(
+	ctx context.Context,
+	req *workflowspb.UpdateWorkflowRequest,
+) (
+	res *workflowspb.UpdateWorkflowResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.UpdateWorkflow",
@@ -278,7 +289,13 @@ func (w *Workflows) UpdateWorkflowBuildStatus(
 }
 
 // GetWorkflow returns the workflow details by ID and user ID.
-func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest) (res *workflowspb.GetWorkflowResponse, err error) {
+func (w *Workflows) GetWorkflow(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowRequest,
+) (
+	res *workflowspb.GetWorkflowResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.GetWorkflow",
@@ -307,7 +324,13 @@ func (w *Workflows) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflo
 }
 
 // GetWorkflowByID returns a workflow by ID. Internal only; not public API.
-func (w *Workflows) GetWorkflowByID(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (res *workflowspb.GetWorkflowByIDResponse, err error) {
+func (w *Workflows) GetWorkflowByID(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowByIDRequest,
+) (
+	res *workflowspb.GetWorkflowByIDResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.GetWorkflowByID",
@@ -403,7 +426,13 @@ func (w *Workflows) ResetWorkflowConsecutiveJobFailuresCount(
 }
 
 // TerminateWorkflow terminates a workflow.
-func (w *Workflows) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (res *workflowspb.TerminateWorkflowResponse, err error) {
+func (w *Workflows) TerminateWorkflow(
+	ctx context.Context,
+	req *workflowspb.TerminateWorkflowRequest,
+) (
+	res *workflowspb.TerminateWorkflowResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.TerminateWorkflow",
@@ -433,7 +462,13 @@ func (w *Workflows) TerminateWorkflow(ctx context.Context, req *workflowspb.Term
 }
 
 // DeleteWorkflow deletes a workflow.
-func (w *Workflows) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest) (res *workflowspb.DeleteWorkflowResponse, err error) {
+func (w *Workflows) DeleteWorkflow(
+	ctx context.Context,
+	req *workflowspb.DeleteWorkflowRequest,
+) (
+	res *workflowspb.DeleteWorkflowResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.DeleteWorkflow",
@@ -463,7 +498,13 @@ func (w *Workflows) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteW
 }
 
 // ListWorkflows returns the workflows by user ID.
-func (w *Workflows) ListWorkflows(ctx context.Context, req *workflowspb.ListWorkflowsRequest) (res *workflowspb.ListWorkflowsResponse, err error) {
+func (w *Workflows) ListWorkflows(
+	ctx context.Context,
+	req *workflowspb.ListWorkflowsRequest,
+) (
+	res *workflowspb.ListWorkflowsResponse,
+	err error,
+) {
 	ctx, span := w.tp.Start(
 		ctx,
 		"App.ListWorkflows",

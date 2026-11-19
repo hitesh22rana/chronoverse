@@ -110,7 +110,12 @@ func (w *DockerWorkflow) RuntimeInstance(ctx context.Context) (string, error) {
 }
 
 // Create is one named mutation; a failed reply never authorizes a second transmission.
-func (w *DockerWorkflow) Create(ctx context.Context, req CreateRequest) (string, error) { //nolint:gocritic // hugeParam: CreateRequest is an immutable snapshot frozen at this boundary.
+//
+//nolint:gocritic // hugeParam: CreateRequest is an immutable snapshot frozen at this boundary.
+func (w *DockerWorkflow) Create(
+	ctx context.Context,
+	req CreateRequest,
+) (string, error) {
 	if req.Name == "" || req.IntentID == "" || req.JobID == "" || req.Attempt <= 0 || req.Image == "" || req.Timeout <= 0 {
 		return "", &creationError{
 			outcome: CreationOutcomeRejected,
@@ -158,7 +163,15 @@ func (w *DockerWorkflow) Create(ctx context.Context, req CreateRequest) (string,
 var fullContainerID = regexp.MustCompile("^[a-f0-9]{64}$")
 
 // Start bounds mutation I/O without shortening the running workload's timeout.
-func (w *DockerWorkflow) Start(ctx context.Context, timeout time.Duration, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (w *DockerWorkflow) Start(
+	ctx context.Context,
+	timeout time.Duration,
+	id string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	if !fullContainerID.MatchString(id) || timeout <= 0 {
 		return nil, nil, status.Error(codes.InvalidArgument, "start requires a full container id and positive timeout")
 	}

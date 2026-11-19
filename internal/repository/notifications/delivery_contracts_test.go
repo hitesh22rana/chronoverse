@@ -157,8 +157,16 @@ func TestNotificationReadErrorMappingPreservesDatabaseCause(t *testing.T) {
 func installNotificationFailure(t *testing.T, repo *Repository, table, event, predicate string, deferred bool) {
 	t.Helper()
 	name := "notification_contract_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	function := fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
- BEGIN IF %s THEN RAISE EXCEPTION 'notification contract injected failure'; END IF; RETURN NEW; END $$`, name, predicate)
+	function := fmt.Sprintf(`
+		CREATE FUNCTION %s () RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF %s THEN
+				RAISE EXCEPTION 'notification contract injected failure';
+			END IF;
+			RETURN NEW;
+		END
+		$$
+	`, name, predicate)
 	if _, err := repo.pg.Exec(t.Context(), function); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +202,14 @@ func TestIntegrationNotificationSQLFailuresRollbackCommandAndRead(t *testing.T) 
 			reading := strings.HasPrefix(stage, "read")
 			var id string
 			if reading {
-				if err := repo.pg.QueryRow(t.Context(), `INSERT INTO notifications(user_id,kind,payload,idempotency_key) VALUES($1,'WEB_INFO','{}',$2) RETURNING id`, user, " "+key+" ").Scan(&id); err != nil {
+				if err := repo.pg.QueryRow(t.Context(), `
+					INSERT INTO
+						notifications (user_id, kind, payload, idempotency_key)
+					VALUES
+						($1, 'WEB_INFO', '{}', $2)
+					RETURNING
+						id
+				`, user, " "+key+" ").Scan(&id); err != nil {
 					t.Fatal(err)
 				}
 			}

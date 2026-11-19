@@ -92,7 +92,15 @@ func InitMeterProvider(ctx context.Context, res *resource.Resource) (*sdkmetric.
 // registerMeterProvider owns the provider until both instrumentation libraries
 // have registered successfully. Failed startup closes its reader/exporter without
 // publishing a partially initialized provider to the rest of the process.
-func registerMeterProvider(ctx context.Context, mp *sdkmetric.MeterProvider, startHost, startRuntime func(*sdkmetric.MeterProvider) error) (*sdkmetric.MeterProvider, error) {
+func registerMeterProvider(
+	ctx context.Context,
+	mp *sdkmetric.MeterProvider,
+	startHost,
+	startRuntime func(*sdkmetric.MeterProvider) error,
+) (
+	*sdkmetric.MeterProvider,
+	error,
+) {
 	rollback := func(err error) (*sdkmetric.MeterProvider, error) {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()

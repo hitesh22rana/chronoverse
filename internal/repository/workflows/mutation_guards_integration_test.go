@@ -72,11 +72,22 @@ func readWorkflowMutationState(ctx context.Context, t *testing.T, pg *postgres.P
 
 	state := &workflowMutationState{}
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT name, payload::text, interval, max_consecutive_job_failures_allowed,
-			consecutive_job_failures_count, build_status, build_hash, generation, terminated_at,
-			resolved_image_ref, resolved_image_digest
-		FROM %s
-		WHERE id = $1
+		SELECT
+			name,
+			payload::text,
+			interval,
+			max_consecutive_job_failures_allowed,
+			consecutive_job_failures_count,
+			build_status,
+			build_hash,
+			generation,
+			terminated_at,
+			resolved_image_ref,
+			resolved_image_digest
+		FROM
+			%s
+		WHERE
+			id = $1
 	`, postgres.TableWorkflows), workflowID).Scan(
 		&state.Name,
 		&state.Payload,
@@ -137,8 +148,12 @@ func repointCommandResource(
 
 	tag, err := pg.Exec(ctx, fmt.Sprintf(`
 		UPDATE %s
-		SET resource_id = $4
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+		SET
+			resource_id = $4
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, postgres.TableCommandIdempotencyKeys),
 		commandidempotency.UserScope(userID),
 		commandidempotency.WorkflowUpdateOperation(workflowID),
@@ -366,13 +381,16 @@ func waitForBlockedStatement(
 	for {
 		var waiting int
 		if err := pg.QueryRow(probeCtx, `
-			SELECT count(*)
-			FROM pg_stat_activity
-			WHERE datname = current_database()
+			SELECT
+				count(*)
+			FROM
+				pg_stat_activity
+			WHERE
+				datname = current_database()
 				AND pid <> pg_backend_pid()
 				AND state = 'active'
 				AND wait_event_type = 'Lock'
-				AND query LIKE $1
+				AND regexp_replace(query, '\s+', ' ', 'g') LIKE $1
 		`, lock.pattern).Scan(&waiting); err != nil {
 			t.Fatalf("probe for a backend blocked in %q: %v", lock.pattern, err)
 		}

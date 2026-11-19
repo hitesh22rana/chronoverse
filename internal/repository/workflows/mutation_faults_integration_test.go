@@ -72,14 +72,18 @@ func cancelBlockedStatement(ctx context.Context, t *testing.T, pg *postgres.Post
 
 	var pid int
 	if err := pg.QueryRow(probeCtx, `
-		SELECT pid
-		FROM pg_stat_activity
-		WHERE datname = current_database()
+		SELECT
+			pid
+		FROM
+			pg_stat_activity
+		WHERE
+			datname = current_database()
 			AND pid <> pg_backend_pid()
 			AND state = 'active'
 			AND wait_event_type = 'Lock'
-			AND query LIKE $1
-		LIMIT 1
+			AND regexp_replace(query, '\s+', ' ', 'g') LIKE $1
+		LIMIT
+			1
 	`, lock.pattern).Scan(&pid); err != nil {
 		t.Fatalf("find the backend blocked in %q: %v", lock.pattern, err)
 	}

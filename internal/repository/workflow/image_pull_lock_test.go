@@ -40,7 +40,15 @@ type fakeImagePullLockStore struct {
 	acquireCalls   int
 }
 
-func (s *fakeImagePullLockStore) AcquireDistributedLockWithToken(context.Context, string, time.Duration) (token string, acquired bool, err error) {
+func (s *fakeImagePullLockStore) AcquireDistributedLockWithToken(
+	context.Context,
+	string,
+	time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -119,7 +127,14 @@ func (*digestContractContainer) ImageExists(context.Context, string) (bool, erro
 
 func (*digestContractContainer) DockerHost() string { return "tcp://digest-contract:2376" }
 
-func (s *digestContractContainer) ResolveImageDigest(ctx context.Context, image string) (resolvedImageRef, resolvedImageDigest string, err error) {
+func (s *digestContractContainer) ResolveImageDigest(
+	ctx context.Context,
+	image string,
+) (
+	resolvedImageRef,
+	resolvedImageDigest string,
+	err error,
+) {
 	s.seenValue = ctx.Value(digestContextKey{})
 	s.resolved = append(s.resolved, image)
 	if s.resolveErr != nil {

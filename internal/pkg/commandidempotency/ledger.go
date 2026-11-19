@@ -160,18 +160,42 @@ func Reserve(
 		return nil, err
 	}
 	query := fmt.Sprintf(`
-		WITH reservation AS (
-			SELECT clock_timestamp() AT TIME ZONE 'utc' AS reserved_at
-		)
-		INSERT INTO %s AS keys (
-			scope, operation, idempotency_key, request_hash, status,
-			resource_id, response, created_at, updated_at, completed_at, expires_at
-		)
-		SELECT $1, $2, $3, $4, 'PROCESSING', NULL, NULL,
-			reservation.reserved_at, reservation.reserved_at, NULL, NULL
-		FROM reservation
+		WITH
+			reservation AS (
+				SELECT
+					clock_timestamp() AT TIME ZONE 'utc' AS reserved_at
+			)
+		INSERT INTO
+			%s AS keys (
+				scope,
+				operation,
+				idempotency_key,
+				request_hash,
+				status,
+				resource_id,
+				response,
+				created_at,
+				updated_at,
+				completed_at,
+				expires_at
+			)
+		SELECT
+			$1,
+			$2,
+			$3,
+			$4,
+			'PROCESSING',
+			NULL,
+			NULL,
+			reservation.reserved_at,
+			reservation.reserved_at,
+			NULL,
+			NULL
+		FROM
+			reservation
 		ON CONFLICT (scope, operation, idempotency_key) DO UPDATE
-		SET request_hash = EXCLUDED.request_hash,
+		SET
+			request_hash = EXCLUDED.request_hash,
 			status = 'PROCESSING',
 			resource_id = NULL,
 			response = NULL,
@@ -179,8 +203,9 @@ func Reserve(
 			updated_at = EXCLUDED.updated_at,
 			completed_at = NULL,
 			expires_at = NULL
-		WHERE keys.expires_at IS NOT NULL
-		  AND keys.expires_at <= clock_timestamp() AT TIME ZONE 'utc';
+		WHERE
+			keys.expires_at IS NOT NULL
+			AND keys.expires_at <= clock_timestamp() AT TIME ZONE 'utc';
 	`, postgres.TableCommandIdempotencyKeys)
 
 	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash)
@@ -196,10 +221,19 @@ func Reserve(
 	var resourceID sql.NullString
 	var response []byte
 	query = fmt.Sprintf(`
-		SELECT request_hash, status, resource_id, response
-		FROM %s
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
-		LIMIT 1;
+		SELECT
+			request_hash,
+			status,
+			resource_id,
+			response
+		FROM
+			%s
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
+		LIMIT
+			1;
 	`, postgres.TableCommandIdempotencyKeys)
 	if err = tx.QueryRow(ctx, query, scope, operation, key).Scan(
 		&storedHash,
@@ -249,22 +283,27 @@ func Complete(
 	}
 
 	query := fmt.Sprintf(`
-		WITH completion AS (
-			SELECT clock_timestamp() AT TIME ZONE 'utc' AS completed_at
-		)
+		WITH
+			completion AS (
+				SELECT
+					clock_timestamp() AT TIME ZONE 'utc' AS completed_at
+			)
 		UPDATE %s
-		SET status = 'COMPLETED',
+		SET
+			status = 'COMPLETED',
 			resource_id = NULLIF($5, ''),
 			response = $6::jsonb,
 			completed_at = completion.completed_at,
 			updated_at = completion.completed_at,
 			expires_at = completion.completed_at + ($7::bigint * interval '1 microsecond')
-		FROM completion
-		WHERE scope = $1
-		  AND operation = $2
-		  AND idempotency_key = $3
-		  AND request_hash = $4
-		  AND status = 'PROCESSING';
+		FROM
+			completion
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
+			AND request_hash = $4
+			AND status = 'PROCESSING';
 	`, postgres.TableCommandIdempotencyKeys)
 	tag, err := tx.Exec(ctx, query, scope, operation, key, requestHash, resourceID, encoded, retention.Microseconds())
 	if err != nil {

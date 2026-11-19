@@ -9,7 +9,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (r *Repository) withLifecycleLock(parentCtx context.Context, key string, ttl time.Duration, work func(context.Context) error) (err error) {
+func (r *Repository) withLifecycleLock(
+	parentCtx context.Context,
+	key string,
+	ttl time.Duration,
+	work func(context.Context) error,
+) (
+	err error,
+) {
 	if ttl/3 <= 0 {
 		return status.Error(codes.InvalidArgument, "workflow lock TTL must permit a positive renewal interval")
 	}
@@ -35,7 +42,14 @@ func (r *Repository) withLifecycleLock(parentCtx context.Context, key string, tt
 	return work(ctx)
 }
 
-func (r *Repository) renewLifecycleLock(ctx context.Context, cancel context.CancelCauseFunc, key, token string, ttl time.Duration, expiresAt time.Time) error {
+func (r *Repository) renewLifecycleLock(
+	ctx context.Context,
+	cancel context.CancelCauseFunc,
+	key,
+	token string,
+	ttl time.Duration,
+	expiresAt time.Time,
+) error {
 	interval := ttl / 3
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

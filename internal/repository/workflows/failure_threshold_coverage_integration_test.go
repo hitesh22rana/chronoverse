@@ -19,7 +19,17 @@ import (
 // installFailureEffectFault scopes a database fault to one fixture's row.
 // An errcode raises the fault under that SQLSTATE, which is how the
 // invalid-text-representation classifiers are reached.
-func installFailureEffectFault(ctx context.Context, t *testing.T, pg *postgres.Postgres, table, event, condition, errcode string, deferred, skip bool) {
+func installFailureEffectFault(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	table,
+	event,
+	condition,
+	errcode string,
+	deferred,
+	skip bool,
+) {
 	t.Helper()
 	name := "cv_failure_" + fixtureTag()
 	body := "RETURN NULL;"

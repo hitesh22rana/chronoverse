@@ -29,7 +29,14 @@ type recoveryBudgetClient struct {
 	releases map[string]*jobspb.ReleaseJobForRetryRequest
 }
 
-func (c *recoveryBudgetClient) RecoverExpiredJobLeases(_ context.Context, req *jobspb.RecoverExpiredJobLeasesRequest, _ ...grpc.CallOption) (*jobspb.RecoverExpiredJobLeasesResponse, error) {
+func (c *recoveryBudgetClient) RecoverExpiredJobLeases(
+	_ context.Context,
+	req *jobspb.RecoverExpiredJobLeasesRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RecoverExpiredJobLeasesResponse,
+	error,
+) {
 	if req.GetWorkerId() != "execution-worker" || req.GetProcessInstanceId() != recoveryContractProcessID || req.GetLeaseDurationSeconds() != 30 || req.GetCommandId() == "" {
 		c.t.Errorf("invalid recovery ownership request: %v", req)
 	}
@@ -49,7 +56,14 @@ func (c *recoveryBudgetClient) RecoverExpiredJobLeases(_ context.Context, req *j
 	return response, nil
 }
 
-func (c *recoveryBudgetClient) RenewJobLease(_ context.Context, req *jobspb.RenewJobLeaseRequest, _ ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *recoveryBudgetClient) RenewJobLease(
+	_ context.Context,
+	req *jobspb.RenewJobLeaseRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	if req.GetLeaseToken() != "execution-worker:"+req.GetId() || req.GetLeaseDurationSeconds() != 30 {
 		c.t.Errorf("renewed wrong ownership: %v", req)
 	}
@@ -59,7 +73,14 @@ func (c *recoveryBudgetClient) RenewJobLease(_ context.Context, req *jobspb.Rene
 	return &jobspb.RenewJobLeaseResponse{}, nil
 }
 
-func (c *recoveryBudgetClient) ReleaseJobForRetry(_ context.Context, req *jobspb.ReleaseJobForRetryRequest, _ ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+func (c *recoveryBudgetClient) ReleaseJobForRetry(
+	_ context.Context,
+	req *jobspb.ReleaseJobForRetryRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ReleaseJobForRetryResponse,
+	error,
+) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if _, exists := c.releases[req.GetId()]; exists {

@@ -94,7 +94,15 @@ type Repository struct {
 }
 
 // New creates a new jobs repository.
-func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, rdb *redis.Store, ch *clickhouse.Client, ms meilisearch.ServiceManager, svc *Services) *Repository {
+func New(
+	cfg *Config,
+	auth auth.IAuth,
+	pg *postgres.Postgres,
+	rdb *redis.Store,
+	ch *clickhouse.Client,
+	ms meilisearch.ServiceManager,
+	svc *Services,
+) *Repository {
 	if cfg == nil {
 		cfg = &Config{}
 	}
@@ -308,27 +316,69 @@ func scheduleJobInsertStatement(
 		// workflow must be schedulable. Mirrors automaticScheduleGuardSQL so
 		// cross-user scheduling cannot insert job rows.
 		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
-            SELECT $1, $2, $3, $4, $5, NULL
-            FROM %s AS w
-            WHERE w.id = $1
-                AND w.user_id = $2
-                AND w.terminated_at IS NULL
-                AND w.build_status = 'COMPLETED'
-            FOR SHARE
-            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
-        `, postgres.TableJobs, postgres.TableWorkflows), args, nil
+			INSERT INTO
+				%s (
+					workflow_id,
+					user_id,
+					scheduled_at,
+					trigger,
+					idempotency_key,
+					workflow_generation
+				)
+			SELECT
+				$1,
+				$2,
+				$3,
+				$4,
+				$5,
+				NULL
+			FROM
+				%s AS w
+			WHERE
+				w.id = $1
+				AND w.user_id = $2
+				AND w.terminated_at IS NULL
+				AND w.build_status = 'COMPLETED'
+			FOR SHARE
+			RETURNING
+				id,
+				workflow_id,
+				user_id,
+				trigger,
+				workflow_generation;
+		`, postgres.TableJobs, postgres.TableWorkflows), args, nil
 	case trigger == jobsmodel.JobTriggerAutomatic.ToString():
 		guard := automaticScheduleGuardSQL()
 		return fmt.Sprintf(`
-            INSERT INTO %s (workflow_id, user_id, scheduled_at, trigger, idempotency_key, workflow_generation)
-            SELECT $1, $2, $3, $4, $5, $6
-            %s
-            ON CONFLICT (workflow_id, idempotency_key)
-            WHERE trigger = 'AUTOMATIC' AND idempotency_key IS NOT NULL
-            DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-            RETURNING id, workflow_id, user_id, trigger, workflow_generation;
-        `, postgres.TableJobs, guard), args, nil
+			INSERT INTO
+				%s (
+					workflow_id,
+					user_id,
+					scheduled_at,
+					trigger,
+					idempotency_key,
+					workflow_generation
+				)
+			SELECT
+				$1,
+				$2,
+				$3,
+				$4,
+				$5,
+				$6 %s
+			ON CONFLICT (workflow_id, idempotency_key)
+			WHERE
+				trigger = 'AUTOMATIC'
+				AND idempotency_key IS NOT NULL DO UPDATE
+			SET
+				idempotency_key = EXCLUDED.idempotency_key
+			RETURNING
+				id,
+				workflow_id,
+				user_id,
+				trigger,
+				workflow_generation;
+		`, postgres.TableJobs, guard), args, nil
 	default:
 		return "", nil, status.Errorf(codes.InvalidArgument, "invalid job trigger: %s", trigger)
 	}
@@ -360,7 +410,15 @@ LEFT JOIN LATERAL (
 
 // CancelJob applies a deterministic workflow-driven cancellation and persists
 // the pre-cancellation cleanup snapshot for response-loss replay.
-func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalReasonCode string) (snapshot *jobsmodel.CancelJobSnapshot, err error) {
+func (r *Repository) CancelJob(
+	ctx context.Context,
+	jobID,
+	commandID,
+	terminalReasonCode string,
+) (
+	snapshot *jobsmodel.CancelJobSnapshot,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.CancelJob")
 	defer func() {
 		if err != nil {
@@ -401,13 +459,22 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 
 	snapshot = &jobsmodel.CancelJobSnapshot{}
 	query := fmt.Sprintf(`
-		SELECT j.id, j.status, j.container_id, j.runtime_node_id, j.runtime_endpoint, j.attempts,
-   COALESCE(cleanup.runtime_instance,''), COALESCE(cleanup.intent_id,'')
-  FROM %s j
-  %s
-  WHERE j.id = $1
-  FOR UPDATE OF j;
- `, postgres.TableJobs, jobCleanupIdentityJoin)
+		SELECT
+			j.id,
+			j.status,
+			j.container_id,
+			j.runtime_node_id,
+			j.runtime_endpoint,
+			j.attempts,
+			COALESCE(cleanup.runtime_instance, ''),
+			COALESCE(cleanup.intent_id, '')
+		FROM
+			%s j %s
+		WHERE
+			j.id = $1
+		FOR UPDATE OF
+			j;
+	`, postgres.TableJobs, jobCleanupIdentityJoin)
 	if err = tx.QueryRow(ctx, query, jobID).Scan(
 		&snapshot.ID,
 		&snapshot.PreviousStatus,
@@ -429,7 +496,8 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 		snapshot.PreviousStatus == jobsmodel.JobStatusRunning.ToString() {
 		query = fmt.Sprintf(`
 			UPDATE %s
-			SET status = 'CANCELED',
+			SET
+				status = 'CANCELED',
 				completed_at = clock_timestamp() AT TIME ZONE 'utc',
 				lease_token = NULL,
 				leased_by = NULL,
@@ -437,7 +505,8 @@ func (r *Repository) CancelJob(ctx context.Context, jobID, commandID, terminalRe
 				lease_expires_at = NULL,
 				last_heartbeat_at = NULL,
 				terminal_reason_code = $2
-			WHERE id = $1;
+			WHERE
+				id = $1;
 		`, postgres.TableJobs)
 		if _, err = tx.Exec(ctx, query, jobID, terminalReasonCode); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to cancel job: %v", err)
@@ -465,12 +534,29 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 	}()
 
 	query := fmt.Sprintf(`
-	        SELECT id, workflow_id, status, trigger, scheduled_at, started_at, completed_at, created_at, updated_at,
-	               terminal_reason_code, failure_kind, last_error_code, last_error_message
-        FROM %s
-        WHERE id = $1 AND workflow_id = $2 AND user_id = $3
-        LIMIT 1;
-    `, postgres.TableJobs)
+		SELECT
+			id,
+			workflow_id,
+			status,
+			trigger,
+			scheduled_at,
+			started_at,
+			completed_at,
+			created_at,
+			updated_at,
+			terminal_reason_code,
+			failure_kind,
+			last_error_code,
+			last_error_message
+		FROM
+			%s
+		WHERE
+			id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+		LIMIT
+			1;
+	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -510,11 +596,26 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	}()
 
 	query := fmt.Sprintf(`
-        SELECT id, workflow_id, container_id, user_id, status, trigger, scheduled_at, started_at, completed_at, attempts, created_at, updated_at
-        FROM %s
-        WHERE id = $1
-        LIMIT 1;
-    `, postgres.TableJobs)
+		SELECT
+			id,
+			workflow_id,
+			container_id,
+			user_id,
+			status,
+			trigger,
+			scheduled_at,
+			started_at,
+			completed_at,
+			attempts,
+			created_at,
+			updated_at
+		FROM
+			%s
+		WHERE
+			id = $1
+		LIMIT
+			1;
+	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID)
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -585,10 +686,19 @@ func (r *Repository) GetJobLogs(
 	ascending := sortOrder == jobsmodel.JobLogsSortOrderAsc
 	logQueryArgs := []any{jobID, workflowID, userID}
 	logsQuery := fmt.Sprintf(`
-    SELECT timestamp, message, sequence_num, stream, event_id
-    FROM %s
-    WHERE job_id = $1 AND workflow_id = $2 AND user_id = $3
-    `, clickhouse.TableJobLogs)
+		SELECT
+			timestamp,
+			message,
+			sequence_num,
+			stream,
+			event_id
+		FROM
+			%s
+		WHERE
+			job_id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+	`, clickhouse.TableJobLogs)
 
 	switch getJobLogsFilters.Stream {
 	case 1:
@@ -629,10 +739,16 @@ func (r *Repository) GetJobLogs(
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`
-        SELECT status, completed_at
-        FROM %s
-        WHERE id = $1 AND workflow_id = $2 AND user_id = $3
-    `, postgres.TableJobs)
+		SELECT
+			status,
+			completed_at
+		FROM
+			%s
+		WHERE
+			id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+	`, postgres.TableJobs)
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
@@ -758,11 +874,18 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 	}
 
 	query := fmt.Sprintf(`
-        SELECT id, status
-        FROM %s
-        WHERE id = $1 AND workflow_id = $2 AND user_id = $3
-        LIMIT 1;
-    `, postgres.TableJobs)
+		SELECT
+			id,
+			status
+		FROM
+			%s
+		WHERE
+			id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+		LIMIT
+			1;
+	`, postgres.TableJobs)
 	row := r.pg.QueryRow(ctx, query, jobID, workflowID, userID)
 	var id string
 	var jobStatus string
@@ -899,10 +1022,16 @@ func (r *Repository) SearchJobLogs(
 
 	statusQueryArgs := []any{jobID, workflowID, userID}
 	statusQuery := fmt.Sprintf(`
-        SELECT status, completed_at
-        FROM %s
-        WHERE id = $1 AND workflow_id = $2 AND user_id = $3
-    `, postgres.TableJobs)
+		SELECT
+			status,
+			completed_at
+		FROM
+			%s
+		WHERE
+			id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+	`, postgres.TableJobs)
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
@@ -974,7 +1103,16 @@ func (r *Repository) SearchJobLogs(
 }
 
 // ListJobs returns jobs.
-func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (res *jobsmodel.ListJobsResponse, err error) {
+func (r *Repository) ListJobs(
+	ctx context.Context,
+	workflowID,
+	userID,
+	cursor string,
+	filters *jobsmodel.ListJobsFilters,
+) (
+	res *jobsmodel.ListJobsResponse,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListJobs")
 	defer func() {
 		if err != nil {
@@ -985,13 +1123,32 @@ func (r *Repository) ListJobs(ctx context.Context, workflowID, userID, cursor st
 	}()
 
 	query := fmt.Sprintf(`
-	        SELECT j.id, j.workflow_id, j.container_id, j.status, j.trigger, j.attempts, j.scheduled_at, j.started_at, j.completed_at, j.created_at, j.updated_at, j.runtime_node_id, j.runtime_endpoint,
-                j.terminal_reason_code, j.failure_kind, j.last_error_code, j.last_error_message,
-                COALESCE(cleanup.runtime_instance,'') AS runtime_instance, COALESCE(cleanup.intent_id,'') AS intent_id
-        FROM %s j
-        %s
-        WHERE j.workflow_id = $1 AND j.user_id = $2
-    `, postgres.TableJobs, jobCleanupIdentityJoin)
+		SELECT
+			j.id,
+			j.workflow_id,
+			j.container_id,
+			j.status,
+			j.trigger,
+			j.attempts,
+			j.scheduled_at,
+			j.started_at,
+			j.completed_at,
+			j.created_at,
+			j.updated_at,
+			j.runtime_node_id,
+			j.runtime_endpoint,
+			j.terminal_reason_code,
+			j.failure_kind,
+			j.last_error_code,
+			j.last_error_message,
+			COALESCE(cleanup.runtime_instance, '') AS runtime_instance,
+			COALESCE(cleanup.intent_id, '') AS intent_id
+		FROM
+			%s j %s
+		WHERE
+			j.workflow_id = $1
+			AND j.user_id = $2
+	`, postgres.TableJobs, jobCleanupIdentityJoin)
 	args := []any{workflowID, userID}
 	paramIndex := 3
 
@@ -1108,7 +1265,12 @@ func jobLogsHighlightTags(token string) (startTag, endTag string) {
 		jobLogsHighlightEnd + token + jobLogsHighlightSuffix
 }
 
-func newJobLogsSearchRequest(filter, highlightToken string, limit int64, options jobsmodel.SearchJobLogsOptions) *meilisearch.SearchRequest {
+func newJobLogsSearchRequest(
+	filter,
+	highlightToken string,
+	limit int64,
+	options jobsmodel.SearchJobLogsOptions,
+) *meilisearch.SearchRequest {
 	sequenceDirection := "desc"
 	if options.SortOrder == jobsmodel.JobLogsSortOrderAsc {
 		sequenceDirection = "asc"

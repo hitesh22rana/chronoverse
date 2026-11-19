@@ -146,7 +146,13 @@ func TestIntegrationContainerIntentMetricsLaneSeries(t *testing.T) {
 	}
 
 	urgentID := seedIntent(t.Name() + "-urgent")
-	if _, err := repo.pg.Exec(ctx, "UPDATE container_creation_intents SET next_inspection_at = (clock_timestamp() AT TIME ZONE 'utc') - interval '10 seconds' WHERE id=$1", urgentID); err != nil {
+	if _, err := repo.pg.Exec(ctx, `
+		UPDATE container_creation_intents
+		SET
+			next_inspection_at = (clock_timestamp() AT TIME ZONE 'utc') - interval '10 seconds'
+		WHERE
+			id = $1
+	`, urgentID); err != nil {
 		t.Fatal(err)
 	}
 	one := collectIntentMetrics(t, reader)
@@ -157,9 +163,14 @@ func TestIntegrationContainerIntentMetricsLaneSeries(t *testing.T) {
 	}
 
 	surveillanceID := seedIntent(t.Name() + "-surveillance")
-	if _, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents
-SET inspection_urgent=false, next_inspection_at=(clock_timestamp() AT TIME ZONE 'utc') - interval '60 seconds'
-WHERE id=$1`, surveillanceID); err != nil {
+	if _, err := repo.pg.Exec(ctx, `
+		UPDATE container_creation_intents
+		SET
+			inspection_urgent = false,
+			next_inspection_at = (clock_timestamp() AT TIME ZONE 'utc') - interval '60 seconds'
+		WHERE
+			id = $1
+	`, surveillanceID); err != nil {
 		t.Fatal(err)
 	}
 	both := collectIntentMetrics(t, reader)
@@ -180,7 +191,10 @@ WHERE id=$1`, surveillanceID); err != nil {
 	}
 
 	// A failed read must not fall back to healthy zero lanes for an empty sample.
-	if _, err := repo.pg.Exec(ctx, "ALTER TABLE container_creation_intents RENAME COLUMN inspection_urgent TO unavailable_inspection_urgent"); err != nil {
+	if _, err := repo.pg.Exec(ctx, `
+		ALTER TABLE container_creation_intents
+		RENAME COLUMN inspection_urgent TO unavailable_inspection_urgent
+	`); err != nil {
 		t.Fatal(err)
 	}
 	var failed metricdata.ResourceMetrics

@@ -226,8 +226,26 @@ func seedFixtureNode(ctx context.Context, t *testing.T, pg *postgres.Postgres, r
 
 	nodeID := "cv-node-" + fixtureTag()
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO runtime_nodes (id, node_name, docker_endpoint, status, last_heartbeat_at, max_concurrency, running_jobs)
-		VALUES ($1, $1, 'tcp://127.0.0.1:2375', 'READY', now() AT TIME ZONE 'utc', 4, $2)
+		INSERT INTO
+			runtime_nodes (
+				id,
+				node_name,
+				docker_endpoint,
+				status,
+				last_heartbeat_at,
+				max_concurrency,
+				running_jobs
+			)
+		VALUES
+			(
+				$1,
+				$1,
+				'tcp://127.0.0.1:2375',
+				'READY',
+				now() AT TIME ZONE 'utc',
+				4,
+				$2
+			)
 	`, nodeID, runningJobs); err != nil {
 		t.Fatalf("seed fixture runtime node: %v", err)
 	}
@@ -259,15 +277,31 @@ func seedFixtureNode(ctx context.Context, t *testing.T, pg *postgres.Postgres, r
 
 // seedFixturePendingJob inserts one PENDING job owned by the fixture. slot keeps
 // the automatic schedule-slot index unique without any wall-clock wait.
-func seedFixturePendingJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture *workflowFixture, trigger string, slot int) string {
+func seedFixturePendingJob(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	fixture *workflowFixture,
+	trigger string,
+	slot int,
+) string {
 	t.Helper()
 
 	scheduledAt := time.Now().UTC().Add(fixtureScheduleOffset + time.Duration(slot)*time.Minute).Format(time.RFC3339Nano)
 	var jobID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (workflow_id, user_id, status, trigger, scheduled_at)
-		VALUES ($1, $2, 'PENDING', $3::job_trigger, $4::timestamp)
-		RETURNING id
+		INSERT INTO
+			jobs (
+				workflow_id,
+				user_id,
+				status,
+				trigger,
+				scheduled_at
+			)
+		VALUES
+			($1, $2, 'PENDING', $3::job_trigger, $4::timestamp)
+		RETURNING
+			id
 	`, fixture.WorkflowID, fixture.UserID, trigger, scheduledAt).Scan(&jobID); err != nil {
 		t.Fatalf("seed %s pending fixture job: %v", trigger, err)
 	}
@@ -289,16 +323,38 @@ func seedFixtureStaleLeasedQueuedJob(ctx context.Context, t *testing.T, pg *post
 	scheduledAt := time.Now().UTC().Add(fixtureScheduleOffset + time.Duration(slot)*time.Minute).Format(time.RFC3339Nano)
 	var jobID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (
-			workflow_id, user_id, status, trigger, scheduled_at, queued_at, dispatch_attempts,
-			lease_token, leased_by, lease_process_instance_id, lease_expires_at, last_heartbeat_at
-		)
-		VALUES (
-			$1, $2, 'QUEUED', 'AUTOMATIC', $3::timestamp, now() AT TIME ZONE 'utc', 1,
-			'stale-fixture-worker:' || $4, 'stale-fixture-worker', $5::uuid,
-			now() AT TIME ZONE 'utc' + interval '10 minutes', now() AT TIME ZONE 'utc'
-		)
-		RETURNING id
+		INSERT INTO
+			jobs (
+				workflow_id,
+				user_id,
+				status,
+				trigger,
+				scheduled_at,
+				queued_at,
+				dispatch_attempts,
+				lease_token,
+				leased_by,
+				lease_process_instance_id,
+				lease_expires_at,
+				last_heartbeat_at
+			)
+		VALUES
+			(
+				$1,
+				$2,
+				'QUEUED',
+				'AUTOMATIC',
+				$3::timestamp,
+				now() AT TIME ZONE 'utc',
+				1,
+				'stale-fixture-worker:' || $4,
+				'stale-fixture-worker',
+				$5::uuid,
+				now() AT TIME ZONE 'utc' + interval '10 minutes',
+				now() AT TIME ZONE 'utc'
+			)
+		RETURNING
+			id
 	`, fixture.WorkflowID, fixture.UserID, scheduledAt, uuid.NewString(), uuid.NewString()).Scan(&jobID); err != nil {
 		t.Fatalf("seed stale-leased queued fixture job: %v", err)
 	}
@@ -308,22 +364,56 @@ func seedFixtureStaleLeasedQueuedJob(ctx context.Context, t *testing.T, pg *post
 
 // seedFixtureRunningJob inserts one RUNNING job that holds a runtime slot, the
 // durable state a worker leaves behind while it executes a claimed job.
-func seedFixtureRunningJob(ctx context.Context, t *testing.T, pg *postgres.Postgres, fixture *workflowFixture, nodeID, endpoint string) string {
+func seedFixtureRunningJob(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	fixture *workflowFixture,
+	nodeID,
+	endpoint string,
+) string {
 	t.Helper()
 
 	var jobID string
 	if err := pg.QueryRow(ctx, `
-		INSERT INTO jobs (
-			workflow_id, user_id, status, trigger, scheduled_at, started_at, attempts, dispatch_attempts,
-			lease_token, leased_by, lease_process_instance_id, lease_expires_at, last_heartbeat_at,
-			runtime_node_id, runtime_endpoint
-		)
-		VALUES (
-			$1, $2, 'RUNNING', 'AUTOMATIC', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc', 1, 1,
-			'fixture-worker:' || $6, 'fixture-worker', $3::uuid, now() AT TIME ZONE 'utc' + interval '10 minutes',
-			now() AT TIME ZONE 'utc', $4, $5
-		)
-		RETURNING id
+		INSERT INTO
+			jobs (
+				workflow_id,
+				user_id,
+				status,
+				trigger,
+				scheduled_at,
+				started_at,
+				attempts,
+				dispatch_attempts,
+				lease_token,
+				leased_by,
+				lease_process_instance_id,
+				lease_expires_at,
+				last_heartbeat_at,
+				runtime_node_id,
+				runtime_endpoint
+			)
+		VALUES
+			(
+				$1,
+				$2,
+				'RUNNING',
+				'AUTOMATIC',
+				now() AT TIME ZONE 'utc',
+				now() AT TIME ZONE 'utc',
+				1,
+				1,
+				'fixture-worker:' || $6,
+				'fixture-worker',
+				$3::uuid,
+				now() AT TIME ZONE 'utc' + interval '10 minutes',
+				now() AT TIME ZONE 'utc',
+				$4,
+				$5
+			)
+		RETURNING
+			id
 	`, fixture.WorkflowID, fixture.UserID, uuid.NewString(), nodeID, endpoint, uuid.NewString()).Scan(&jobID); err != nil {
 		t.Fatalf("seed running fixture job: %v", err)
 	}
@@ -344,7 +434,8 @@ func cancelFixtureRunningJob(ctx context.Context, t *testing.T, pg *postgres.Pos
 
 	if _, err := pg.Exec(ctx, `
 		UPDATE jobs
-		SET status = 'CANCELED',
+		SET
+			status = 'CANCELED',
 			completed_at = now() AT TIME ZONE 'utc',
 			lease_token = NULL,
 			leased_by = NULL,
@@ -352,7 +443,8 @@ func cancelFixtureRunningJob(ctx context.Context, t *testing.T, pg *postgres.Pos
 			lease_expires_at = NULL,
 			last_heartbeat_at = NULL,
 			terminal_reason_code = $2
-		WHERE id = $1
+		WHERE
+			id = $1
 	`, jobID, terminalreason.WorkflowTerminated.String()); err != nil {
 		t.Fatalf("cancel fixture running job %q: %v", jobID, err)
 	}
@@ -368,9 +460,16 @@ func readWorkflowFailureState(ctx context.Context, t *testing.T, pg *postgres.Po
 
 	var state workflowFailureState
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT consecutive_job_failures_count, max_consecutive_job_failures_allowed, build_status, generation, terminated_at
-		FROM %s
-		WHERE id = $1
+		SELECT
+			consecutive_job_failures_count,
+			max_consecutive_job_failures_allowed,
+			build_status,
+			generation,
+			terminated_at
+		FROM
+			%s
+		WHERE
+			id = $1
 	`, postgres.TableWorkflows), workflowID).Scan(
 		&state.ConsecutiveJobFailuresCount,
 		&state.MaxConsecutiveFailures,
@@ -410,9 +509,16 @@ func readTerminalEffect(ctx context.Context, t *testing.T, pg *postgres.Postgres
 
 	var row terminalEffectRow
 	err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT workflow_id::text, user_id::text, effect, threshold_reached, created_at
-		FROM %s
-		WHERE job_id = $1
+		SELECT
+			workflow_id::text,
+			user_id::text,
+			effect,
+			threshold_reached,
+			created_at
+		FROM
+			%s
+		WHERE
+			job_id = $1
 	`, postgres.TableWorkflowTerminalEffects), jobID).Scan(&row.WorkflowID, &row.UserID, &row.Effect, &row.ThresholdReached, &row.CreatedAt)
 	if pg.IsNoRows(err) {
 		return terminalEffectRow{}, false
@@ -451,9 +557,13 @@ func countWorkflowActionEvents(ctx context.Context, t *testing.T, pg *postgres.P
 
 	var count int
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT count(*)
-		FROM %s
-		WHERE kafka_key = $1 AND payload->>'Action' = $2
+		SELECT
+			count(*)
+		FROM
+			%s
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = $2
 	`, postgres.TableOutboxEvents), workflowID, action).Scan(&count); err != nil {
 		t.Fatalf("count %s outbox events for workflow %q: %v", action, workflowID, err)
 	}
@@ -465,9 +575,16 @@ func readWorkflowActionEvent(ctx context.Context, t *testing.T, pg *postgres.Pos
 
 	var event workflowOutboxEvent
 	if err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT topic, kafka_key, event_key, payload
-		FROM %s
-		WHERE kafka_key = $1 AND payload->>'Action' = $2
+		SELECT
+			topic,
+			kafka_key,
+			event_key,
+			payload
+		FROM
+			%s
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = $2
 	`, postgres.TableOutboxEvents), workflowID, action).Scan(&event.Topic, &event.KafkaKey, &event.EventKey, &event.Payload); err != nil {
 		t.Fatalf("read %s outbox event for workflow %q: %v", action, workflowID, err)
 	}
@@ -481,10 +598,15 @@ func workflowActionEventKeys(ctx context.Context, t *testing.T, pg *postgres.Pos
 	t.Helper()
 
 	rows, err := pg.Query(ctx, fmt.Sprintf(`
-		SELECT event_key
-		FROM %s
-		WHERE kafka_key = $1 AND payload->>'Action' = $2
-		ORDER BY event_key
+		SELECT
+			event_key
+		FROM
+			%s
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = $2
+		ORDER BY
+			event_key
 	`, postgres.TableOutboxEvents), workflowID, action)
 	if err != nil {
 		t.Fatalf("query %s outbox event keys for workflow %q: %v", action, workflowID, err)
@@ -510,10 +632,21 @@ func readFixtureJobState(ctx context.Context, t *testing.T, pg *postgres.Postgre
 
 	var state fixtureJobState
 	err := pg.QueryRow(ctx, fmt.Sprintf(`
-		SELECT trigger::text, status, completed_at, lease_token, leased_by, lease_process_instance_id,
-			terminal_reason_code, runtime_node_id, lease_expires_at, last_heartbeat_at
-		FROM %s
-		WHERE id = $1
+		SELECT
+			trigger::text,
+			status,
+			completed_at,
+			lease_token,
+			leased_by,
+			lease_process_instance_id,
+			terminal_reason_code,
+			runtime_node_id,
+			lease_expires_at,
+			last_heartbeat_at
+		FROM
+			%s
+		WHERE
+			id = $1
 	`, postgres.TableJobs), jobID).Scan(
 		&state.Trigger,
 		&state.Status,

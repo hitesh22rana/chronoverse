@@ -14,11 +14,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
-
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	"github.com/hitesh22rana/chronoverse/internal/service/analytics"
 	analyticsmock "github.com/hitesh22rana/chronoverse/internal/service/analytics/mock"
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
 
 func TestGetUserAnalytics(t *testing.T) {

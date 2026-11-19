@@ -13,8 +13,6 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -28,6 +26,7 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	jobsrepo "github.com/hitesh22rana/chronoverse/internal/repository/jobs"
 	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (

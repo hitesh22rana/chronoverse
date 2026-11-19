@@ -253,7 +253,12 @@ func (r *Repository) settleRecoveredContainer(
 	return r.failClaimedJob(ctx, claim, csvc, execErr, job.GetContainerId())
 }
 
-func (r *Repository) recoverRunningContainer(ctx context.Context, csvc ContainerSvc, job *jobspb.ExpiredJobLease, claim *jobspb.ClaimJobResponse) error {
+func (r *Repository) recoverRunningContainer(
+	ctx context.Context,
+	csvc ContainerSvc,
+	job *jobspb.ExpiredJobLease,
+	claim *jobspb.ClaimJobResponse,
+) error {
 	if terminateErr := csvc.Terminate(ctx, job.GetContainerId()); terminateErr != nil {
 		loggerpkg.FromContext(ctx).Warn("failed to terminate expired leased container",
 			zap.String("job_id", job.GetId()),

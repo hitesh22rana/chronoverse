@@ -13,8 +13,6 @@ import (
 	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
 
-	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/notifications"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -25,6 +23,7 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	notificationsrepo "github.com/hitesh22rana/chronoverse/internal/repository/notifications"
 	notificationssvc "github.com/hitesh22rana/chronoverse/internal/service/notifications"
+	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 const (

@@ -117,14 +117,22 @@ func fetchOutboxState(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 
 	var state outboxRowState
 	if err := pg.QueryRow(ctx, `
-		SELECT status,
-		       attempts,
-		       locked_at IS NULL,
-		       locked_by IS NULL,
-		       published_at IS NULL,
-		       EXTRACT(EPOCH FROM (next_attempt_at - updated_at))::float8
-		FROM outbox_events
-		WHERE id = $1`, id).Scan(
+		SELECT
+			status,
+			attempts,
+			locked_at IS NULL,
+			locked_by IS NULL,
+			published_at IS NULL,
+			EXTRACT(
+				EPOCH
+				FROM
+					(next_attempt_at - updated_at)
+			)::float8
+		FROM
+			outbox_events
+		WHERE
+			id = $1
+	`, id).Scan(
 		&state.Status,
 		&state.Attempts,
 		&state.LockedAtNull,
@@ -196,7 +204,13 @@ func TestIntegrationPublishFailureMarksFailedAndPreservesAttempts(t *testing.T) 
 
 	// Open the retry window: a second failing publish claims the released row,
 	// increments attempts once more and keeps it FAILED below the maximum.
-	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second' WHERE id = $1`, id); execErr != nil {
+	if _, execErr := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second'
+		WHERE
+			id = $1
+	`, id); execErr != nil {
 		t.Fatalf("open retry window: %v", execErr)
 	}
 
@@ -261,7 +275,13 @@ func TestIntegrationPublishFailureMarksDeadAtMaxAttemptsWithDefaultBackoff(t *te
 	assertScheduledBackoff(t, state.ScheduledSeconds, 5*time.Second)
 
 	// Make the retry due so only the DEAD status can exclude this row.
-	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second' WHERE id = $1`, id); execErr != nil {
+	if _, execErr := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			next_attempt_at = (now() AT TIME ZONE 'utc') - interval '1 second'
+		WHERE
+			id = $1
+	`, id); execErr != nil {
 		t.Fatalf("open dead event retry window: %v", execErr)
 	}
 
@@ -311,7 +331,13 @@ func TestIntegrationPublishFailureWithStaleClaimReturnsAborted(t *testing.T) {
 	}
 
 	// Expire A's lease so B may claim the same event.
-	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET locked_at = (now() AT TIME ZONE 'utc') - interval '5 minutes' WHERE id = $1`, id); execErr != nil {
+	if _, execErr := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			locked_at = (now() AT TIME ZONE 'utc') - interval '5 minutes'
+		WHERE
+			id = $1
+	`, id); execErr != nil {
 		t.Fatalf("expire processing lease: %v", execErr)
 	}
 
@@ -384,7 +410,13 @@ func TestIntegrationPublishFailureAfterReclaimPersistsOwnerFailure(t *testing.T)
 	}
 
 	// Expire A's lease so B may claim the same event.
-	if _, execErr := pg.Exec(ctx, `UPDATE outbox_events SET locked_at = (now() AT TIME ZONE 'utc') - interval '5 minutes' WHERE id = $1`, id); execErr != nil {
+	if _, execErr := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			locked_at = (now() AT TIME ZONE 'utc') - interval '5 minutes'
+		WHERE
+			id = $1
+	`, id); execErr != nil {
 		t.Fatalf("expire processing lease: %v", execErr)
 	}
 
@@ -707,8 +739,29 @@ func TestIntegrationClaimScanFailureSurfacesInternal(t *testing.T) {
 		t.Fatalf("create scan-mismatch stand-in: %v", err)
 	}
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO outbox_events (id, topic, kafka_key, event_key, payload, status, attempts, next_attempt_at)
-		VALUES ('00000000-0000-0000-0000-000000000001', $1, 'wf-claim-scan-error', $2, '{"job_id":"job-1"}', 'PENDING', 1.5, (now() AT TIME ZONE 'utc') - interval '1 minute');`,
+		INSERT INTO
+			outbox_events (
+				id,
+				topic,
+				kafka_key,
+				event_key,
+				payload,
+				status,
+				attempts,
+				next_attempt_at
+			)
+		VALUES
+			(
+				'00000000-0000-0000-0000-000000000001',
+				$1,
+				'wf-claim-scan-error',
+				$2,
+				'{"job_id":"job-1"}',
+				'PENDING',
+				1.5,
+				(now() AT TIME ZONE 'utc') - interval '1 minute'
+			);
+	`,
 		topic, topic+"-1"); err != nil {
 		t.Fatalf("seed scan-mismatch row: %v", err)
 	}

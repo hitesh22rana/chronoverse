@@ -74,7 +74,13 @@ func TestIntegrationLateFailureLookupCancellationRollsBackIdentity(t *testing.T)
 	repo := workflowLookupRepository(t)
 	pg := testkit.Postgres(t)
 	fixture := seedWorkflowFixture(t.Context(), t, pg, repo, 3)
-	_, err := pg.Exec(t.Context(), `UPDATE workflows SET terminated_at=clock_timestamp() AT TIME ZONE 'utc' WHERE id=$1`, fixture.WorkflowID)
+	_, err := pg.Exec(t.Context(), `
+		UPDATE workflows
+		SET
+			terminated_at = clock_timestamp() AT TIME ZONE 'utc'
+		WHERE
+			id = $1
+	`, fixture.WorkflowID)
 	require.NoError(t, err)
 	before := readWorkflowMutationState(t.Context(), t, pg, fixture.WorkflowID)
 	jobID := uuid.NewString()

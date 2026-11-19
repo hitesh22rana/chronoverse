@@ -18,7 +18,14 @@ type provenanceFaultJobs struct {
 	lookupErr error
 }
 
-func (j *provenanceFaultJobs) GetContainerIntent(ctx context.Context, r *jobspb.ContainerIntentCommand, o ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *provenanceFaultJobs) GetContainerIntent(
+	ctx context.Context,
+	r *jobspb.ContainerIntentCommand,
+	o ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	if j.lookupErr != nil {
 		return nil, j.lookupErr
 	}

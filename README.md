@@ -274,7 +274,10 @@ reading, while the static site is the complete product and engineering reference
 
 ## Contributing
 
-Contributions are welcome.
+Contributions are welcome. Read [repository guidelines](./AGENTS.md) for shared
+contributor and coding-agent conventions, and the
+[development workflow](./static/content/docs/contributing/development.mdx) for setup
+and validation.
 
 1. Fork the repository.
 2. Create a feature branch.

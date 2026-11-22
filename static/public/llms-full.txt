@@ -3352,6 +3352,10 @@ Mocks below `internal/**/mock/` come from `//go:generate` directives. After chan
 <doc title="Development workflow" path="./docs/contributing/development/">
 # Development workflow
 
+The root `AGENTS.md` is the shared contributor and coding-agent guide; `CLAUDE.md`
+imports it. It covers architecture boundaries, SQL/Go style, documentation,
+validation and worktree safety. Use it together with this workflow.
+
 ## Install tools and synchronize dependencies
 
 ```bash
@@ -3360,6 +3364,24 @@ make dependencies
 ```
 
 `make tools` installs the repository's Go generators and linter into `.bin`; Buf itself must also be installed and available on `PATH`. `make dependencies` runs `make generate` and then `go mod tidy -v`. Generation removes and recreates `pkg/proto`, updates `buf.lock`, and compiles the protobuf contracts. Keep `proto/`, `pkg/proto/go/`, `buf.lock`, `go.mod`, and `go.sum` changes together when applicable.
+
+`make lint`, `make test/short` and `make test/integration` depend on this
+regeneration/tidy step too. They can change tracked generated files and dependency
+metadata. Review those diffs; for focused validation after dependencies are
+synchronized, use direct `go test` commands and the pinned linter.
+
+## Worktrees and shared infrastructure
+
+A worktree isolates source changes, not the development stack. The Compose files
+use a fixed project name and explicit container names, so running them from another
+worktree (even with a different project name) can collide with shared resources.
+Prefer the disposable Testcontainers fixtures for tests. Do not stop shared
+services, remove volumes or recreate databases without authorization; recreate
+only explicitly disposable development data. Confirm the selected kubectl context
+before any cluster-dependent dry run or apply. Never commit private keys, real
+session tokens or deployment credentials.
+
+## Generate contracts and mocks
 
 Run the narrower target when only protobuf output needs verification:
 
@@ -3389,7 +3411,7 @@ The launcher requires Python and preserves test arguments, exit codes and signal
 Race detection, fresh execution and every assertion remain enabled; tests are not
 retried.
 
-Integration tests live as `*_integration_test.go` files. Testcontainers-backed suites share a single bootstrap, `internal/pkg/testkit`, that starts one container per requested service in the package's `TestMain` (for example `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`), applies the embedded migrations and index setup, and terminates everything when the test binary finishes. The suite reuses the production clients and runners from the sibling `internal/pkg` packages: `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes` and `kafka.EnsureTopics`. Tests therefore exercise the exact code paths services use without re-implementing migrations. Integration tests self-skip under `-short` or when Docker is unavailable (`testkit.RequireDocker` provides the same gate for direct-daemon suites), keeping `make test/short` fast on every machine.
+Integration tests live as `*_integration_test.go` files. Testcontainers-backed suites share a single bootstrap, `internal/pkg/testkit`, that declares requested services in the package's `TestMain` (for example `testkit.Run(m, testkit.WithPostgres(), testkit.WithKafka())`). Containers start lazily on first use, apply the embedded migrations and index setup, and terminate when the test binary finishes. The suite reuses the production clients and runners from the sibling `internal/pkg` packages: `postgres.Migrate`, `clickhouse.Migrate`, `meilisearch.SetupIndexes` and `kafka.EnsureTopics`. Tests therefore exercise the exact code paths services use without re-implementing migrations. Integration tests self-skip under `-short` or when Docker is unavailable (`testkit.RequireDocker` provides the same gate for direct-daemon suites), keeping `make test/short` fast on every machine.
 
 ## Lint and build
 
@@ -3435,6 +3457,15 @@ scripts/k8s/setup.sh --mode production --context <context> --dry-run
 The render targets work offline. The kubectl client dry runs still use API discovery and therefore need a reachable selected cluster; full OpenAPI schema validation likewise needs a live target cluster or a separate validator such as `kubeconform`. The setup-script dry runs additionally exercise prerequisite, existing-Secret inspection, and Secret preparation logic against the selected kubectl context.
 
 ## Documentation changes
+
+Prefer updating the existing page that owns the behavior. Describe prerequisites,
+user/operator-visible effects, limits and recovery steps; use runnable examples
+with safe placeholders. Proposals and private investigation evidence are not
+implemented product behavior and do not belong in public runbooks.
+
+The HTTP OpenAPI document is maintained separately from gRPC protobuf sources;
+`make generate` does not regenerate `static/content/openapi.yaml`. Update each
+contract when its surface changes.
 
 Add or edit MDX under `static/content/docs`, update `static/docs.config.ts`, and update `static/content/openapi.yaml` when the public HTTP contract changes. Run `npm run generate:llms` after changing any of those canonical sources; `npm run validate:llms` rejects stale `llms.txt` or `llms-full.txt` artifacts, and the static build runs this drift check automatically. Keep the concise repository references under `docs/`, `README.md`, `infra/k8s/README.md`, and landing-page copy aligned when the same behavior is described there. From `static/`, `npm run validate:docs` rejects unregistered pages, duplicate slugs, missing source references, broken docs links, and invalid OpenAPI.
 

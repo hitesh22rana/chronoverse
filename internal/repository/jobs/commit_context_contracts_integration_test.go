@@ -50,7 +50,7 @@ func (*commitCancelProcessor) OnStart(ctx context.Context, span sdktrace.ReadWri
 		return
 	}
 	for _, attribute := range span.Attributes() {
-		normalized := strings.Join(strings.Fields(attribute.Value.AsString()), " ")
+		normalized := testkit.NormalizeSQL(attribute.Value.AsString())
 		if attribute.Key != "db.query.text" || !strings.HasPrefix(normalized, target.sqlPrefix) {
 			continue
 		}
@@ -234,7 +234,7 @@ func cancelAtQueryContext(t *testing.T, operation, sqlPrefix string) (context.Co
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
-	target := &queryCancelTarget{operation: operation, sqlPrefix: strings.Join(strings.Fields(sqlPrefix), " "), cancel: cancel}
+	target := &queryCancelTarget{operation: operation, sqlPrefix: testkit.NormalizeSQL(sqlPrefix), cancel: cancel}
 	return context.WithValue(ctx, queryCancelContextKey{}, target), target
 }
 

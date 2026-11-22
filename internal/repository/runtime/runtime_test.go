@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 func TestLockRuntimeNodeQueryLocksRuntimeRow(t *testing.T) {
@@ -38,7 +40,7 @@ func TestNewDefaultsMaxConcurrencyToOne(t *testing.T) {
 func assertRuntimeQueryContains(t *testing.T, value, want string) {
 	t.Helper()
 
-	if !strings.Contains(strings.Join(strings.Fields(value), " "), strings.Join(strings.Fields(want), " ")) {
+	if !strings.Contains(testkit.NormalizeSQL(value), testkit.NormalizeSQL(want)) {
 		t.Fatalf("expected query to contain %q:\n%s", want, value)
 	}
 }

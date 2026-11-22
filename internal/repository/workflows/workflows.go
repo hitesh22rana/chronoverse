@@ -683,7 +683,15 @@ func (r *Repository) IncrementWorkflowConsecutiveJobFailuresCount(
 
 		if r.pg.IsNoRows(err) {
 			var exists bool
-			if lookupErr := tx.QueryRow(ctx, fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM %s WHERE id = $1 AND user_id = $2)`, postgres.TableWorkflows), workflowID, userID).Scan(&exists); lookupErr != nil {
+			if lookupErr := tx.QueryRow(ctx, fmt.Sprintf(`
+				SELECT EXISTS (
+					SELECT 1
+					FROM %s
+					WHERE
+						id = $1
+						AND user_id = $2
+				)
+			`, postgres.TableWorkflows), workflowID, userID).Scan(&exists); lookupErr != nil {
 				return false, mapTerminalLookupError(ctx, lookupErr)
 			}
 			if !exists {

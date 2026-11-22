@@ -35,8 +35,9 @@ func (*terminalLookupProcessor) OnStart(ctx context.Context, span sdktrace.ReadW
 	if !ok || span.Name() != "SELECT" {
 		return
 	}
+	const lookup = "SELECT EXISTS (SELECT 1 FROM workflows WHERE id = $1 AND user_id = $2)"
 	for _, attribute := range span.Attributes() {
-		if attribute.Key == "db.query.text" && strings.HasPrefix(strings.TrimSpace(attribute.Value.AsString()), "SELECT EXISTS (SELECT 1 FROM workflows WHERE id = $1 AND user_id = $2)") {
+		if attribute.Key == "db.query.text" && strings.HasPrefix(testkit.NormalizeSQL(attribute.Value.AsString()), testkit.NormalizeSQL(lookup)) {
 			target.fired.Store(true)
 			target.cancel()
 			return

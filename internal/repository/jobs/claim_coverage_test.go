@@ -18,6 +18,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 const (
@@ -101,7 +102,7 @@ func (tx *claimTx) QueryRow(_ context.Context, query string, args ...any) pgx.Ro
 func assertClaimReplayAuthority(t *testing.T, tx *claimTx) {
 	t.Helper()
 
-	query := strings.Join(strings.Fields(tx.query), " ")
+	query := testkit.NormalizeSQL(tx.query)
 	for _, write := range []string{"INSERT", "UPDATE", "DELETE"} {
 		if strings.Contains(query, write) {
 			t.Fatalf("replay read wrote %s: %s", write, query)

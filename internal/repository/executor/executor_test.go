@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -966,6 +967,7 @@ func TestProcessContainerExecutionSanitizesBoundedDiagnostics(t *testing.T) {
 		{"tiny remaining budget", safe, []error{errors.New(strings.Repeat("x", 509)), errors.New("tail")}, false, false},
 		{"many secondary", safe, []error{exit, errors.New(strings.Repeat("x", 2000)), errors.New("late\x00\xff")}, true, false},
 		{"raw context", context.Canceled, []error{exit}, true, false},
+		{"wrapped deadline", fmt.Errorf("runtime: %w", context.DeadlineExceeded), []error{exit}, true, false},
 		{"workload reason", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), []error{context.Canceled, errors.New("bad\x00\xff")}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -983,7 +985,11 @@ func TestProcessContainerExecutionSanitizesBoundedDiagnostics(t *testing.T) {
 					t.Fatal("secondary escaped into cause chain")
 				}
 			}
-			if status.Code(err) != status.Code(tc.primary) || classifyExecutionFailure(err) != classifyExecutionFailure(tc.primary) {
+			wantCode := status.Code(tc.primary)
+			if wantCode == codes.Unknown {
+				wantCode = status.FromContextError(tc.primary).Code()
+			}
+			if status.Code(err) != wantCode || classifyExecutionFailure(err) != classifyExecutionFailure(tc.primary) {
 				t.Fatalf("primary policy changed: %v", err)
 			}
 			if tc.wantExit && !strings.Contains(err.Error(), "observed exit 137") {

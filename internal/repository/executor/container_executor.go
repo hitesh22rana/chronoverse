@@ -135,7 +135,11 @@ type executionDiagnosticError struct {
 func (e *executionDiagnosticError) Error() string { return e.message }
 func (e *executionDiagnosticError) Unwrap() error { return e.primary }
 func (e *executionDiagnosticError) GRPCStatus() *status.Status {
-	return status.New(status.Code(e.primary), e.message)
+	code := status.Code(e.primary)
+	if code == codes.Unknown {
+		code = status.FromContextError(e.primary).Code()
+	}
+	return status.New(code, e.message)
 }
 
 func withExecutionDiagnostics(primary error, secondary string) error {

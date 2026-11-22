@@ -282,11 +282,12 @@ func TestStartParentContextPreventsMutation(t *testing.T) {
 		t.Run(map[bool]string{false: "canceled", true: "deadline"}[deadline], func(t *testing.T) {
 			var calls atomic.Int32
 			workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
-			ctx, cancel := context.WithCancel(t.Context())
+			var ctx context.Context
+			var cancel context.CancelFunc
 			if deadline {
-				cancel()
 				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 			} else {
+				ctx, cancel = context.WithCancel(t.Context())
 				cancel()
 			}
 			defer cancel()

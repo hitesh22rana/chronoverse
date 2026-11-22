@@ -28,7 +28,6 @@ independent earlier stream failures still determine retry policy. See
 [execution recovery](/docs/operations/recovery#job-execution) for error precedence,
 diagnostic limits and caller-versus-workload deadline behavior.
 
-
 Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Terminal records without a recognized reason code return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
 
 ## Execution ownership

@@ -538,6 +538,34 @@ code. It cleans that object and applies system recovery. Only an observed `exite
 container with a committed Start reservation can settle from its exit code and
 retained logs. An infrastructure Create fault retains its original diagnostic
 and uses the system retry budget; a typed invalid workload remains a user failure.
+Docker-reported invalid configuration at Start, such as a missing or
+non-executable command, is classified as `USER` / `EXECUTION_FAILED`. Generic
+server or transport failures use the bounded system retry budget, including some
+invalid image metadata that Docker reports as a server error (for example, an
+unresolvable image `USER`). With the default limit of three total attempts, two
+retry releases are possible before `FAILED` / `SYSTEM_ERROR`. This policy does
+not infer workload fault from message text or exit code 137.
+
+A failed container wait is never evidence of successful execution. A typed wait
+error is a system failure even when its response includes a nonzero status; that
+status is retained as diagnostic data, not `NON_ZERO_EXIT`. A normal received
+exit result remains authoritative if cancellation ends tail-log drain: zero stays
+successful and nonzero retains `NON_ZERO_EXIT`, subject to earlier independent
+stream errors. The tail may be interrupted; final settlement still requires the
+caller context and current lease token. Only a configured workload deadline before
+a normal exit produces `TIME_LIMIT_EXCEEDED`; an inherited caller deadline remains
+a system context failure. Missing live follow-logs are system failures while
+retaining their `NotFound` diagnostic; log replay keeps its separate absence policy.
+
+The first non-nil execution error determines classification. Later errors are
+retained only as internal diagnostic text, so a preceding log fault is not
+reclassified by a later nonzero exit. Rendered execution diagnostics are limited
+to 1536 UTF-8 bytes before status/context wrapping, including at most 512 bytes of
+secondary text. Long primary text leaves reserved space for that secondary hint.
+Invalid UTF-8 is replaced and NUL is visibly escaped before transport/storage;
+these are encoding safeguards, not secret redaction. Public terminal explanations
+remain canonical user-safe messages rather than raw diagnostics.
+
 Network repair uses a new attempt rather than resending Create for the same intent.
 Intent/grant/observation and attachment RPCs each have a five-second deadline;
 Create and Start mutation I/O are capped at thirty seconds. These budgets do not

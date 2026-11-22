@@ -84,10 +84,16 @@ func TestIntegrationPostgresMigrationsApplyToFreshDatabase(t *testing.T) {
 	for _, table := range []string{"users", "workflows", "jobs", "notifications", "analytics", "outbox_events", "runtime_nodes"} {
 		var exists bool
 		if err := freshPG.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM information_schema.tables
-				WHERE table_schema = 'public' AND table_name = $1
-			)
+			SELECT
+				EXISTS (
+					SELECT
+						1
+					FROM
+						information_schema.tables
+					WHERE
+						table_schema = 'public'
+						AND table_name = $1
+				)
 		`, table).Scan(&exists); err != nil {
 			t.Fatalf("check table %s: %v", table, err)
 		}

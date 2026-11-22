@@ -63,7 +63,13 @@ func (j *Jobs) RedriveContainerIntent(ctx context.Context, req *jobspb.Container
 }
 
 // ClaimContainerIntents applies the service deadline to the discovery claim.
-func (j *Jobs) ClaimContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error) {
+func (j *Jobs) ClaimContainerIntents(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	ctx, cancel := context.WithTimeout(ctx, j.cfg.Deadline)
 	defer cancel()
 	return j.svc.ClaimContainerIntents(ctx, req)

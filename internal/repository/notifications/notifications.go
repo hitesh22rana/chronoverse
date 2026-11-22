@@ -70,7 +70,16 @@ func New(cfg *Config, auth auth.IAuth, pg *postgres.Postgres, svc *Services) *Re
 }
 
 // CreateNotification creates a new notification.
-func (r *Repository) CreateNotification(ctx context.Context, userID, kind, payload, idempotencyKey string) (notificationID string, err error) {
+func (r *Repository) CreateNotification(
+	ctx context.Context,
+	userID,
+	kind,
+	payload,
+	idempotencyKey string,
+) (
+	notificationID string,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.CreateNotification")
 	defer func() {
 		if err != nil {
@@ -137,12 +146,19 @@ func (r *Repository) insertNotification(
 	requestHash string,
 ) (notificationID string, err error) {
 	query := fmt.Sprintf(`
-		INSERT INTO %s (user_id, kind, payload, idempotency_key)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO
+			%s (user_id, kind, payload, idempotency_key)
+		VALUES
+			($1, $2, $3, $4)
 		ON CONFLICT (user_id, idempotency_key)
-		WHERE idempotency_key IS NOT NULL
-		DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
-		RETURNING id, kind, payload;
+		WHERE
+			idempotency_key IS NOT NULL DO UPDATE
+		SET
+			idempotency_key = EXCLUDED.idempotency_key
+		RETURNING
+			id,
+			kind,
+			payload;
 	`, postgres.TableNotifications)
 	var storedKind, storedPayload string
 	err = tx.QueryRow(ctx, query, userID, kind, payload, idempotencyKey).Scan(
@@ -225,8 +241,12 @@ func (r *Repository) MarkNotificationsRead(ctx context.Context, ids []string, us
 
 	query = fmt.Sprintf(`
 		UPDATE %s
-		SET read_at = clock_timestamp() AT TIME ZONE 'utc'
-		WHERE id = ANY($1) AND user_id = $2 AND read_at IS NULL
+		SET
+			read_at = clock_timestamp() AT TIME ZONE 'utc'
+		WHERE
+			id = ANY ($1)
+			AND user_id = $2
+			AND read_at IS NULL
 	`, postgres.TableNotifications)
 
 	_, err = tx.Exec(ctx, query, unique, userID)
@@ -290,7 +310,14 @@ func (r *Repository) mapListNotificationsDatabaseError(err error) error {
 
 // ListNotifications returns notifications by user ID.
 // By default, it only returns the unread notifications.
-func (r *Repository) ListNotifications(ctx context.Context, userID, cursor string) (res *notificationsmodel.ListNotificationsResponse, err error) {
+func (r *Repository) ListNotifications(
+	ctx context.Context,
+	userID,
+	cursor string,
+) (
+	res *notificationsmodel.ListNotificationsResponse,
+	err error,
+) {
 	ctx, span := r.tp.Start(ctx, "Repository.ListNotifications")
 	defer func() {
 		if err != nil {
@@ -335,10 +362,19 @@ func (r *Repository) ListNotifications(ctx context.Context, userID, cursor strin
 	}
 
 	query := fmt.Sprintf(`
-        SELECT id, kind, payload, read_at, created_at, updated_at
-        FROM %s
-        WHERE user_id = $1 AND read_at IS NULL
-    `, postgres.TableNotifications)
+		SELECT
+			id,
+			kind,
+			payload,
+			read_at,
+			created_at,
+			updated_at
+		FROM
+			%s
+		WHERE
+			user_id = $1
+			AND read_at IS NULL
+	`, postgres.TableNotifications)
 	args := []any{userID}
 
 	if filterByKind {

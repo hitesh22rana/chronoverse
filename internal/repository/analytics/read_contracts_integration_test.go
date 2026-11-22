@@ -142,7 +142,18 @@ func TestIntegrationAnalyticsReadTopLimitAndTieOrder(t *testing.T) {
 	pg := testkit.Postgres(t)
 	repo := New(nil, pg)
 	userID := testkit.SeedUser(ctx, t, pg, uuid.NewString()+"@chronoverse.test")
-	if _, err := pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count) VALUES($1,$2,'HEARTBEAT',0,100)`, userID, uuid.NewString()); err != nil {
+	if _, err := pg.Exec(ctx, `
+		INSERT INTO
+			analytics (
+				user_id,
+				workflow_id,
+				kind,
+				jobs_count,
+				logs_count
+			)
+		VALUES
+			($1, $2, 'HEARTBEAT', 0, 100)
+	`, userID, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
 	zero, err := repo.GetUserAnalytics(ctx, userID)
@@ -153,13 +164,25 @@ func TestIntegrationAnalyticsReadTopLimitAndTieOrder(t *testing.T) {
 	if len(zero.TopWorkflows) != 0 {
 		t.Fatalf("zero-job workflow analytics = %+v", zero)
 	}
-	for n := 0; n < 12; n++ {
+	for n := range 12 {
 		id := fmt.Sprintf("00000000-0000-0000-0001-%012d", n)
 		logs := 4
 		if n == 10 {
 			logs = 6
 		}
-		if _, err = pg.Exec(ctx, `INSERT INTO analytics(user_id,workflow_id,kind,jobs_count,logs_count,total_job_execution_duration) VALUES($1,$2,'CONTAINER',2,$3,6)`, userID, id, logs); err != nil {
+		if _, err = pg.Exec(ctx, `
+			INSERT INTO
+				analytics (
+					user_id,
+					workflow_id,
+					kind,
+					jobs_count,
+					logs_count,
+					total_job_execution_duration
+				)
+			VALUES
+				($1, $2, 'CONTAINER', 2, $3, 6)
+		`, userID, id, logs); err != nil {
 			t.Fatal(err)
 		}
 	}

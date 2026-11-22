@@ -211,8 +211,12 @@ func seedClaimedJobAs(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 		defer cancel()
 		if _, err := pg.Exec(cleanupCtx, `
 			UPDATE runtime_nodes
-			SET status = 'READY', running_jobs = 0, last_heartbeat_at = now() AT TIME ZONE 'utc'
-			WHERE id = $1
+			SET
+				status = 'READY',
+				running_jobs = 0,
+				last_heartbeat_at = now() AT TIME ZONE 'utc'
+			WHERE
+				id = $1
 		`, nodeID); err != nil {
 			t.Errorf("restore fixture runtime node %q: %v", nodeID, err)
 		}
@@ -257,11 +261,26 @@ func readTerminalJobState(ctx context.Context, t *testing.T, pg *postgres.Postgr
 
 	var state terminalJobState
 	if err := pg.QueryRow(ctx, `
-		SELECT status, started_at, completed_at, lease_token, leased_by, lease_process_instance_id,
-			lease_expires_at, last_heartbeat_at, terminal_reason_code, failure_kind,
-			last_error_code, last_error_message, runtime_node_id, attempts, dispatch_attempts
-		FROM jobs
-		WHERE id = $1
+		SELECT
+			status,
+			started_at,
+			completed_at,
+			lease_token,
+			leased_by,
+			lease_process_instance_id,
+			lease_expires_at,
+			last_heartbeat_at,
+			terminal_reason_code,
+			failure_kind,
+			last_error_code,
+			last_error_message,
+			runtime_node_id,
+			attempts,
+			dispatch_attempts
+		FROM
+			jobs
+		WHERE
+			id = $1
 	`, jobID).Scan(
 		&state.Status, &state.StartedAt, &state.CompletedAt, &state.LeaseToken, &state.LeasedBy,
 		&state.LeaseProcessInstanceID, &state.LeaseExpiresAt, &state.LastHeartbeatAt,
@@ -314,8 +333,32 @@ func occupySpareSlots(ctx context.Context, t *testing.T, pg *postgres.Postgres, 
 	for range spare {
 		spareID := uuid.NewString()
 		if _, err := pg.Exec(ctx, `
-			INSERT INTO jobs (id, workflow_id, user_id, "trigger", scheduled_at, started_at, status, runtime_node_id, attempts, dispatch_attempts)
-			VALUES ($1, $2, $3, 'MANUAL', now() AT TIME ZONE 'utc', now() AT TIME ZONE 'utc', 'RUNNING', $4, 1, 1)
+			INSERT INTO
+				jobs (
+					id,
+					workflow_id,
+					user_id,
+					"trigger",
+					scheduled_at,
+					started_at,
+					status,
+					runtime_node_id,
+					attempts,
+					dispatch_attempts
+				)
+			VALUES
+				(
+					$1,
+					$2,
+					$3,
+					'MANUAL',
+					now() AT TIME ZONE 'utc',
+					now() AT TIME ZONE 'utc',
+					'RUNNING',
+					$4,
+					1,
+					1
+				)
 		`, spareID, workflowID, userID, nodeID); err != nil {
 			t.Fatalf("occupy spare runtime allocation on %q: %v", nodeID, err)
 		}
@@ -361,9 +404,13 @@ func countJobScopedOutboxEvents(ctx context.Context, t *testing.T, pg *postgres.
 
 	var count int
 	if err := pg.QueryRow(ctx, `
-		SELECT count(*)
-		FROM outbox_events
-		WHERE payload->>'JobID' = $1 OR payload->>'WorkflowID' = $2
+		SELECT
+			count(*)
+		FROM
+			outbox_events
+		WHERE
+			payload ->> 'JobID' = $1
+			OR payload ->> 'WorkflowID' = $2
 	`, jobID, workflowID).Scan(&count); err != nil {
 		t.Fatalf("count job scoped outbox events: %v", err)
 	}
@@ -375,9 +422,15 @@ func readJobOutboxEvent(ctx context.Context, t *testing.T, pg *postgres.Postgres
 
 	var event jobOutboxEvent
 	err := pg.QueryRow(ctx, `
-		SELECT topic, kafka_key, event_key, payload
-		FROM outbox_events
-		WHERE event_key = $1
+		SELECT
+			topic,
+			kafka_key,
+			event_key,
+			payload
+		FROM
+			outbox_events
+		WHERE
+			event_key = $1
 	`, eventKey).Scan(&event.Topic, &event.KafkaKey, &event.EventKey, &event.Payload)
 	if err != nil {
 		t.Fatalf("read outbox event %q: %v", eventKey, err)
@@ -391,9 +444,19 @@ func readCommandByScope(ctx context.Context, t *testing.T, pg *postgres.Postgres
 
 	var row jobCommandRow
 	err := pg.QueryRow(ctx, `
-		SELECT status, request_hash, resource_id, response, completed_at, expires_at
-		FROM command_idempotency_keys
-		WHERE scope = $1 AND operation = $2 AND idempotency_key = $3
+		SELECT
+			status,
+			request_hash,
+			resource_id,
+			response,
+			completed_at,
+			expires_at
+		FROM
+			command_idempotency_keys
+		WHERE
+			scope = $1
+			AND operation = $2
+			AND idempotency_key = $3
 	`, scope, operation, key,
 	).Scan(&row.Status, &row.RequestHash, &row.ResourceID, &row.Response, &row.CompletedAt, &row.ExpiresAt)
 	if pg.IsNoRows(err) {
@@ -416,9 +479,13 @@ func countCommandRowsByKey(ctx context.Context, t *testing.T, pg *postgres.Postg
 
 	var count int
 	if err := pg.QueryRow(ctx, `
-		SELECT count(*)
-		FROM command_idempotency_keys
-		WHERE operation = $1 AND idempotency_key = $2
+		SELECT
+			count(*)
+		FROM
+			command_idempotency_keys
+		WHERE
+			operation = $1
+			AND idempotency_key = $2
 	`, operation, commandID).Scan(&count); err != nil {
 		t.Fatalf("count command ledger rows: %v", err)
 	}

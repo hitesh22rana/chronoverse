@@ -32,7 +32,14 @@ func (f *fakeAnalyticsServiceClient) GetWorkflowAnalytics(
 	return &analyticspb.GetWorkflowAnalyticsResponse{WorkflowId: req.GetWorkflowId()}, nil
 }
 
-func (f *fakeAnalyticsServiceClient) GetUserAnalytics(ctx context.Context, req *analyticspb.GetUserAnalyticsRequest, _ ...grpc.CallOption) (*analyticspb.GetUserAnalyticsResponse, error) {
+func (f *fakeAnalyticsServiceClient) GetUserAnalytics(
+	ctx context.Context,
+	req *analyticspb.GetUserAnalyticsRequest,
+	_ ...grpc.CallOption,
+) (
+	*analyticspb.GetUserAnalyticsResponse,
+	error,
+) {
 	if f.userCall == nil {
 		return &analyticspb.GetUserAnalyticsResponse{}, nil
 	}

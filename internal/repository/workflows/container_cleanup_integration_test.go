@@ -41,9 +41,19 @@ func TestIntegrationContainerCleanupSurvivesSettlementAndDeletion(t *testing.T) 
 			if err := repo.TerminateWorkflow(ctx, fixture.WorkflowID, fixture.UserID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pg.Exec(ctx, `UPDATE jobs SET status=$2::JOB_STATUS,
-container_id=CASE WHEN $2='PENDING' THEN NULL ELSE container_id END,
-lease_token=NULL, lease_expires_at=NULL WHERE id=$1`, job, state); err != nil {
+			if _, err := pg.Exec(ctx, `
+				UPDATE jobs
+				SET
+					status = $2::JOB_STATUS,
+					container_id = CASE
+						WHEN $2 = 'PENDING' THEN NULL
+						ELSE container_id
+					END,
+					lease_token = NULL,
+					lease_expires_at = NULL
+				WHERE
+					id = $1
+			`, job, state); err != nil {
 				t.Fatal(err)
 			}
 			if err := repo.DeleteWorkflow(ctx, fixture.WorkflowID, fixture.UserID); err != nil {
@@ -60,7 +70,15 @@ func assertDurableCleanupSnapshot(t *testing.T, fixture *workflowFixture, job, n
 	pg := testkit.Postgres(t)
 
 	var payloads [][]byte
-	rows, err := pg.Query(ctx, `SELECT payload FROM outbox_events WHERE kafka_key=$1 AND payload->>'Action'='CONTAINER_CLEANUP'`, fixture.WorkflowID)
+	rows, err := pg.Query(ctx, `
+		SELECT
+			payload
+		FROM
+			outbox_events
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = 'CONTAINER_CLEANUP'
+	`, fixture.WorkflowID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +175,15 @@ func TestIntegrationCleanupReceiptSurvivesPruningAndDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kafka_key=$1 AND payload->>'Action'='CONTAINER_CLEANUP'`, fixture.WorkflowID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, `
+		SELECT
+			count(*)
+		FROM
+			outbox_events
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = 'CONTAINER_CLEANUP'
+	`, fixture.WorkflowID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -222,7 +248,14 @@ func prunePublishedCleanup(t *testing.T, workflowID string) int {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 	pg := testkit.Postgres(t)
-	if _, err := pg.Exec(ctx, `UPDATE outbox_events SET status='PUBLISHED',published_at=clock_timestamp()-interval '2 hours' WHERE kafka_key=$1`, workflowID); err != nil {
+	if _, err := pg.Exec(ctx, `
+		UPDATE outbox_events
+		SET
+			status = 'PUBLISHED',
+			published_at = clock_timestamp() - interval '2 hours'
+		WHERE
+			kafka_key = $1
+	`, workflowID); err != nil {
 		t.Fatal(err)
 	}
 	relay := outboxrelay.New(&outboxrelay.Config{}, pg, nil)
@@ -230,21 +263,44 @@ func prunePublishedCleanup(t *testing.T, workflowID string) int {
 		t.Fatal(err)
 	}
 	var count int
-	if err := pg.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE kafka_key=$1 AND payload->>'Action'='CONTAINER_CLEANUP'`, workflowID).Scan(&count); err != nil {
+	if err := pg.QueryRow(ctx, `
+		SELECT
+			count(*)
+		FROM
+			outbox_events
+		WHERE
+			kafka_key = $1
+			AND payload ->> 'Action' = 'CONTAINER_CLEANUP'
+	`, workflowID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
 }
 
-func seedCleanupProvenance(ctx context.Context, t *testing.T, pg *postgres.Postgres, job, id string) (*jobsrepo.Repository, *jobsmodel.ContainerIntent) {
+func seedCleanupProvenance(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	job,
+	id string,
+) (
+	*jobsrepo.Repository,
+	*jobsmodel.ContainerIntent,
+) {
 	t.Helper()
 	repo := jobsrepo.New(&jobsrepo.Config{}, nil, pg, nil, nil, nil, &jobsrepo.Services{})
 	req := &jobsmodel.ContainerIntentCommand{JobID: job, RuntimeInstance: "daemon-" + job, RequestHash: "immutable-cleanup-fixture"}
 	if err := pg.QueryRow(ctx, `
- SELECT j.lease_token,j.attempts,w.generation
- FROM jobs j JOIN workflows w ON w.id=j.workflow_id
- WHERE j.id=$1
-`, job).Scan(&req.LeaseToken, &req.Attempt, &req.WorkflowGeneration); err != nil {
+		SELECT
+			j.lease_token,
+			j.attempts,
+			w.generation
+		FROM
+			jobs j
+			JOIN workflows w ON w.id = j.workflow_id
+		WHERE
+			j.id = $1
+	`, job).Scan(&req.LeaseToken, &req.Attempt, &req.WorkflowGeneration); err != nil {
 		t.Fatal(err)
 	}
 	ensured, err := repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationEnsure, req)

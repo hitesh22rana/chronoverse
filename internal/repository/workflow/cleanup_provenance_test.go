@@ -19,7 +19,14 @@ type cleanupProvenanceJobs struct {
 	lookup func(*jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error)
 }
 
-func (j *cleanupProvenanceJobs) GetContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *cleanupProvenanceJobs) GetContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return j.lookup(req)
 }
 

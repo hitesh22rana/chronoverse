@@ -242,7 +242,13 @@ func TestGetWorkflowCacheWriteOutcomesAreLogged(t *testing.T) {
 	}
 }
 
-func assertBoundaryCacheOutcome(ctx context.Context, t *testing.T, messages <-chan string, wantMessage string, released <-chan (<-chan struct{})) {
+func assertBoundaryCacheOutcome(
+	ctx context.Context,
+	t *testing.T,
+	messages <-chan string,
+	wantMessage string,
+	released <-chan (<-chan struct{}),
+) {
 	t.Helper()
 	select {
 	case message := <-messages:

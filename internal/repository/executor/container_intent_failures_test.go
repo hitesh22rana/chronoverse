@@ -37,7 +37,14 @@ type intentFaultJobs struct {
 	reports []*jobspb.ContainerIntentCommand
 }
 
-func (j *intentFaultJobs) EnsureContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *intentFaultJobs) EnsureContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	result := fakeIntent(req)
 	switch j.fault {
 	case "missing intent":
@@ -52,7 +59,14 @@ func (j *intentFaultJobs) EnsureContainerIntent(_ context.Context, req *jobspb.C
 	return result, nil
 }
 
-func (j *intentFaultJobs) ReserveContainerCreate(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *intentFaultJobs) ReserveContainerCreate(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	if j.fault == "create grant error" {
 		return nil, status.Error(codes.Unavailable, "grant reply lost")
 	}
@@ -61,13 +75,27 @@ func (j *intentFaultJobs) ReserveContainerCreate(_ context.Context, req *jobspb.
 	return result, nil
 }
 
-func (j *intentFaultJobs) ReserveContainerStart(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *intentFaultJobs) ReserveContainerStart(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	result := fakeIntent(req)
 	result.Granted = j.fault != "start grant consumed"
 	return result, nil
 }
 
-func (j *intentFaultJobs) CloseContainerIntent(_ context.Context, req *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *intentFaultJobs) CloseContainerIntent(
+	_ context.Context,
+	req *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	j.reports = append(j.reports, req)
 	return fakeIntent(req), nil
 }
@@ -106,7 +134,15 @@ func (c *intentFaultRuntime) Create(ctx context.Context, req containerpkg.Create
 	return id, err
 }
 
-func (c *intentFaultRuntime) Start(ctx context.Context, d time.Duration, id string) (logs <-chan *jobsmodel.JobLog, errs <-chan error, err error) {
+func (c *intentFaultRuntime) Start(
+	ctx context.Context,
+	d time.Duration,
+	id string,
+) (
+	logs <-chan *jobsmodel.JobLog,
+	errs <-chan error,
+	err error,
+) {
 	c.startCalls++
 	if c.startErr != nil {
 		return nil, nil, c.startErr

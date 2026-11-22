@@ -14,9 +14,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/executor"
 	"github.com/hitesh22rana/chronoverse/internal/config"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -28,6 +25,8 @@ import (
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	executorrepo "github.com/hitesh22rana/chronoverse/internal/repository/executor"
 	executorsvc "github.com/hitesh22rana/chronoverse/internal/service/executor"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (

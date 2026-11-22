@@ -77,12 +77,14 @@ func (r *Repository) Heartbeat(ctx context.Context) error {
 	// changes through commit, and current migrations add no trigger or RLS
 	// policy that could suppress the UPDATE, so it always affects one row.
 	query := `
-        UPDATE runtime_nodes
-        SET status = 'READY',
-            last_heartbeat_at = now() AT TIME ZONE 'utc',
-            updated_at = now() AT TIME ZONE 'utc'
-        WHERE id = $1;
-    `
+		UPDATE runtime_nodes
+		SET
+			status = 'READY',
+			last_heartbeat_at = now() AT TIME ZONE 'utc',
+			updated_at = now() AT TIME ZONE 'utc'
+		WHERE
+			id = $1;
+	`
 	_, err = tx.Exec(ctx, query, r.cfg.ID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to heartbeat runtime node: %v", err)
@@ -157,41 +159,48 @@ func staleRuntimeHeartbeatAt() time.Time {
 
 func upsertRuntimeNodeQuery() string {
 	return `
-        INSERT INTO runtime_nodes (
-            id,
-            node_name,
-            docker_endpoint,
-            status,
-            last_heartbeat_at,
-            max_concurrency,
-            running_jobs,
-            metadata,
-            created_at,
-            updated_at
-        ) VALUES (
-            $1,
-            $2,
-            $3,
-            $4::runtime_node_status,
-            CASE WHEN $7 THEN now() AT TIME ZONE 'utc' ELSE $8::timestamp END,
-            $5,
-            0,
-            $6,
-            now() AT TIME ZONE 'utc',
-            now() AT TIME ZONE 'utc'
-        )
-        ON CONFLICT (id) DO UPDATE
-        SET node_name = EXCLUDED.node_name,
-            docker_endpoint = EXCLUDED.docker_endpoint,
-            status = EXCLUDED.status,
-            last_heartbeat_at = CASE
-                WHEN $7 THEN EXCLUDED.last_heartbeat_at
-                ELSE runtime_nodes.last_heartbeat_at
-            END,
-            max_concurrency = EXCLUDED.max_concurrency,
-            metadata = EXCLUDED.metadata,
-            updated_at = EXCLUDED.updated_at;
-    `
+		INSERT INTO
+			runtime_nodes (
+				id,
+				node_name,
+				docker_endpoint,
+				status,
+				last_heartbeat_at,
+				max_concurrency,
+				running_jobs,
+				metadata,
+				created_at,
+				updated_at
+			)
+		VALUES
+			(
+				$1,
+				$2,
+				$3,
+				$4::runtime_node_status,
+				CASE
+					WHEN $7 THEN now() AT TIME ZONE 'utc'
+					ELSE $8::timestamp
+				END,
+				$5,
+				0,
+				$6,
+				now() AT TIME ZONE 'utc',
+				now() AT TIME ZONE 'utc'
+			)
+		ON CONFLICT (id) DO UPDATE
+		SET
+			node_name = EXCLUDED.node_name,
+			docker_endpoint = EXCLUDED.docker_endpoint,
+			status = EXCLUDED.status,
+			last_heartbeat_at = CASE
+				WHEN $7 THEN EXCLUDED.last_heartbeat_at
+				ELSE runtime_nodes.last_heartbeat_at
+			END,
+			max_concurrency = EXCLUDED.max_concurrency,
+			metadata = EXCLUDED.metadata,
+			updated_at = EXCLUDED.updated_at;
+	`
 }
 
 func (r *Repository) lockRuntimeNodeTx(ctx context.Context, tx pgx.Tx) error {
@@ -201,11 +210,14 @@ func (r *Repository) lockRuntimeNodeTx(ctx context.Context, tx pgx.Tx) error {
 
 func lockRuntimeNodeQuery() string {
 	return `
-        SELECT id
-        FROM runtime_nodes
-        WHERE id = $1
-        FOR UPDATE;
-    `
+		SELECT
+			id
+		FROM
+			runtime_nodes
+		WHERE
+			id = $1
+		FOR UPDATE;
+	`
 }
 
 func (r *Repository) reconcileRunningJobsTx(ctx context.Context, tx pgx.Tx) error {

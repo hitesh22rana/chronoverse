@@ -17,9 +17,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -31,6 +28,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
@@ -439,7 +438,14 @@ func (r *Repository) newExecutionContext(parent context.Context) context.Context
 }
 
 // startLeaseRenewal joins the supervisor before releasing execution capacity.
-func (r *Repository) startLeaseRenewal(parentCtx context.Context, claim *jobspb.ClaimJobResponse, executionPath string) (workCtx context.Context, stop func()) {
+func (r *Repository) startLeaseRenewal(
+	parentCtx context.Context,
+	claim *jobspb.ClaimJobResponse,
+	executionPath string,
+) (
+	workCtx context.Context,
+	stop func(),
+) {
 	ctx, cancel := context.WithCancelCause(parentCtx)
 	stopped := make(chan struct{})
 	go func() {

@@ -19,12 +19,11 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
 const (

@@ -23,8 +23,18 @@ func TestIntegrationRelayRepublishesUnfinishedCleanupWithoutResettingBudget(t *t
 	past := time.Now().Add(-10 * time.Minute)
 	for _, state := range []string{"READY", "RETRY", "PROCESSING", "QUARANTINED", "COMPLETED"} {
 		seedOutboxRow(t.Context(), t, pg, topic, state, statusPublished, &past)
-		if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET kafka_key=event_key,cleanup_replay_due_at=published_at,
- cleanup_state=$2,cleanup_attempts=2,cleanup_generation=4 WHERE topic=$1 AND event_key=$2`, topic, state); err != nil {
+		if _, err := pg.Exec(t.Context(), `
+			UPDATE outbox_events
+			SET
+				kafka_key = event_key,
+				cleanup_replay_due_at = published_at,
+				cleanup_state = $2,
+				cleanup_attempts = 2,
+				cleanup_generation = 4
+			WHERE
+				topic = $1
+				AND event_key = $2
+		`, topic, state); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -46,7 +56,18 @@ func TestIntegrationRelayRepublishesUnfinishedCleanupWithoutResettingBudget(t *t
 		var attempts, publicationAttempts int
 		var generation int64
 		var published time.Time
-		if err := pg.QueryRow(t.Context(), `SELECT cleanup_attempts,cleanup_generation,attempts,published_at FROM outbox_events WHERE topic=$1 AND event_key=$2`,
+		if err := pg.QueryRow(t.Context(), `
+			SELECT
+				cleanup_attempts,
+				cleanup_generation,
+				attempts,
+				published_at
+			FROM
+				outbox_events
+			WHERE
+				topic = $1
+				AND event_key = $2
+		`,
 			topic, state).Scan(&attempts, &generation, &publicationAttempts, &published); err != nil {
 			t.Fatal(err)
 		}
@@ -65,11 +86,29 @@ func seedDeferredCleanup(t *testing.T, topic string, past time.Time) {
 	// An active or delayed attempt must not be redriven.
 	for _, name := range []string{"leased", "backoff", "recent"} {
 		seedOutboxRow(t.Context(), t, pg, topic, name, statusPublished, &past)
-		if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET kafka_key=event_key,cleanup_state='PROCESSING',
- cleanup_lease_until=CASE WHEN event_key='leased' THEN now() AT TIME ZONE 'utc'+interval '1 minute' END,
- cleanup_next_attempt_at=CASE WHEN event_key='backoff' THEN now() AT TIME ZONE 'utc'+interval '1 minute' END,
- cleanup_replay_due_at=CASE WHEN event_key='recent' THEN now() AT TIME ZONE 'utc'+interval '1 hour' ELSE published_at END,
- published_at=CASE WHEN event_key='recent' THEN now() AT TIME ZONE 'utc' ELSE published_at END WHERE topic=$1 AND event_key=$2`, topic, name); err != nil {
+		if _, err := pg.Exec(t.Context(), `
+			UPDATE outbox_events
+			SET
+				kafka_key = event_key,
+				cleanup_state = 'PROCESSING',
+				cleanup_lease_until = CASE
+					WHEN event_key = 'leased' THEN now() AT TIME ZONE 'utc' + interval '1 minute'
+				END,
+				cleanup_next_attempt_at = CASE
+					WHEN event_key = 'backoff' THEN now() AT TIME ZONE 'utc' + interval '1 minute'
+				END,
+				cleanup_replay_due_at = CASE
+					WHEN event_key = 'recent' THEN now() AT TIME ZONE 'utc' + interval '1 hour'
+					ELSE published_at
+				END,
+				published_at = CASE
+					WHEN event_key = 'recent' THEN now() AT TIME ZONE 'utc'
+					ELSE published_at
+				END
+			WHERE
+				topic = $1
+				AND event_key = $2
+		`, topic, name); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -86,8 +125,36 @@ func seedReplayLane(t *testing.T, prefix string, count int, replay bool) {
 	t.Helper()
 	pg := testkit.Postgres(t)
 	for i := 0; i < count; i++ {
-		_, err := pg.Exec(t.Context(), `INSERT INTO outbox_events(topic,kafka_key,event_key,payload,created_at,cleanup_state,cleanup_replay_round)
- VALUES('workflows',$1,$1,'{}',CASE WHEN $2 THEN now()-interval '1 day' ELSE now() END,CASE WHEN $2 THEN 'READY' END,CASE WHEN $2 THEN 1 ELSE 0 END)`, fmt.Sprintf("%s-%04d", prefix, i), replay)
+		_, err := pg.Exec(t.Context(), `
+			INSERT INTO
+				outbox_events (
+					topic,
+					kafka_key,
+					event_key,
+					payload,
+					created_at,
+					cleanup_state,
+					cleanup_replay_round
+				)
+			VALUES
+				(
+					'workflows',
+					$1,
+					$1,
+					'{}',
+					CASE
+						WHEN $2 THEN now() - interval '1 day'
+						ELSE now()
+					END,
+					CASE
+						WHEN $2 THEN 'READY'
+					END,
+					CASE
+						WHEN $2 THEN 1
+						ELSE 0
+					END
+				)
+		`, fmt.Sprintf("%s-%04d", prefix, i), replay)
 		require.NoError(t, err)
 	}
 }
@@ -152,8 +219,21 @@ func TestIntegrationReplayActualPublicationProgress(t *testing.T) {
 		return remaining == 0
 	})
 	var initial, replay int
-	require.NoError(t, pg.QueryRow(t.Context(), `SELECT count(*) FILTER(WHERE cleanup_replay_round=0),
- count(*) FILTER(WHERE cleanup_replay_round>0) FROM outbox_events WHERE status='PUBLISHED'`).Scan(&initial, &replay))
+	require.NoError(t, pg.QueryRow(t.Context(), `
+		SELECT
+			count(*) FILTER (
+				WHERE
+					cleanup_replay_round = 0
+			),
+			count(*) FILTER (
+				WHERE
+					cleanup_replay_round > 0
+			)
+		FROM
+			outbox_events
+		WHERE
+			status = 'PUBLISHED'
+	`).Scan(&initial, &replay))
 	require.Equal(t, 2, initial)
 	require.Equal(t, 2, replay)
 }
@@ -180,14 +260,29 @@ func TestIntegrationReplayPacingSurvivesRepositoryRestart(t *testing.T) {
 		var delay float64
 		var attempts int
 		var generation int64
-		require.NoError(t, pg.QueryRow(t.Context(), `SELECT EXTRACT(EPOCH FROM(cleanup_replay_due_at-published_at)),
- cleanup_attempts,cleanup_generation FROM outbox_events`).Scan(&delay, &attempts, &generation))
+		require.NoError(t, pg.QueryRow(t.Context(), `
+			SELECT
+				EXTRACT(
+					EPOCH
+					FROM
+						(cleanup_replay_due_at - published_at)
+				),
+				cleanup_attempts,
+				cleanup_generation
+			FROM
+				outbox_events
+		`).Scan(&delay, &attempts, &generation))
 		want := time.Millisecond * time.Duration(1<<round)
 		require.InDelta(t, want.Seconds(), delay, 0.000001)
 		require.Equal(t, 2, attempts)
 		require.Equal(t, int64(4), generation)
 		// Use a generous future deadline to avoid a 1ms assertion depending on host speed.
-		_, err = pg.Exec(t.Context(), `UPDATE outbox_events SET published_at=now()-interval '1 day',cleanup_replay_due_at=now()+interval '1 hour'`)
+		_, err = pg.Exec(t.Context(), `
+			UPDATE outbox_events
+			SET
+				published_at = now() - interval '1 day',
+				cleanup_replay_due_at = now() + interval '1 hour'
+		`)
 		require.NoError(t, err)
 		require.NoError(t, repo.requeueUnfinishedCleanup(t.Context(), "workflows"))
 		var state string
@@ -205,7 +300,16 @@ func TestIntegrationReplayPacingSurvivesRepositoryRestart(t *testing.T) {
 	require.Equal(t, 63, events[0].ReplayRound)
 	require.NoError(t, repo.markPublished(t.Context(), events[0]))
 	var seconds float64
-	require.NoError(t, pg.QueryRow(t.Context(), `SELECT EXTRACT(EPOCH FROM(cleanup_replay_due_at-published_at)) FROM outbox_events`).Scan(&seconds))
+	require.NoError(t, pg.QueryRow(t.Context(), `
+		SELECT
+			EXTRACT(
+				EPOCH
+				FROM
+					(cleanup_replay_due_at - published_at)
+			)
+		FROM
+			outbox_events
+	`).Scan(&seconds))
 	require.Equal(t, 3600.0, seconds)
 }
 
@@ -251,8 +355,17 @@ func TestIntegrationReplayPreservesCrossLaneKeyBarriers(t *testing.T) {
 				pg := testkit.Postgres(t)
 				seedReplayLane(t, "earlier", 1, earlierReplay)
 				seedReplayLane(t, "later", 1, !earlierReplay)
-				_, err := pg.Exec(t.Context(), `UPDATE outbox_events SET kafka_key='same',created_at=now()-interval '2 days',
- status=$1::OUTBOX_STATUS,next_attempt_at=now()+interval '1 hour',locked_at=now() WHERE event_key='earlier-0000'`, state)
+				_, err := pg.Exec(t.Context(), `
+					UPDATE outbox_events
+					SET
+						kafka_key = 'same',
+						created_at = now() - interval '2 days',
+						status = $1::OUTBOX_STATUS,
+						next_attempt_at = now() + interval '1 hour',
+						locked_at = now()
+					WHERE
+						event_key = 'earlier-0000'
+				`, state)
 				require.NoError(t, err)
 				_, err = pg.Exec(t.Context(), `UPDATE outbox_events SET kafka_key='same' WHERE event_key='later-0000'`)
 				require.NoError(t, err)
@@ -290,7 +403,14 @@ func TestIntegrationReplayExpiredClaimStaysInWaveAndFencesPacing(t *testing.T) {
 	var state string
 	var round int
 	var due bool
-	require.NoError(t, pg.QueryRow(t.Context(), `SELECT status,cleanup_replay_round,cleanup_replay_due_at IS NOT NULL FROM outbox_events`).Scan(&state, &round, &due))
+	require.NoError(t, pg.QueryRow(t.Context(), `
+		SELECT
+			status,
+			cleanup_replay_round,
+			cleanup_replay_due_at IS NOT NULL
+		FROM
+			outbox_events
+	`).Scan(&state, &round, &due))
 	require.Equal(t, "DEAD", state)
 	require.Equal(t, 1, round)
 	require.False(t, due)
@@ -328,9 +448,14 @@ func TestIntegrationReplayAllocationFaultsRollbackTurnAndClaims(t *testing.T) {
 				if fault == "advance turn" {
 					condition = "TRUE"
 				}
-				_, err := pg.Exec(t.Context(), fmt.Sprintf(`CREATE FUNCTION cv017_allocation_fault() RETURNS TRIGGER LANGUAGE plpgsql AS $$
- BEGIN IF %s THEN RAISE EXCEPTION 'allocation fault'; END IF; RETURN NEW; END $$;
- CREATE TRIGGER cv017_allocation_fault BEFORE UPDATE ON %s FOR EACH ROW EXECUTE FUNCTION cv017_allocation_fault()`, condition, table))
+				_, err := pg.Exec(t.Context(), fmt.Sprintf(`
+					CREATE FUNCTION cv017_allocation_fault () RETURNS TRIGGER LANGUAGE plpgsql AS $$
+					BEGIN IF %s THEN RAISE EXCEPTION 'allocation fault'; END IF; RETURN NEW; END $$;
+
+					CREATE TRIGGER cv017_allocation_fault
+					BEFORE UPDATE ON %s FOR EACH ROW
+					EXECUTE FUNCTION cv017_allocation_fault ()
+				`, condition, table))
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -369,7 +494,13 @@ func TestIntegrationReplayPartialPublicationRotatesFirstSend(t *testing.T) {
 	cancel()
 	// A context expiring after the first actual send leaves unacknowledged claims recoverable.
 	require.Error(t, repo.publishEvent(interrupted, events[1], zap.NewNop()))
-	_, err = pg.Exec(t.Context(), `UPDATE outbox_events SET locked_at=now()-interval '1 minute' WHERE status='PROCESSING'`)
+	_, err = pg.Exec(t.Context(), `
+		UPDATE outbox_events
+		SET
+			locked_at = now() - interval '1 minute'
+		WHERE
+			status = 'PROCESSING'
+	`)
 	require.NoError(t, err)
 	replacement := New(&Config{BatchSize: 4}, pg, testkit.Kafka(t))
 	events, err = replacement.claim(t.Context(), "workflows")

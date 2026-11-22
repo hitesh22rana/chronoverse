@@ -21,8 +21,6 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	authpkg "github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
@@ -30,6 +28,7 @@ import (
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	otelpkg "github.com/hitesh22rana/chronoverse/internal/pkg/otel"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 // internalAPIs contains the list of internal APIs that require admin role.
@@ -332,7 +331,13 @@ func (j *Jobs) ClaimJob(ctx context.Context, req *jobspb.ClaimJobRequest) (res *
 }
 
 // GetReadyRuntimeNode returns a fresh READY runtime node for Docker data plane work.
-func (j *Jobs) GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRuntimeNodeRequest) (res *jobspb.GetReadyRuntimeNodeResponse, err error) {
+func (j *Jobs) GetReadyRuntimeNode(
+	ctx context.Context,
+	req *jobspb.GetReadyRuntimeNodeRequest,
+) (
+	res *jobspb.GetReadyRuntimeNodeResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(ctx, "App.GetReadyRuntimeNode")
 	defer func() {
 		if err != nil {
@@ -349,7 +354,13 @@ func (j *Jobs) GetReadyRuntimeNode(ctx context.Context, req *jobspb.GetReadyRunt
 }
 
 // ListReadyRuntimeNodes returns every fresh READY runtime node for Docker data plane work.
-func (j *Jobs) ListReadyRuntimeNodes(ctx context.Context, req *jobspb.ListReadyRuntimeNodesRequest) (res *jobspb.ListReadyRuntimeNodesResponse, err error) {
+func (j *Jobs) ListReadyRuntimeNodes(
+	ctx context.Context,
+	req *jobspb.ListReadyRuntimeNodesRequest,
+) (
+	res *jobspb.ListReadyRuntimeNodesResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(ctx, "App.ListReadyRuntimeNodes")
 	defer func() {
 		if err != nil {
@@ -388,7 +399,13 @@ func (j *Jobs) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseReque
 }
 
 // AttachJobContainer attaches a container ID to a running claimed job.
-func (j *Jobs) AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest) (res *jobspb.AttachJobContainerResponse, err error) {
+func (j *Jobs) AttachJobContainer(
+	ctx context.Context,
+	req *jobspb.AttachJobContainerRequest,
+) (
+	res *jobspb.AttachJobContainerResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(
 		ctx,
 		"App.AttachJobContainer",
@@ -466,7 +483,13 @@ func (j *Jobs) FailJob(ctx context.Context, req *jobspb.FailJobRequest) (res *jo
 }
 
 // CancelClaimedJob marks a running claimed job as canceled.
-func (j *Jobs) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest) (res *jobspb.CancelClaimedJobResponse, err error) {
+func (j *Jobs) CancelClaimedJob(
+	ctx context.Context,
+	req *jobspb.CancelClaimedJobRequest,
+) (
+	res *jobspb.CancelClaimedJobResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(ctx, "App.CancelClaimedJob", trace.WithAttributes(attribute.String("id", req.GetId())))
 	defer func() {
 		if err != nil {
@@ -487,7 +510,13 @@ func (j *Jobs) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJo
 }
 
 // ReleaseJobForRetry releases a running claimed job back to pending.
-func (j *Jobs) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest) (res *jobspb.ReleaseJobForRetryResponse, err error) {
+func (j *Jobs) ReleaseJobForRetry(
+	ctx context.Context,
+	req *jobspb.ReleaseJobForRetryRequest,
+) (
+	res *jobspb.ReleaseJobForRetryResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(
 		ctx,
 		"App.ReleaseJobForRetry",
@@ -516,7 +545,13 @@ func (j *Jobs) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobFor
 }
 
 // RecoverExpiredJobLeases returns expired running job leases for recovery.
-func (j *Jobs) RecoverExpiredJobLeases(ctx context.Context, req *jobspb.RecoverExpiredJobLeasesRequest) (res *jobspb.RecoverExpiredJobLeasesResponse, err error) {
+func (j *Jobs) RecoverExpiredJobLeases(
+	ctx context.Context,
+	req *jobspb.RecoverExpiredJobLeasesRequest,
+) (
+	res *jobspb.RecoverExpiredJobLeasesResponse,
+	err error,
+) {
 	ctx, span := j.tp.Start(ctx, "App.RecoverExpiredJobLeases")
 	defer func() {
 		if err != nil {

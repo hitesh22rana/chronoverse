@@ -168,7 +168,15 @@ func TestIntegrationContainerReservationSerializesWithTermination(t *testing.T) 
 		t.Fatal("closure/reservation failed to join")
 	}
 	var closed, reserved bool
-	err = pg.QueryRow(ctx, "SELECT closed_at IS NOT NULL,create_reserved_at IS NOT NULL FROM container_creation_intents WHERE id=$1", request.IntentID).Scan(&closed, &reserved)
+	err = pg.QueryRow(ctx, `
+		SELECT
+			closed_at IS NOT NULL,
+			create_reserved_at IS NOT NULL
+		FROM
+			container_creation_intents
+		WHERE
+			id = $1
+	`, request.IntentID).Scan(&closed, &reserved)
 	if err != nil || !closed || reserved {
 		t.Fatalf("closure facts %v/%v %v", closed, reserved, err)
 	}
@@ -303,10 +311,17 @@ func TestIntegrationDiscoveryInterruptionPreservesFailureBudget(t *testing.T) {
 	}
 	req.Token = uuid.NewString()
 	req.Generation = ensured.Intent.Generation
-	if _, err = pg.Exec(ctx, `UPDATE container_creation_intents
- SET inspection_token=$2, inspection_until=(clock_timestamp() AT TIME ZONE 'utc')+interval '45 seconds',
- inspection_errors=2, inspection_error_code='Unavailable', inspection_error_message='original inspection failure'
- WHERE id=$1`, req.IntentID, req.Token); err != nil {
+	if _, err = pg.Exec(ctx, `
+		UPDATE container_creation_intents
+		SET
+			inspection_token = $2,
+			inspection_until = (clock_timestamp() AT TIME ZONE 'utc') + interval '45 seconds',
+			inspection_errors = 2,
+			inspection_error_code = 'Unavailable',
+			inspection_error_message = 'original inspection failure'
+		WHERE
+			id = $1
+	`, req.IntentID, req.Token); err != nil {
 		t.Fatal(err)
 	}
 	req.Outcome = "INTERRUPTED"
@@ -356,9 +371,16 @@ func TestIntegrationDeletedWorkflowRetainsLateContainerObligation(t *testing.T) 
 		t.Fatalf("late observation regained authority: %+v", observed.Intent)
 	}
 	var route, instance, intent string
-	err = pg.QueryRow(ctx, `SELECT payload->'ContainerCleanup'->>'RuntimeEndpoint',
- payload->'ContainerCleanup'->>'RuntimeInstance', payload->'ContainerCleanup'->>'IntentID'
- FROM outbox_events WHERE event_key=$1`, cleanupEventKey(job, request.ContainerID, request.RuntimeInstance)).Scan(&route, &instance, &intent)
+	err = pg.QueryRow(ctx, `
+		SELECT
+			payload -> 'ContainerCleanup' ->> 'RuntimeEndpoint',
+			payload -> 'ContainerCleanup' ->> 'RuntimeInstance',
+			payload -> 'ContainerCleanup' ->> 'IntentID'
+		FROM
+			outbox_events
+		WHERE
+			event_key = $1
+	`, cleanupEventKey(job, request.ContainerID, request.RuntimeInstance)).Scan(&route, &instance, &intent)
 	if err != nil || route != ensured.Intent.RuntimeEndpoint || instance != request.RuntimeInstance || intent != request.IntentID {
 		t.Fatalf("late cleanup lost provenance: %q %q %q %v", route, instance, intent, err)
 	}
@@ -500,9 +522,16 @@ func TestIntegrationContainerDiscoveryQuarantineAndAuditedRedrive(t *testing.T) 
 	var actor, reason string
 	var oldGeneration, newGeneration int64
 	if err = pg.QueryRow(ctx, `
- SELECT actor,reason,expected_generation,generation
- FROM container_intent_redrives WHERE intent_id=$1
-`, req.IntentID).Scan(&actor, &reason, &oldGeneration, &newGeneration); err != nil {
+		SELECT
+			actor,
+			reason,
+			expected_generation,
+			generation
+		FROM
+			container_intent_redrives
+		WHERE
+			intent_id = $1
+	`, req.IntentID).Scan(&actor, &reason, &oldGeneration, &newGeneration); err != nil {
 		t.Fatal(err)
 	}
 	if actor != redrive.Actor || reason != redrive.Reason || oldGeneration != redrive.Generation || newGeneration != repaired.Intent.Generation {
@@ -535,7 +564,14 @@ func TestIntegrationDiscoveryLanesAlternateAndBorrow(t *testing.T) {
 		fixture := seedRetainedCleanupOn(t, repo.pg)
 		urgent := n < 3
 		lanes[fixture.IntentID] = urgent
-		if _, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc', inspection_urgent=$2 WHERE id=$1`, fixture.IntentID, urgent); err != nil {
+		if _, err := repo.pg.Exec(ctx, `
+			UPDATE container_creation_intents
+			SET
+				closed_at = now() AT TIME ZONE 'utc',
+				inspection_urgent = $2
+			WHERE
+				id = $1
+		`, fixture.IntentID, urgent); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -593,14 +629,28 @@ func TestIntegrationDiscoveryMarkerTracksNewEvidence(t *testing.T) {
 		t.Helper()
 		var urgent bool
 		var due string
-		if err := repo.pg.QueryRow(ctx, `SELECT inspection_urgent,next_inspection_at::text FROM container_creation_intents WHERE id=$1`, command.IntentID).Scan(&urgent, &due); err != nil {
+		if err := repo.pg.QueryRow(ctx, `
+			SELECT
+				inspection_urgent,
+				next_inspection_at::text
+			FROM
+				container_creation_intents
+			WHERE
+				id = $1
+		`, command.IntentID).Scan(&urgent, &due); err != nil {
 			t.Fatal(err)
 		}
 		return urgent, due
 	}
 	report := func(outcome string) {
 		t.Helper()
-		if _, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET next_inspection_at='1970-01-01' WHERE id=$1`, command.IntentID); err != nil {
+		if _, err := repo.pg.Exec(ctx, `
+			UPDATE container_creation_intents
+			SET
+				next_inspection_at = '1970-01-01'
+			WHERE
+				id = $1
+		`, command.IntentID); err != nil {
 			t.Fatal(err)
 		}
 		claimed, err := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
@@ -681,7 +731,13 @@ func TestIntegrationDiscoveryClosureClocksAndDuplicates(t *testing.T) {
 			repo := isolatedContainerIntentRepository(t)
 			command := seedIntentFailureFixture(t, repo)
 			ctx := t.Context()
-			_, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET next_inspection_at='2000-01-01' WHERE id=$1`, command.IntentID)
+			_, err := repo.pg.Exec(ctx, `
+				UPDATE container_creation_intents
+				SET
+					next_inspection_at = '2000-01-01'
+				WHERE
+					id = $1
+			`, command.IntentID)
 			require.NoError(t, err)
 			closeIntent := func() {
 				t.Helper()
@@ -691,21 +747,56 @@ func TestIntegrationDiscoveryClosureClocksAndDuplicates(t *testing.T) {
 				case "job":
 					_, err = repo.pg.Exec(ctx, `SELECT close_job_container_intents($1)`, command.JobID)
 				case "workflow":
-					_, err = repo.pg.Exec(ctx, `UPDATE workflows SET terminated_at=now() AT TIME ZONE 'utc' WHERE id=(SELECT workflow_id FROM container_creation_intents WHERE id=$1)`, command.IntentID)
+					_, err = repo.pg.Exec(ctx, `
+						UPDATE workflows
+						SET
+							terminated_at = now() AT TIME ZONE 'utc'
+						WHERE
+							id = (
+								SELECT
+									workflow_id
+								FROM
+									container_creation_intents
+								WHERE
+									id = $1
+							)
+					`, command.IntentID)
 				}
 				require.NoError(t, err)
 			}
 			closeIntent()
 			var recent, urgent bool
 			require.NoError(t, repo.pg.QueryRow(ctx, `
-SELECT next_inspection_at>now() AT TIME ZONE 'utc'-interval '1 minute',inspection_urgent FROM container_creation_intents WHERE id=$1`,
+				SELECT
+					next_inspection_at > now() AT TIME ZONE 'utc' - interval '1 minute',
+					inspection_urgent
+				FROM
+					container_creation_intents
+				WHERE
+					id = $1
+			`,
 				command.IntentID).Scan(&recent, &urgent))
 			require.True(t, recent, "first closure uses eligibility time, not creation time")
 			require.True(t, urgent)
-			_, err = repo.pg.Exec(ctx, `UPDATE container_creation_intents SET inspection_urgent=FALSE,next_inspection_at='2099-01-01' WHERE id=$1`, command.IntentID)
+			_, err = repo.pg.Exec(ctx, `
+				UPDATE container_creation_intents
+				SET
+					inspection_urgent = FALSE,
+					next_inspection_at = '2099-01-01'
+				WHERE
+					id = $1
+			`, command.IntentID)
 			require.NoError(t, err)
 			closeIntent()
-			require.NoError(t, repo.pg.QueryRow(ctx, `SELECT next_inspection_at='2099-01-01',inspection_urgent FROM container_creation_intents WHERE id=$1`, command.IntentID).Scan(&recent, &urgent))
+			require.NoError(t, repo.pg.QueryRow(ctx, `
+				SELECT
+					next_inspection_at = '2099-01-01',
+					inspection_urgent
+				FROM
+					container_creation_intents
+				WHERE
+					id = $1
+			`, command.IntentID).Scan(&recent, &urgent))
 			require.True(t, recent, "duplicate closure preserves rearm")
 			require.False(t, urgent, "duplicate closure preserves surveillance")
 		})
@@ -717,7 +808,14 @@ func TestIntegrationDiscoveryReplicasAndLockedLane(t *testing.T) {
 	ctx := t.Context()
 	fixtures := []retainedCleanupFixture{seedRetainedCleanupOn(t, repo.pg), seedRetainedCleanupOn(t, repo.pg)}
 	for n, fixture := range fixtures {
-		_, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc',inspection_urgent=$2 WHERE id=$1`, fixture.IntentID, n == 0)
+		_, err := repo.pg.Exec(ctx, `
+			UPDATE container_creation_intents
+			SET
+				closed_at = now() AT TIME ZONE 'utc',
+				inspection_urgent = $2
+			WHERE
+				id = $1
+		`, fixture.IntentID, n == 0)
 		require.NoError(t, err)
 	}
 	tx, err := repo.pg.BeginTx(ctx)
@@ -765,7 +863,13 @@ func TestIntegrationDiscoveryReportAndObservationSerialize(t *testing.T) {
 			monitor := testkit.Postgres(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			_, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+			_, err := repo.pg.Exec(ctx, `
+				UPDATE container_creation_intents
+				SET
+					closed_at = now() AT TIME ZONE 'utc'
+				WHERE
+					id = $1
+			`, fixture.IntentID)
 			require.NoError(t, err)
 			require.NoError(t, repo.RecordContainerCleanupReceipt(ctx, jobsmodel.CleanupIdentity{
 				JobID: fixture.JobID, ContainerID: fixture.ContainerID, RuntimeInstance: fixture.Instance, IntentID: fixture.IntentID,
@@ -793,7 +897,17 @@ func TestIntegrationDiscoveryReportAndObservationSerialize(t *testing.T) {
 			// Observe an actual PostgreSQL lock wait before releasing the first writer.
 			require.Eventually(t, func() bool {
 				var waiting bool
-				readErr := monitor.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))`, pid).Scan(&waiting)
+				readErr := monitor.QueryRow(ctx, `
+					SELECT
+						EXISTS (
+							SELECT
+								1
+							FROM
+								pg_stat_activity
+							WHERE
+								$1 = ANY (pg_blocking_pids(pid))
+						)
+				`, pid).Scan(&waiting)
 				return readErr == nil && waiting
 			}, 5*time.Second, 5*time.Millisecond)
 			require.NoError(t, tx.Commit(ctx))
@@ -809,10 +923,36 @@ func TestIntegrationDiscoveryDowngradeRequiresEveryPhysicalReceipt(t *testing.T)
 	repo := isolatedContainerIntentRepository(t)
 	fixture := seedRetainedCleanupOn(t, repo.pg)
 	ctx := t.Context()
-	_, err := repo.pg.Exec(ctx, `UPDATE container_creation_intents SET closed_at=now() AT TIME ZONE 'utc' WHERE id=$1`, fixture.IntentID)
+	_, err := repo.pg.Exec(ctx, `
+		UPDATE container_creation_intents
+		SET
+			closed_at = now() AT TIME ZONE 'utc'
+		WHERE
+			id = $1
+	`, fixture.IntentID)
 	require.NoError(t, err)
-	_, err = repo.pg.Exec(ctx, `INSERT INTO runtime_capacity_holds(intent_id,job_id,attempt,container_id,runtime_node_id,runtime_instance)
- SELECT id,job_id,attempt,$2,runtime_node_id,runtime_instance FROM container_creation_intents WHERE id=$1`, fixture.IntentID, fixture.ContainerID)
+	_, err = repo.pg.Exec(ctx, `
+		INSERT INTO
+			runtime_capacity_holds (
+				intent_id,
+				job_id,
+				attempt,
+				container_id,
+				runtime_node_id,
+				runtime_instance
+			)
+		SELECT
+			id,
+			job_id,
+			attempt,
+			$2,
+			runtime_node_id,
+			runtime_instance
+		FROM
+			container_creation_intents
+		WHERE
+			id = $1
+	`, fixture.IntentID, fixture.ContainerID)
 	require.NoError(t, err)
 	extra := strings.Repeat("d", 64)
 	_, err = repo.UpdateContainerIntent(ctx, jobsmodel.ContainerIntentOperationObserve, &jobsmodel.ContainerIntentCommand{
@@ -825,7 +965,13 @@ func TestIntegrationDiscoveryDowngradeRequiresEveryPhysicalReceipt(t *testing.T)
 				JobID: fixture.JobID, ContainerID: container, RuntimeInstance: fixture.Instance, IntentID: fixture.IntentID,
 			}))
 		}
-		_, err = repo.pg.Exec(ctx, `UPDATE container_creation_intents SET next_inspection_at='1970-01-01' WHERE id=$1`, fixture.IntentID)
+		_, err = repo.pg.Exec(ctx, `
+			UPDATE container_creation_intents
+			SET
+				next_inspection_at = '1970-01-01'
+			WHERE
+				id = $1
+		`, fixture.IntentID)
 		require.NoError(t, err)
 		claimed, claimErr := repo.ListContainerIntents(ctx, &jobsmodel.ContainerIntentCommand{BatchSize: 1}, true)
 		require.NoError(t, claimErr)

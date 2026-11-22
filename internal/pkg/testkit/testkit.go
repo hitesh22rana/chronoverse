@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -428,4 +429,14 @@ func (s *suite) terminate(ctx context.Context) {
 		s.kfk.Close()
 		s.kfk = nil
 	}
+}
+
+// NormalizeSQL collapses whitespace and parenthesis spacing for test query
+// matching. It is not a SQL parser: use it only for known query shapes, never
+// semantic equivalence checks or comparisons of quoted payload values.
+func NormalizeSQL(query string) string {
+	query = strings.Join(strings.Fields(query), " ")
+	query = strings.ReplaceAll(query, "( ", "(")
+	query = strings.ReplaceAll(query, " )", ")")
+	return strings.ReplaceAll(query, " (", "(")
 }

@@ -7,14 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/twmb/franz-go/pkg/kgo"
-
-	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
@@ -25,6 +21,8 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	retrypkg "github.com/hitesh22rana/chronoverse/internal/pkg/retry"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 const (
@@ -202,7 +200,15 @@ func (r *Repository) completeWorkflowBuildAndSchedule(
 	return workflow, true, nil
 }
 
-func (r *Repository) getSchedulableWorkflow(ctx context.Context, workflowID string, workflowEvent *workflowsmodel.WorkflowEvent) (*workflowspb.GetWorkflowByIDResponse, bool, error) {
+func (r *Repository) getSchedulableWorkflow(
+	ctx context.Context,
+	workflowID string,
+	workflowEvent *workflowsmodel.WorkflowEvent,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	bool,
+	error,
+) {
 	workflow, err := r.svc.Workflows.GetWorkflowByID(ctx, &workflowspb.GetWorkflowByIDRequest{
 		Id: workflowID,
 	})
@@ -294,7 +300,11 @@ func (r *Repository) prefetchImageToNodes(ctx context.Context, image, warmedNode
 	wg.Wait()
 }
 
-func (r *Repository) publishWorkflowBuildAnalytics(ctx context.Context, workflowID string, workflow *workflowspb.GetWorkflowByIDResponse) error {
+func (r *Repository) publishWorkflowBuildAnalytics(
+	ctx context.Context,
+	workflowID string,
+	workflow *workflowspb.GetWorkflowByIDResponse,
+) error {
 	// The concrete payload and event metadata contain only JSON-safe strings.
 	//nolint:errcheck // Both marshal stages encode fixed string fields.
 	analyticEventBytes, _ := analyticsmodel.NewAnalyticEventBytesWithKey(

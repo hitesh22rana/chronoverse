@@ -19,7 +19,15 @@ type shortLeaseStore struct {
 	key string
 }
 
-func (s *shortLeaseStore) AcquireDistributedLockWithToken(ctx context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
+func (s *shortLeaseStore) AcquireDistributedLockWithToken(
+	ctx context.Context,
+	key string,
+	ttl time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	s.key = key
 	return s.Store.AcquireDistributedLockWithToken(ctx, key, ttl)
 }

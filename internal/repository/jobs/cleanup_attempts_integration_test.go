@@ -185,14 +185,31 @@ func exhaustCleanupGeneration(t *testing.T, update cleanupUpdate, fixture *retai
 				t.Fatalf("backoff bypassed: %v", err)
 			}
 			var seconds float64
-			if err := pg.QueryRow(t.Context(), `SELECT EXTRACT(EPOCH FROM cleanup_next_attempt_at-cleanup_failed_at) FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&seconds); err != nil {
+			if err := pg.QueryRow(t.Context(), `
+				SELECT
+					EXTRACT(
+						EPOCH
+						FROM
+							cleanup_next_attempt_at - cleanup_failed_at
+					)
+				FROM
+					outbox_events
+				WHERE
+					event_key = $1
+			`, fixture.Key).Scan(&seconds); err != nil {
 				t.Fatal(err)
 			}
 			wait := time.Duration(seconds) * time.Second
 			if wait != time.Duration(attempt)*30*time.Second {
 				t.Fatalf("retry delay=%v", wait)
 			}
-			if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_next_attempt_at=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, fixture.Key); err != nil {
+			if _, err := pg.Exec(t.Context(), `
+				UPDATE outbox_events
+				SET
+					cleanup_next_attempt_at = now() AT TIME ZONE 'utc' - interval '1 second'
+				WHERE
+					event_key = $1
+			`, fixture.Key); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -211,7 +228,15 @@ func verifyCleanupRedrive(t *testing.T, update cleanupUpdate, fixture *retainedC
 	}
 	var state string
 	var generation int64
-	if err := pg.QueryRow(t.Context(), `SELECT status,(payload->>'CleanupGeneration')::bigint FROM outbox_events WHERE event_key=$1`, fixture.Key).Scan(&state, &generation); err != nil {
+	if err := pg.QueryRow(t.Context(), `
+		SELECT
+			status,
+			(payload ->> 'CleanupGeneration')::bigint
+		FROM
+			outbox_events
+		WHERE
+			event_key = $1
+	`, fixture.Key).Scan(&state, &generation); err != nil {
 		t.Fatal(err)
 	}
 	if state != "PENDING" || generation != 2 {
@@ -303,7 +328,13 @@ func TestIntegrationCleanupAbandonedAttemptBudget(t *testing.T) {
 			}
 		}
 		oldToken = result.Token
-		if _, err := pg.Exec(t.Context(), `UPDATE outbox_events SET cleanup_lease_until=now() AT TIME ZONE 'utc'-interval '1 second' WHERE event_key=$1`, fixture.Key); err != nil {
+		if _, err := pg.Exec(t.Context(), `
+			UPDATE outbox_events
+			SET
+				cleanup_lease_until = now() AT TIME ZONE 'utc' - interval '1 second'
+			WHERE
+				event_key = $1
+		`, fixture.Key); err != nil {
 			t.Fatal(err)
 		}
 		repo = newTestRepository(t)

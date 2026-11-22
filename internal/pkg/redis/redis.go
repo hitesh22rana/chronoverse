@@ -383,7 +383,15 @@ func (s *Store) Subscribe(ctx context.Context, channels ...string) *redis.PubSub
 }
 
 // AcquireDistributedLockWithToken attempts to acquire a distributed lock with a unique owner token.
-func (s *Store) AcquireDistributedLockWithToken(ctx context.Context, key string, expiration time.Duration) (token string, acquired bool, err error) {
+func (s *Store) AcquireDistributedLockWithToken(
+	ctx context.Context,
+	key string,
+	expiration time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	token = newDistributedLockToken()
 	success, err := s.client.SetNX(ctx, key, token, expiration).Result()
 	if err != nil {

@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/hitesh22rana/chronoverse/internal/config"
-
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"

@@ -19,13 +19,12 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
-	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/analytics"
 	analyticsmock "github.com/hitesh22rana/chronoverse/internal/app/analytics/mock"
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
 
 func initClient(t *testing.T, server *grpc.Server, transport credentials.TransportCredentials) *grpc.ClientConn {

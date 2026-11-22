@@ -43,7 +43,16 @@ func TestIntegrationOutboxValidationAndDedupStayInsideCallerTransaction(t *testi
 	event.Payload = map[string]string{"id": "duplicate must not overwrite"}
 	require.NoError(t, outbox.InsertTx(t.Context(), tx, event))
 	var payload string
-	require.NoError(t, tx.QueryRow(t.Context(), `SELECT count(*),min(payload::text) FROM outbox_events WHERE topic=$1 AND event_key=$2`, event.Topic, key).Scan(&count, &payload))
+	require.NoError(t, tx.QueryRow(t.Context(), `
+		SELECT
+			count(*),
+			min(payload::text)
+		FROM
+			outbox_events
+		WHERE
+			topic = $1
+			AND event_key = $2
+	`, event.Topic, key).Scan(&count, &payload))
 	require.Equal(t, 1, count)
 	require.JSONEq(t, `{"id":"resource"}`, payload)
 	require.NoError(t, tx.Rollback(t.Context()))

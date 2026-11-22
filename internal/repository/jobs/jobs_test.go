@@ -18,6 +18,7 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 func TestJobLogsCursorRoundTrip(t *testing.T) {
@@ -450,7 +451,7 @@ func TestRecoverExpiredJobLeasesQueryFlagsOnlyUnavailableRuntimeStates(t *testin
 func assertContains(t *testing.T, value, want string) {
 	t.Helper()
 
-	if !strings.Contains(value, want) {
+	if !strings.Contains(testkit.NormalizeSQL(value), testkit.NormalizeSQL(want)) {
 		t.Fatalf("expected query to contain %q:\n%s", want, value)
 	}
 }
@@ -458,7 +459,7 @@ func assertContains(t *testing.T, value, want string) {
 func assertNotContains(t *testing.T, value, forbidden string) {
 	t.Helper()
 
-	if strings.Contains(value, forbidden) {
+	if strings.Contains(testkit.NormalizeSQL(value), testkit.NormalizeSQL(forbidden)) {
 		t.Fatalf("expected query not to contain %q:\n%s", forbidden, value)
 	}
 }

@@ -68,7 +68,18 @@ func (tx *interruptedTx) Exec(ctx context.Context, q string, args ...any) (pgcon
 
 func (tx *interruptedTx) Commit(ctx context.Context) error {
 	if tx.stage == "commit" {
-		_, err := tx.Tx.Exec(ctx, `CREATE TEMP TABLE scheduler_commit_fault (id int UNIQUE DEFERRABLE INITIALLY DEFERRED); INSERT INTO scheduler_commit_fault VALUES(1),(1)`)
+		_, err := tx.Tx.Exec(ctx, `
+			CREATE TEMP TABLE scheduler_commit_fault (
+				id int UNIQUE
+				DEFERRABLE INITIALLY DEFERRED
+			);
+
+			INSERT INTO
+				scheduler_commit_fault
+			VALUES
+				(1),
+				(1)
+		`)
 		if err != nil {
 			return err
 		}

@@ -21,7 +21,6 @@ import (
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/crypto"
-
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"

@@ -310,7 +310,13 @@ func TestRedisEvictionGaugeCollection(t *testing.T) {
 
 type rejectingRedisMeter struct{ metric.Meter }
 
-func (rejectingRedisMeter) Int64ObservableUpDownCounter(string, ...metric.Int64ObservableUpDownCounterOption) (metric.Int64ObservableUpDownCounter, error) {
+func (rejectingRedisMeter) Int64ObservableUpDownCounter(
+	string,
+	...metric.Int64ObservableUpDownCounterOption,
+) (
+	metric.Int64ObservableUpDownCounter,
+	error,
+) {
 	return nil, errors.New("metric provider rejected instrument")
 }
 

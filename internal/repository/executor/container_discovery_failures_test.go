@@ -23,16 +23,37 @@ type discoveryFaultJobs struct {
 	quarantine            bool
 }
 
-func (j *discoveryFaultJobs) ClaimContainerIntents(ctx context.Context, _ *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ListContainerIntentsResponse, error) {
+func (j *discoveryFaultJobs) ClaimContainerIntents(
+	ctx context.Context,
+	_ *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	return j.claim(ctx)
 }
 
-func (j *discoveryFaultJobs) ObserveContainer(_ context.Context, r *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *discoveryFaultJobs) ObserveContainer(
+	_ context.Context,
+	r *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	j.observations++
 	return fakeIntent(r), j.observeErr
 }
 
-func (j *discoveryFaultJobs) ReportContainerInspection(_ context.Context, r *jobspb.ContainerIntentCommand, _ ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {
+func (j *discoveryFaultJobs) ReportContainerInspection(
+	_ context.Context,
+	r *jobspb.ContainerIntentCommand,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	j.reports = append(j.reports, r)
 	return &jobspb.ContainerIntentResponse{Intent: &jobspb.ContainerIntent{Quarantined: j.quarantine}}, j.reportErr
 }

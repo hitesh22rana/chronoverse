@@ -24,7 +24,14 @@ type logSearchWorkflowClient struct {
 	calls    int
 }
 
-func (f *logSearchWorkflowClient) GetWorkflow(_ context.Context, _ *workflowspb.GetWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.GetWorkflowResponse, error) {
+func (f *logSearchWorkflowClient) GetWorkflow(
+	_ context.Context,
+	_ *workflowspb.GetWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowResponse,
+	error,
+) {
 	f.calls++
 	return f.response, f.err
 }

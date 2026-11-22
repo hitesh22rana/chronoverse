@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
 
 func TestIncrementFailureRejectsInvalidIdentities(t *testing.T) {
@@ -87,7 +89,8 @@ type terminalReplayTx struct {
 // QueryRow verifies replay reads exactly the requested job.
 func (tx *terminalReplayTx) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	tx.t.Helper()
-	if !strings.Contains(query, "FROM workflow_terminal_effects") || !strings.Contains(query, "WHERE job_id = $1") || !reflect.DeepEqual(args, []any{tx.job}) {
+	normalized := testkit.NormalizeSQL(query)
+	if !strings.Contains(normalized, "FROM workflow_terminal_effects") || !strings.Contains(normalized, "WHERE job_id = $1") || !reflect.DeepEqual(args, []any{tx.job}) {
 		tx.t.Fatalf("replay lookup = %q, %v; want the terminal effect for %s", query, args, tx.job)
 	}
 	return tx.row

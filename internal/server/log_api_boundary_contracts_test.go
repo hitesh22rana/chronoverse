@@ -92,7 +92,14 @@ func (c *logBoundaryClient) GetJobLogs(context.Context, *jobspb.GetJobLogsReques
 	return &jobspb.GetJobLogsResponse{Logs: c.logs, Cursor: "next"}, c.err
 }
 
-func (c *logBoundaryClient) ScheduleJob(context.Context, *jobspb.ScheduleJobRequest, ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {
+func (c *logBoundaryClient) ScheduleJob(
+	context.Context,
+	*jobspb.ScheduleJobRequest,
+	...grpc.CallOption,
+) (
+	*jobspb.ScheduleJobResponse,
+	error,
+) {
 	return nil, c.err
 }
 

@@ -37,7 +37,13 @@ type lifecycleLogCollector struct {
 	collector *lifecycleCollector
 }
 
-func (c lifecycleLogCollector) Export(context.Context, *collectorlog.ExportLogsServiceRequest) (*collectorlog.ExportLogsServiceResponse, error) {
+func (c lifecycleLogCollector) Export(
+	context.Context,
+	*collectorlog.ExportLogsServiceRequest,
+) (
+	*collectorlog.ExportLogsServiceResponse,
+	error,
+) {
 	c.collector.mu.Lock()
 	defer c.collector.mu.Unlock()
 	c.collector.logs++
@@ -49,7 +55,13 @@ type lifecycleMetricCollector struct {
 	collector *lifecycleCollector
 }
 
-func (c lifecycleMetricCollector) Export(_ context.Context, req *collectormetric.ExportMetricsServiceRequest) (*collectormetric.ExportMetricsServiceResponse, error) {
+func (c lifecycleMetricCollector) Export(
+	_ context.Context,
+	req *collectormetric.ExportMetricsServiceRequest,
+) (
+	*collectormetric.ExportMetricsServiceResponse,
+	error,
+) {
 	c.collector.mu.Lock()
 	defer c.collector.mu.Unlock()
 	c.collector.metrics++
@@ -68,7 +80,13 @@ type lifecycleTraceCollector struct {
 	collector *lifecycleCollector
 }
 
-func (c lifecycleTraceCollector) Export(context.Context, *collectortrace.ExportTraceServiceRequest) (*collectortrace.ExportTraceServiceResponse, error) {
+func (c lifecycleTraceCollector) Export(
+	context.Context,
+	*collectortrace.ExportTraceServiceRequest,
+) (
+	*collectortrace.ExportTraceServiceResponse,
+	error,
+) {
 	c.collector.mu.Lock()
 	defer c.collector.mu.Unlock()
 	c.collector.traces++

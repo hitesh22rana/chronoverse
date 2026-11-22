@@ -18,16 +18,23 @@ func (r *Repository) CleanupProcessedEvents(ctx context.Context, retention time.
 	}
 
 	query := fmt.Sprintf(`
-		WITH expired AS (
-			SELECT consumer, event_key
-			FROM %s
-			WHERE created_at < $1
-			ORDER BY created_at
-			LIMIT $2
-		)
-		DELETE FROM %s events
-		USING expired
-		WHERE events.consumer = expired.consumer
+		WITH
+			expired AS (
+				SELECT
+					consumer,
+					event_key
+				FROM
+					%s
+				WHERE
+					created_at < $1
+				ORDER BY
+					created_at
+				LIMIT
+					$2
+			)
+		DELETE FROM %s events USING expired
+		WHERE
+			events.consumer = expired.consumer
 			AND events.event_key = expired.event_key;
 	`, postgres.TableProcessedEvents, postgres.TableProcessedEvents)
 

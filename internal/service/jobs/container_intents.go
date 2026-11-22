@@ -196,7 +196,14 @@ func requireExecutionPrincipal(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) updateContainerIntent(ctx context.Context, op string, command *jobsmodel.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
+func (s *Service) updateContainerIntent(
+	ctx context.Context,
+	op string,
+	command *jobsmodel.ContainerIntentCommand,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	result, err := s.repo.UpdateContainerIntent(ctx, op, command)
 	if err != nil {
 		return nil, err
@@ -204,7 +211,14 @@ func (s *Service) updateContainerIntent(ctx context.Context, op string, command 
 	return &jobspb.ContainerIntentResponse{Intent: intentProto(result.Intent), Granted: result.Granted}, nil
 }
 
-func (s *Service) executeContainerIntent(ctx context.Context, op string, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
+func (s *Service) executeContainerIntent(
+	ctx context.Context,
+	op string,
+	req *jobspb.ContainerIntentCommand,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	if err := validateIntentCommand(ctx, op, req); err != nil {
 		return nil, err
 	}
@@ -248,7 +262,13 @@ func (s *Service) CloseContainerIntent(ctx context.Context, req *jobspb.Containe
 }
 
 // ReportContainerInspection settles a fenced discovery inspection and its diagnostics.
-func (s *Service) ReportContainerInspection(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ContainerIntentResponse, error) {
+func (s *Service) ReportContainerInspection(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+) (
+	*jobspb.ContainerIntentResponse,
+	error,
+) {
 	return s.executeContainerIntent(ctx, jobsmodel.ContainerIntentOperationReport, req)
 }
 
@@ -266,7 +286,14 @@ func (s *Service) RedriveContainerIntent(ctx context.Context, req *jobspb.Contai
 	return s.updateContainerIntent(ctx, jobsmodel.ContainerIntentOperationRedrive, command)
 }
 
-func (s *Service) listContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand, claim bool) (*jobspb.ListContainerIntentsResponse, error) {
+func (s *Service) listContainerIntents(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+	claim bool,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	intents, err := s.repo.ListContainerIntents(ctx, intentCommand(req), claim)
 	if err != nil {
 		return nil, err
@@ -279,7 +306,13 @@ func (s *Service) listContainerIntents(ctx context.Context, req *jobspb.Containe
 }
 
 // ClaimContainerIntents leases due intents for the discovery execution principal.
-func (s *Service) ClaimContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error) {
+func (s *Service) ClaimContainerIntents(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationList, req); err != nil {
 		return nil, err
 	}
@@ -290,7 +323,13 @@ func (s *Service) ClaimContainerIntents(ctx context.Context, req *jobspb.Contain
 }
 
 // ListContainerIntents returns intents to internal administration without leasing them.
-func (s *Service) ListContainerIntents(ctx context.Context, req *jobspb.ContainerIntentCommand) (*jobspb.ListContainerIntentsResponse, error) {
+func (s *Service) ListContainerIntents(
+	ctx context.Context,
+	req *jobspb.ContainerIntentCommand,
+) (
+	*jobspb.ListContainerIntentsResponse,
+	error,
+) {
 	if err := validateIntentCommand(ctx, jobsmodel.ContainerIntentOperationList, req); err != nil {
 		return nil, err
 	}

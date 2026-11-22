@@ -149,8 +149,19 @@ func waitForSleepingUserQuery(ctx context.Context, t *testing.T, pg *postgres.Po
 
 	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	query := `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-  WHERE datname = current_database() AND wait_event = 'PgSleep' AND query ILIKE $1)`
+	query := `
+		SELECT
+			EXISTS (
+				SELECT
+					1
+				FROM
+					pg_stat_activity
+				WHERE
+					datname = current_database()
+					AND wait_event = 'PgSleep'
+					AND regexp_replace(query, '\s+', ' ', 'g') ILIKE $1
+			)
+	`
 	testkit.Eventually(t, 4*time.Second, 10*time.Millisecond, func() bool {
 		var sleeping bool
 		if err := pg.QueryRow(probeCtx, query, pattern).Scan(&sleeping); err != nil {

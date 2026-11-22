@@ -31,7 +31,15 @@ type contractLocks struct {
 	release func(context.Context, string, string) error
 }
 
-func (l contractLocks) AcquireDistributedLockWithToken(ctx context.Context, key string, ttl time.Duration) (token string, acquired bool, err error) {
+func (l contractLocks) AcquireDistributedLockWithToken(
+	ctx context.Context,
+	key string,
+	ttl time.Duration,
+) (
+	token string,
+	acquired bool,
+	err error,
+) {
 	return l.acquire(ctx, key, ttl)
 }
 

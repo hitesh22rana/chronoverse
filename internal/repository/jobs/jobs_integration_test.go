@@ -15,14 +15,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/joblogevents"
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
 // meilisearch document field names for the seeded job log search documents.
@@ -40,23 +39,58 @@ func TestMain(m *testing.M) {
 // always reports log retention enabled.
 type fakeWorkflowsService struct{}
 
-func (f *fakeWorkflowsService) CreateWorkflow(context.Context, *workflowspb.CreateWorkflowRequest, ...grpc.CallOption) (*workflowspb.CreateWorkflowResponse, error) {
+func (f *fakeWorkflowsService) CreateWorkflow(
+	context.Context,
+	*workflowspb.CreateWorkflowRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.CreateWorkflowResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) UpdateWorkflow(context.Context, *workflowspb.UpdateWorkflowRequest, ...grpc.CallOption) (*workflowspb.UpdateWorkflowResponse, error) {
+func (f *fakeWorkflowsService) UpdateWorkflow(
+	context.Context,
+	*workflowspb.UpdateWorkflowRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.UpdateWorkflowResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) UpdateWorkflowBuildStatus(context.Context, *workflowspb.UpdateWorkflowBuildStatusRequest, ...grpc.CallOption) (*workflowspb.UpdateWorkflowBuildStatusResponse, error) {
+func (f *fakeWorkflowsService) UpdateWorkflowBuildStatus(
+	context.Context,
+	*workflowspb.UpdateWorkflowBuildStatusRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.UpdateWorkflowBuildStatusResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) GetWorkflow(context.Context, *workflowspb.GetWorkflowRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowResponse, error) {
+func (f *fakeWorkflowsService) GetWorkflow(
+	context.Context,
+	*workflowspb.GetWorkflowRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowResponse,
+	error,
+) {
 	return &workflowspb.GetWorkflowResponse{LogRetention: true, Name: "integration-workflow", Kind: "CONTAINER"}, nil
 }
 
-func (f *fakeWorkflowsService) GetWorkflowByID(context.Context, *workflowspb.GetWorkflowByIDRequest, ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+func (f *fakeWorkflowsService) GetWorkflowByID(
+	context.Context,
+	*workflowspb.GetWorkflowByIDRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -72,15 +106,36 @@ func (f *fakeWorkflowsService) ResetWorkflowConsecutiveJobFailuresCount(
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) TerminateWorkflow(context.Context, *workflowspb.TerminateWorkflowRequest, ...grpc.CallOption) (*workflowspb.TerminateWorkflowResponse, error) {
+func (f *fakeWorkflowsService) TerminateWorkflow(
+	context.Context,
+	*workflowspb.TerminateWorkflowRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.TerminateWorkflowResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) DeleteWorkflow(context.Context, *workflowspb.DeleteWorkflowRequest, ...grpc.CallOption) (*workflowspb.DeleteWorkflowResponse, error) {
+func (f *fakeWorkflowsService) DeleteWorkflow(
+	context.Context,
+	*workflowspb.DeleteWorkflowRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.DeleteWorkflowResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
-func (f *fakeWorkflowsService) ListWorkflows(context.Context, *workflowspb.ListWorkflowsRequest, ...grpc.CallOption) (*workflowspb.ListWorkflowsResponse, error) {
+func (f *fakeWorkflowsService) ListWorkflows(
+	context.Context,
+	*workflowspb.ListWorkflowsRequest,
+	...grpc.CallOption,
+) (
+	*workflowspb.ListWorkflowsResponse,
+	error,
+) {
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -136,10 +191,27 @@ func seedReadyRuntimeNode(ctx context.Context, t *testing.T, pg *postgres.Postgr
 
 	nodeID := "integration-node-" + name
 	if _, err := pg.Exec(ctx, `
-		INSERT INTO runtime_nodes (id, node_name, docker_endpoint, status, last_heartbeat_at, max_concurrency)
-		VALUES ($1, $2, 'tcp://127.0.0.1:2375', 'READY', now() AT TIME ZONE 'utc', 4)
+		INSERT INTO
+			runtime_nodes (
+				id,
+				node_name,
+				docker_endpoint,
+				status,
+				last_heartbeat_at,
+				max_concurrency
+			)
+		VALUES
+			(
+				$1,
+				$2,
+				'tcp://127.0.0.1:2375',
+				'READY',
+				now() AT TIME ZONE 'utc',
+				4
+			)
 		ON CONFLICT (id) DO UPDATE
-		SET status = 'READY',
+		SET
+			status = 'READY',
 			last_heartbeat_at = now() AT TIME ZONE 'utc',
 			running_jobs = 0
 	`, nodeID, nodeID); err != nil {
@@ -382,8 +454,19 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	now := time.Now().UTC()
 	for i := uint32(1); i <= 3; i++ {
 		if insertErr := ch.Exec(ctx, `
-			INSERT INTO job_logs (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO
+				job_logs (
+					event_id,
+					user_id,
+					workflow_id,
+					job_id,
+					timestamp,
+					message,
+					sequence_num,
+					stream
+				)
+			VALUES
+				(?, ?, ?, ?, ?, ?, ?, ?)
 		`, fmt.Sprintf("log:%s:%s:%d", jobID, "stdout", i), userID, workflowID, jobID, now, fmt.Sprintf("log line %d", i), i, "stdout"); insertErr != nil {
 			t.Fatalf("insert job log %d: %v", i, insertErr)
 		}

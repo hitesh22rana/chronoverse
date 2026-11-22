@@ -194,7 +194,14 @@ type scriptedJobsClient struct {
 	attachJobContainer func(context.Context, *jobspb.AttachJobContainerRequest) error
 }
 
-func (c *scriptedJobsClient) RenewJobLease(ctx context.Context, req *jobspb.RenewJobLeaseRequest, _ ...grpc.CallOption) (*jobspb.RenewJobLeaseResponse, error) {
+func (c *scriptedJobsClient) RenewJobLease(
+	ctx context.Context,
+	req *jobspb.RenewJobLeaseRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.RenewJobLeaseResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:                   commandRenewLease,
 		JobID:                req.GetId(),
@@ -210,7 +217,14 @@ func (c *scriptedJobsClient) RenewJobLease(ctx context.Context, req *jobspb.Rene
 	return &jobspb.RenewJobLeaseResponse{}, nil
 }
 
-func (c *scriptedJobsClient) ScheduleJob(ctx context.Context, req *jobspb.ScheduleJobRequest, _ ...grpc.CallOption) (*jobspb.ScheduleJobResponse, error) {
+func (c *scriptedJobsClient) ScheduleJob(
+	ctx context.Context,
+	req *jobspb.ScheduleJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ScheduleJobResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:                 commandScheduleJob,
 		WorkflowID:         req.GetWorkflowId(),
@@ -228,7 +242,14 @@ func (c *scriptedJobsClient) ScheduleJob(ctx context.Context, req *jobspb.Schedu
 	return &jobspb.ScheduleJobResponse{Id: "scheduled-follow-up"}, nil
 }
 
-func (c *scriptedJobsClient) ReleaseJobForRetry(ctx context.Context, req *jobspb.ReleaseJobForRetryRequest, _ ...grpc.CallOption) (*jobspb.ReleaseJobForRetryResponse, error) {
+func (c *scriptedJobsClient) ReleaseJobForRetry(
+	ctx context.Context,
+	req *jobspb.ReleaseJobForRetryRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.ReleaseJobForRetryResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:            commandReleaseRetry,
 		JobID:         req.GetId(),
@@ -247,7 +268,14 @@ func (c *scriptedJobsClient) ReleaseJobForRetry(ctx context.Context, req *jobspb
 	return &jobspb.ReleaseJobForRetryResponse{}, nil
 }
 
-func (c *scriptedJobsClient) CancelClaimedJob(ctx context.Context, req *jobspb.CancelClaimedJobRequest, _ ...grpc.CallOption) (*jobspb.CancelClaimedJobResponse, error) {
+func (c *scriptedJobsClient) CancelClaimedJob(
+	ctx context.Context,
+	req *jobspb.CancelClaimedJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.CancelClaimedJobResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:                 commandCancelClaim,
 		JobID:              req.GetId(),
@@ -264,7 +292,14 @@ func (c *scriptedJobsClient) CancelClaimedJob(ctx context.Context, req *jobspb.C
 	return &jobspb.CancelClaimedJobResponse{}, nil
 }
 
-func (c *scriptedJobsClient) FailJob(ctx context.Context, req *jobspb.FailJobRequest, _ ...grpc.CallOption) (*jobspb.FailJobResponse, error) {
+func (c *scriptedJobsClient) FailJob(
+	ctx context.Context,
+	req *jobspb.FailJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.FailJobResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:                 commandFailJob,
 		JobID:              req.GetId(),
@@ -284,7 +319,14 @@ func (c *scriptedJobsClient) FailJob(ctx context.Context, req *jobspb.FailJobReq
 	return &jobspb.FailJobResponse{}, nil
 }
 
-func (c *scriptedJobsClient) CompleteJob(ctx context.Context, req *jobspb.CompleteJobRequest, _ ...grpc.CallOption) (*jobspb.CompleteJobResponse, error) {
+func (c *scriptedJobsClient) CompleteJob(
+	ctx context.Context,
+	req *jobspb.CompleteJobRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.CompleteJobResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:         commandCompleteJob,
 		JobID:      req.GetId(),
@@ -300,7 +342,14 @@ func (c *scriptedJobsClient) CompleteJob(ctx context.Context, req *jobspb.Comple
 	return &jobspb.CompleteJobResponse{}, nil
 }
 
-func (c *scriptedJobsClient) AttachJobContainer(ctx context.Context, req *jobspb.AttachJobContainerRequest, _ ...grpc.CallOption) (*jobspb.AttachJobContainerResponse, error) {
+func (c *scriptedJobsClient) AttachJobContainer(
+	ctx context.Context,
+	req *jobspb.AttachJobContainerRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.AttachJobContainerResponse,
+	error,
+) {
 	c.log.add(&recordedCommand{
 		Op:         commandAttach,
 		JobID:      req.GetId(),
@@ -347,7 +396,14 @@ type scriptedWorkflowsClient struct {
 	failure error
 }
 
-func (c *scriptedWorkflowsClient) GetWorkflowByID(_ context.Context, req *workflowspb.GetWorkflowByIDRequest, _ ...grpc.CallOption) (*workflowspb.GetWorkflowByIDResponse, error) {
+func (c *scriptedWorkflowsClient) GetWorkflowByID(
+	_ context.Context,
+	req *workflowspb.GetWorkflowByIDRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowByIDResponse,
+	error,
+) {
 	c.log.record(req.GetId())
 	if c.failure != nil {
 		return nil, c.failure
@@ -1518,7 +1574,14 @@ func TestRunClaimedWorkflowReleasesContainerClaimWithoutRuntimeService(t *testin
 	assertNoOwnershipStealing(t, fixture.log)
 }
 
-func (c *scriptedJobsClient) GetContainerCleanupReceipt(ctx context.Context, req *jobspb.ContainerCleanupReceiptRequest, _ ...grpc.CallOption) (*jobspb.GetContainerCleanupReceiptResponse, error) {
+func (c *scriptedJobsClient) GetContainerCleanupReceipt(
+	ctx context.Context,
+	req *jobspb.ContainerCleanupReceiptRequest,
+	_ ...grpc.CallOption,
+) (
+	*jobspb.GetContainerCleanupReceiptResponse,
+	error,
+) {
 	if c.getReceipt != nil {
 		return c.getReceipt(ctx, req)
 	}

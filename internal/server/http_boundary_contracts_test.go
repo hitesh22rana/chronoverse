@@ -38,49 +38,98 @@ type boundaryUserClient struct {
 	call func(context.Context, proto.Message) error
 }
 
-func (c *boundaryWorkflowClient) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.CreateWorkflowResponse, error) {
+func (c *boundaryWorkflowClient) CreateWorkflow(
+	ctx context.Context,
+	req *workflowspb.CreateWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.CreateWorkflowResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &workflowspb.CreateWorkflowResponse{Id: boundaryWorkflowID}, nil
 }
 
-func (c *boundaryWorkflowClient) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.UpdateWorkflowResponse, error) {
+func (c *boundaryWorkflowClient) UpdateWorkflow(
+	ctx context.Context,
+	req *workflowspb.UpdateWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.UpdateWorkflowResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &workflowspb.UpdateWorkflowResponse{}, nil
 }
 
-func (c *boundaryWorkflowClient) GetWorkflow(ctx context.Context, req *workflowspb.GetWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.GetWorkflowResponse, error) {
+func (c *boundaryWorkflowClient) GetWorkflow(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.GetWorkflowResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &workflowspb.GetWorkflowResponse{Id: boundaryWorkflowID, Name: "health check", Kind: "HEARTBEAT", Interval: 60}, nil
 }
 
-func (c *boundaryWorkflowClient) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.TerminateWorkflowResponse, error) {
+func (c *boundaryWorkflowClient) TerminateWorkflow(
+	ctx context.Context,
+	req *workflowspb.TerminateWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.TerminateWorkflowResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &workflowspb.TerminateWorkflowResponse{}, nil
 }
 
-func (c *boundaryWorkflowClient) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest, _ ...grpc.CallOption) (*workflowspb.DeleteWorkflowResponse, error) {
+func (c *boundaryWorkflowClient) DeleteWorkflow(
+	ctx context.Context,
+	req *workflowspb.DeleteWorkflowRequest,
+	_ ...grpc.CallOption,
+) (
+	*workflowspb.DeleteWorkflowResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &workflowspb.DeleteWorkflowResponse{}, nil
 }
 
-func (c *boundaryUserClient) GetUser(ctx context.Context, req *userspb.GetUserRequest, _ ...grpc.CallOption) (*userspb.GetUserResponse, error) {
+func (c *boundaryUserClient) GetUser(
+	ctx context.Context,
+	req *userspb.GetUserRequest,
+	_ ...grpc.CallOption,
+) (
+	*userspb.GetUserResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}
 	return &userspb.GetUserResponse{Email: "boundary@example.com", NotificationPreference: "ALL"}, nil
 }
 
-func (c *boundaryUserClient) UpdateUser(ctx context.Context, req *userspb.UpdateUserRequest, _ ...grpc.CallOption) (*userspb.UpdateUserResponse, error) {
+func (c *boundaryUserClient) UpdateUser(
+	ctx context.Context,
+	req *userspb.UpdateUserRequest,
+	_ ...grpc.CallOption,
+) (
+	*userspb.UpdateUserResponse,
+	error,
+) {
 	if err := c.call(ctx, req); err != nil {
 		return nil, err
 	}

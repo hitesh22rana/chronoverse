@@ -36,21 +36,45 @@ func (r *Repository) registerCleanupMetrics(meter metric.Meter) error {
 		var count, quarantineCount, deadCount int64
 		var oldest float64
 		queryErr := r.pg.QueryRow(ctx, `
-SELECT
- count(*),
- count(*) FILTER (WHERE cleanup_state='QUARANTINED'),
- count(*) FILTER (WHERE status='DEAD'),
- GREATEST(0,COALESCE(max(EXTRACT(EPOCH FROM (
-  (clock_timestamp() AT TIME ZONE 'utc') - GREATEST(
-   created_at,
-   COALESCE(cleanup_next_attempt_at,created_at),
-   COALESCE(cleanup_lease_until,created_at)
-  )
- ))) FILTER (WHERE cleanup_state <> 'QUARANTINED'),0))
-FROM outbox_events
-WHERE topic='workflows'
- AND cleanup_state IS NOT NULL
- AND cleanup_state <> 'COMPLETED'`).Scan(&count, &quarantineCount, &deadCount, &oldest)
+			SELECT
+				count(*),
+				count(*) FILTER (
+					WHERE
+						cleanup_state = 'QUARANTINED'
+				),
+				count(*) FILTER (
+					WHERE
+						status = 'DEAD'
+				),
+				GREATEST(
+					0,
+					COALESCE(
+						max(
+							EXTRACT(
+								EPOCH
+								FROM
+									(
+										(clock_timestamp() AT TIME ZONE 'utc') - GREATEST(
+											created_at,
+											COALESCE(cleanup_next_attempt_at, created_at),
+											COALESCE(cleanup_lease_until, created_at)
+										)
+									)
+							)
+						) FILTER (
+							WHERE
+								cleanup_state <> 'QUARANTINED'
+						),
+						0
+					)
+				)
+			FROM
+				outbox_events
+			WHERE
+				topic = 'workflows'
+				AND cleanup_state IS NOT NULL
+				AND cleanup_state <> 'COMPLETED'
+		`).Scan(&count, &quarantineCount, &deadCount, &oldest)
 		if queryErr != nil {
 			return queryErr
 		}

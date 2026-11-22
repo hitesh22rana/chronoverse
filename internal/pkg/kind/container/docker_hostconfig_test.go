@@ -1,4 +1,4 @@
-//nolint:testpackage // Tests unexported hostConfig isolation wiring (VULN-004a).
+//nolint:testpackage // Tests unexported hostConfig isolation wiring.
 package container
 
 import (

@@ -111,7 +111,18 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func buildWithLock(ctx context.Context, client Client, locks LockStore, imageName, lockKey, token string, cfg Config, expiresAt time.Time) (err error) {
+func buildWithLock(
+	ctx context.Context,
+	client Client,
+	locks LockStore,
+	imageName,
+	lockKey,
+	token string,
+	cfg Config,
+	expiresAt time.Time,
+) (
+	err error,
+) {
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultLockReleaseTimeout)
 		defer cancel()
@@ -150,7 +161,15 @@ func imagePullResult(caller context.Context, workErr, renewErr error) error {
 	return workErr
 }
 
-func startLockRenewal(ctx context.Context, locks LockStore, lockKey, token string, ttl time.Duration, expiresAt time.Time, cancelWork context.CancelFunc) func() error {
+func startLockRenewal(
+	ctx context.Context,
+	locks LockStore,
+	lockKey,
+	token string,
+	ttl time.Duration,
+	expiresAt time.Time,
+	cancelWork context.CancelFunc,
+) func() error {
 	renewCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	var renewalErr error

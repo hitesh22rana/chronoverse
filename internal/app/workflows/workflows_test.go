@@ -18,18 +18,15 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-
 	"github.com/hitesh22rana/chronoverse/internal/app/workflows"
 	workflowsmock "github.com/hitesh22rana/chronoverse/internal/app/workflows/mock"
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
-func boolPtr(b bool) *bool {
-	return &b
-}
+func boolPtr(b bool) *bool { return new(b) }
 
 func initClient(server *grpc.Server) (client workflowspb.WorkflowsServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

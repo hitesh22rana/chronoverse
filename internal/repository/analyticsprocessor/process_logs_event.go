@@ -32,20 +32,33 @@ func (r *Repository) processLogsEvent(ctx context.Context, event *analyticsmodel
 	}
 
 	query := fmt.Sprintf(`
-		WITH processed AS (
-			INSERT INTO %s (consumer, event_key)
-			VALUES ($1, $2)
-			ON CONFLICT DO NOTHING
-			RETURNING event_key
-		)
-        INSERT INTO %s
-        (user_id, workflow_id, logs_count)
-        SELECT $3, $4, $5
-		WHERE EXISTS (SELECT 1 FROM processed)
-        ON CONFLICT (user_id, workflow_id)
-        DO UPDATE SET 
-            logs_count = %s.logs_count + EXCLUDED.logs_count
-    `, postgres.TableProcessedEvents, postgres.TableAnalytics, postgres.TableAnalytics)
+		WITH
+			processed AS (
+				INSERT INTO
+					%s (consumer, event_key)
+				VALUES
+					($1, $2)
+				ON CONFLICT DO NOTHING
+				RETURNING
+					event_key
+			)
+		INSERT INTO
+			%s (user_id, workflow_id, logs_count)
+		SELECT
+			$3,
+			$4,
+			$5
+		WHERE
+			EXISTS (
+				SELECT
+					1
+				FROM
+					processed
+			)
+		ON CONFLICT (user_id, workflow_id) DO UPDATE
+		SET
+			logs_count = %s.logs_count + EXCLUDED.logs_count
+	`, postgres.TableProcessedEvents, postgres.TableAnalytics, postgres.TableAnalytics)
 
 	_, err := r.pg.Exec(ctx, query, "analytics-processor", event.EventKey, event.UserID, event.WorkflowID, data.Count)
 	if err != nil {

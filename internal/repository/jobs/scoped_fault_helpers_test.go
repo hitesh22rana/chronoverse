@@ -16,7 +16,15 @@ import (
 
 // scopedJobFaultTrigger rejects only the fixture row. Column names are quoted
 // identifiers and values are SQL literals, including inside the function body.
-func scopedJobFaultTrigger(ctx context.Context, t *testing.T, pg *postgres.Postgres, table, event string, deferred bool, fields map[string]string) func() {
+func scopedJobFaultTrigger(
+	ctx context.Context,
+	t *testing.T,
+	pg *postgres.Postgres,
+	table,
+	event string,
+	deferred bool,
+	fields map[string]string,
+) func() {
 	t.Helper()
 	if len(fields) == 0 {
 		t.Fatal("fault trigger requires a fixture selector")

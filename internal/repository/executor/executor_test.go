@@ -4,10 +4,13 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -15,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	containerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
@@ -136,6 +140,14 @@ func TestClassifyExecutionFailure(t *testing.T) {
 		reason    string
 	}{
 		{
+			name: "invalid argument is user failure", err: status.Error(codes.InvalidArgument, "invalid workload"), kind: jobsmodel.FailureKindUser.ToString(), reason: terminalreason.ExecutionFailed.String(),
+		},
+		{
+			name:      "bare aborted is retryable system failure",
+			err:       status.Error(codes.Aborted, "runtime aborted"),
+			retryable: true, kind: jobsmodel.FailureKindSystem.ToString(), reason: terminalreason.SystemError.String(),
+		},
+		{
 			name:      "docker unavailable is retryable system failure",
 			err:       status.Error(codes.Unavailable, "docker daemon unavailable"),
 			retryable: true,
@@ -236,30 +248,62 @@ func TestProcessContainerExecutionReturnsExecutionErrorAfterLogDrain(t *testing.
 
 func TestProcessContainerExecutionDrainsExecutionErrorsUntilClosed(t *testing.T) {
 	t.Parallel()
-
-	logs := make(chan *jobsmodel.JobLog)
-	errs := make(chan error)
-	repo := &Repository{cfg: defaultConfig()}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- repo.processContainerExecution(context.Background(), "job-1", 1, nil, logs, errs)
-	}()
-
-	go func() {
-		errs <- status.Error(codes.Unavailable, "failed to read container logs")
-		errs <- status.Error(codes.Aborted, "container exited with non-zero code: 1")
-		close(errs)
-		close(logs)
-	}()
-
-	select {
-	case err := <-done:
-		if status.Code(err) != codes.Unavailable {
-			t.Fatalf("processContainerExecution() error code = %v, want %v", status.Code(err), codes.Unavailable)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for processContainerExecution to drain execution errors")
+	for _, tc := range []struct {
+		name               string
+		primary, secondary error
+		code               codes.Code
+		kind, reason       string
+	}{
+		{
+			"log failure before exit",
+			status.Error(codes.Unavailable, "failed to read container logs"),
+			terminalreason.Wrap(terminalreason.NonZeroExit,
+				status.Error(codes.Aborted, "container exited with non-zero code: 137")),
+			codes.Unavailable, "SYSTEM", "SYSTEM_ERROR",
+		},
+		{
+			"bare aborted before exit",
+			status.Error(codes.Aborted, "log stream failed"),
+			terminalreason.Wrap(terminalreason.NonZeroExit,
+				status.Error(codes.Aborted, "container exited with non-zero code: 137")),
+			codes.Aborted, "SYSTEM", "SYSTEM_ERROR",
+		},
+		{
+			"workload timeout before log fault",
+			terminalreason.Wrap(terminalreason.TimeLimitExceeded,
+				status.Error(codes.DeadlineExceeded, "workload timeout")),
+			status.Error(codes.Unavailable, "secondary log fault"),
+			codes.DeadlineExceeded, "USER", "TIME_LIMIT_EXCEEDED",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			logs := make(chan *jobsmodel.JobLog)
+			errs := make(chan error)
+			repo := &Repository{cfg: defaultConfig()}
+			done := make(chan error, 1)
+			go func() { done <- repo.processContainerExecution(t.Context(), "job-1", 1, nil, logs, errs) }()
+			go func() {
+				errs <- nil
+				errs <- tc.primary
+				errs <- nil
+				errs <- tc.secondary
+				close(errs)
+				close(logs)
+			}()
+			select {
+			case err := <-done:
+				decision := classifyExecutionFailure(err)
+				if status.Code(err) != tc.code || decision.Kind != tc.kind || decision.ReasonCode != tc.reason {
+					t.Fatalf("primary classification changed: %v / %+v", err, decision)
+				}
+				if !strings.Contains(err.Error(), tc.primary.Error()) || !strings.Contains(err.Error(), tc.secondary.Error()) {
+					t.Fatalf("execution diagnostics lost: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("execution errors were not drained")
+			}
+		})
 	}
 }
 
@@ -888,4 +932,79 @@ func (c *retryExhaustionJobsClient) ReleaseJobForRetry(
 func (c *retryExhaustionJobsClient) FailJob(context.Context, *jobspb.FailJobRequest, ...grpc.CallOption) (*jobspb.FailJobResponse, error) {
 	c.fails.Add(1)
 	return &jobspb.FailJobResponse{}, status.Error(codes.Internal, "docker down")
+}
+
+func executionFailureFromStream(t *testing.T, failures ...error) error {
+	t.Helper()
+	logs := make(chan *jobsmodel.JobLog)
+	close(logs)
+	errs := make(chan error, len(failures))
+	for _, err := range failures {
+		errs <- err
+	}
+	close(errs)
+	err := (&Repository{cfg: defaultConfig()}).processContainerExecution(t.Context(), "job-1", 1, nil, logs, errs)
+	if len(errs) != 0 {
+		t.Fatal("bounded rendering abandoned execution error records")
+	}
+	return err
+}
+
+//nolint:gocyclo // One contract checks policy identity, bounded rendering and both RPC codecs.
+func TestProcessContainerExecutionSanitizesBoundedDiagnostics(t *testing.T) {
+	safe := status.Error(codes.Unavailable, "runtime unavailable")
+	exit := terminalreason.Wrap(terminalreason.NonZeroExit, status.Error(codes.Aborted, "observed exit 137\x00\xff"))
+	for _, tc := range []struct {
+		name                string
+		primary             error
+		secondary           []error
+		wantExit, unchanged bool
+	}{
+		{"single safe", safe, nil, false, true},
+		{"single unsafe", status.Error(codes.Unavailable, "runtime\x00\xff"), nil, false, false},
+		{"long primary", status.Error(codes.Unavailable, strings.Repeat("界", 3000)), []error{exit}, true, false},
+		{"tiny remaining budget", safe, []error{errors.New(strings.Repeat("x", 509)), errors.New("tail")}, false, false},
+		{"many secondary", safe, []error{exit, errors.New(strings.Repeat("x", 2000)), errors.New("late\x00\xff")}, true, false},
+		{"raw context", context.Canceled, []error{exit}, true, false},
+		{"workload reason", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), []error{context.Canceled, errors.New("bad\x00\xff")}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures := append([]error{nil, tc.primary, nil}, tc.secondary...)
+			err := executionFailureFromStream(t, failures...)
+			if err == nil || !errors.Is(err, tc.primary) {
+				t.Fatalf("primary identity lost: %v", err)
+			}
+			//nolint:errorlint // Exact identity, beyond errors.Is equivalence, is the single-error contract.
+			if tc.unchanged && err != tc.primary {
+				t.Fatal("safe single primary was replaced")
+			}
+			for _, secondary := range tc.secondary {
+				if errors.Is(err, secondary) {
+					t.Fatal("secondary escaped into cause chain")
+				}
+			}
+			if status.Code(err) != status.Code(tc.primary) || classifyExecutionFailure(err) != classifyExecutionFailure(tc.primary) {
+				t.Fatalf("primary policy changed: %v", err)
+			}
+			if tc.wantExit && !strings.Contains(err.Error(), "observed exit 137") {
+				t.Fatalf("secondary hint lost: %v", err)
+			}
+			for _, message := range []string{err.Error(), status.Convert(err).Message()} {
+				if !utf8.ValidString(message) || strings.ContainsRune(message, 0) || len(message) > 1536 {
+					t.Fatalf("unsafe/unbounded diagnostic: %q", message)
+				}
+				if _, marshalErr := proto.Marshal(&jobspb.FailJobRequest{ErrorMessage: message}); marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				if _, marshalErr := proto.Marshal(&jobspb.ContainerIntentCommand{ErrorMessage: message}); marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+			}
+			normalized := normalizeExecutionError(err)
+			if classifyExecutionFailure(normalized) != classifyExecutionFailure(tc.primary) ||
+				!utf8.ValidString(normalized.Error()) || strings.ContainsRune(normalized.Error(), 0) || len(normalized.Error()) > 2048 {
+				t.Fatalf("normalization lost safe primary contract: %v", normalized)
+			}
+		})
+	}
 }

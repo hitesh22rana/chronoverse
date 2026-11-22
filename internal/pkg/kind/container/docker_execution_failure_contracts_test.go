@@ -24,13 +24,15 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		deadline bool
+		parent   bool
 		response int
 		want     codes.Code
 	}{
-		{"deadline", true, http.StatusNoContent, codes.DeadlineExceeded},
-		{"canceled", false, http.StatusNoContent, codes.Canceled},
-		{"deadline stop rejected", true, http.StatusInternalServerError, codes.DeadlineExceeded},
-		{"canceled stop rejected", false, http.StatusInternalServerError, codes.Canceled},
+		{"deadline", true, false, http.StatusNoContent, codes.DeadlineExceeded},
+		{"parent deadline", true, true, http.StatusNoContent, codes.DeadlineExceeded},
+		{"canceled", false, false, http.StatusNoContent, codes.Canceled},
+		{"deadline stop rejected", true, false, http.StatusInternalServerError, codes.DeadlineExceeded},
+		{"canceled stop rejected", false, false, http.StatusInternalServerError, codes.Canceled},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entered, release := make(chan struct{}), make(chan struct{})
@@ -60,7 +62,11 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 			var ctx context.Context
 			var cancel context.CancelFunc
 			if tc.deadline {
-				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				cause := errConfiguredExecutionTimeout
+				if tc.parent {
+					cause = context.DeadlineExceeded
+				}
+				ctx, cancel = context.WithDeadlineCause(t.Context(), time.Now().Add(-time.Second), cause)
 			} else {
 				ctx, cancel = context.WithCancel(t.Context())
 				cancel()
@@ -83,10 +89,10 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 					t.Fatalf("terminal error=%v", terminal)
 				}
 				reason, found := terminalreason.FromError(terminal)
-				if tc.deadline && (!found || reason != terminalreason.TimeLimitExceeded) {
+				if tc.deadline && !tc.parent && (!found || reason != terminalreason.TimeLimitExceeded) {
 					t.Fatalf("deadline reason = %q %v", reason, found)
 				}
-				if !tc.deadline && found {
+				if (!tc.deadline || tc.parent) && found {
 					t.Fatalf("cancel acquired failure reason %q", reason)
 				}
 			default:

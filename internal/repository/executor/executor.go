@@ -710,11 +710,11 @@ func normalizeExecutionError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		normalized := status.FromContextError(err).Err()
 		if reason, ok := terminalreason.FromError(err); ok {
-			return terminalreason.Wrap(reason, normalized)
+			return withExecutionDiagnostics(terminalreason.Wrap(reason, normalized), "")
 		}
-		return normalized
+		return withExecutionDiagnostics(normalized, "")
 	}
-	return err
+	return withExecutionDiagnostics(err, "")
 }
 
 func classifyExecutionFailure(err error) executionFailureDecision {

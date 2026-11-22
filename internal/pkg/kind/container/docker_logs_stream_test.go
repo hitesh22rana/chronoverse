@@ -6,20 +6,25 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/client"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 )
 
 const (
@@ -1079,92 +1084,88 @@ func TestExecuteReportsCallerCancellation(t *testing.T) {
 	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down")
 }
 
-// TestExecuteReportsWaitFailureAsTerminalError covers the branch this hand-off rewrote:
-// a wait that fails while the caller context is live becomes the terminal outcome, and
-// the live log stream is torn down before both channels close.
+// Reported wait errors cannot authorize completion, including errors returned
+// inside an otherwise successful HTTP response. Teardown still joins the stream.
 func TestExecuteReportsWaitFailureAsTerminalError(t *testing.T) {
 	t.Parallel()
-
-	streamAttached, streamAborted := make(chan struct{}), make(chan struct{})
-	var attachOnce atomic.Bool
-
-	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
-		logs: func(_ http.ResponseWriter, r *http.Request) {
-			if attachOnce.CompareAndSwap(false, true) {
-				close(streamAttached)
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+	}{
+		{"stream failure", http.StatusOK, "wait aborted by the daemon"},
+		{"streamed absence", http.StatusOK, "No such container: " + dockerLogTestContainerID},
+		{"HTTP absence", http.StatusNotFound, `{"message":"No such container"}`},
+		{"typed zero", http.StatusOK, `{"StatusCode":0,"Error":{"Message":"runtime wait failed"}}`},
+		{"typed nonzero", http.StatusOK, `{"StatusCode":137,"Error":{"Message":"runtime wait failed"}}`},
+		{"typed empty", http.StatusOK, `{"StatusCode":0,"Error":{}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			attached, aborted := make(chan struct{}), make(chan struct{})
+			workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
+				logs: func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusOK)
+					flushDockerLogStream(w)
+					close(attached)
+					<-r.Context().Done()
+					close(aborted)
+				},
+				wait: func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tc.code)
+					flushDockerLogStream(w)
+					if tc.code == http.StatusOK {
+						select {
+						case <-attached:
+						case <-r.Context().Done():
+							return
+						}
+					}
+					writeDockerTestResponse(t, w, tc.body)
+				},
+			})
+			_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), 5*time.Second, "alpine:latest", []string{"sleep", "1"}, nil)
+			if err != nil {
+				t.Fatal(err)
 			}
-			<-r.Context().Done()
-			close(streamAborted)
-		},
-		wait: failWaitAfterStreamAttached(t, "wait aborted by the daemon", streamAttached),
-	})
-
-	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
+			result := awaitDockerLogStream(t, logs, errs)
+			if len(result.errs) != 1 || status.Code(result.errs[0]) != codes.Aborted {
+				t.Fatalf("wait failure must be retryable, not success or workload exit: %v", result.errs)
+			}
+			if reason, ok := terminalreason.FromError(result.errs[0]); ok && reason != terminalreason.SystemError {
+				t.Fatalf("runtime error became workload failure: %s", reason)
+			}
+			if tc.name == "typed nonzero" && !strings.Contains(result.errs[0].Error(), "137") {
+				t.Fatalf("attached status lost: %v", result.errs[0])
+			}
+			if tc.code == http.StatusOK {
+				waitForSignal(t, aborted, "wait failure did not cancel/join logs")
+			}
+		})
 	}
-
-	drained := make(chan struct{})
-	go func() {
-		defer close(drained)
-		for range logs { // Drain to verify channel closure.
-		}
-	}()
-
-	result := awaitDockerLogStream(t, nil, errs)
-	if len(result.errs) != 1 {
-		t.Fatalf("a failed wait published %d failures, want exactly the terminal one: %v", len(result.errs), result.errs)
-	}
-	if code := status.Code(result.errs[0]); code != codes.Aborted {
-		t.Fatalf("wait-failure code = %s, want %s: %v", code, codes.Aborted, result.errs[0])
-	}
-	if !strings.Contains(result.errs[0].Error(), "container execution error") {
-		t.Fatalf("wait-failure error = %q, want the terminal execution-error message", result.errs[0])
-	}
-
-	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down after the wait failed")
-	waitForSignal(t, drained, "Execute() never closed the log channel after the wait failed")
 }
 
-// TestExecutePublishesNothingWhenContainerIsGone pins the one Execute exit that publishes
-// no terminal outcome: an externally removed container leaves nothing to report, and the
-// channels just close after the join.
-func TestExecutePublishesNothingWhenContainerIsGone(t *testing.T) {
-	t.Parallel()
-
-	streamAttached, streamAborted := make(chan struct{}), make(chan struct{})
-	var attachOnce atomic.Bool
-
-	workflow := newFakeDockerWorkflow(t, fakeDockerAPI{
-		logs: func(_ http.ResponseWriter, r *http.Request) {
-			if attachOnce.CompareAndSwap(false, true) {
-				close(streamAttached)
+func TestStreamContainerLogAbsencePreservesReplayContract(t *testing.T) {
+	for _, follow := range []bool{false, true} {
+		t.Run(fmt.Sprint(follow), func(t *testing.T) {
+			workflow := newFakeDockerWorkflow(t, fakeDockerAPI{logs: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				writeDockerTestResponse(t, w, `{"message":"container absent"}`)
+			}})
+			errs := make(chan error, 1)
+			workflow.streamContainerLogs(t.Context(), dockerLogTestContainerID, make(chan *jobsmodel.JobLog), errs, follow)
+			select {
+			case err := <-errs:
+				reason, tagged := terminalreason.FromError(err)
+				if status.Code(err) != codes.NotFound || tagged != follow || (tagged && reason != terminalreason.SystemError) {
+					t.Fatalf("follow=%v error=%v reason=%s tagged=%v", follow, err, reason, tagged)
+				}
+			default:
+				t.Fatal("absence was not reported")
 			}
-			<-r.Context().Done()
-			close(streamAborted)
-		},
-		wait: failWaitAfterStreamAttached(t, "No such container: "+dockerLogTestContainerID, streamAttached),
-	})
-
-	_, logs, errs, err := workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine:latest", []string{"sleep", "1"}, nil)
-	if err != nil {
-		t.Fatalf("Execute() error = %v", err)
+		})
 	}
-
-	drained := make(chan struct{})
-	go func() {
-		defer close(drained)
-		for range logs { // Drain to verify channel closure.
-		}
-	}()
-
-	result := awaitDockerLogStream(t, nil, errs)
-	if len(result.errs) != 0 {
-		t.Fatalf("a removed container published %d failures, want none: %v", len(result.errs), result.errs)
-	}
-
-	waitForSignal(t, streamAborted, "Execute() never tore the daemon log stream down after the container vanished")
-	waitForSignal(t, drained, "Execute() never closed the log channel after the container vanished")
 }
 
 // failWaitAfterStreamAttached releases the wait headers, waits for the log stream to
@@ -1172,20 +1173,171 @@ func TestExecutePublishesNothingWhenContainerIsGone(t *testing.T) {
 // error carrying that text. The headers come first so ContainerWait returns and the
 // stream is ever opened; sequencing on the attachment makes the teardown under test
 // the one that aborts a live stream.
-func failWaitAfterStreamAttached(t *testing.T, body string, attached <-chan struct{}) http.HandlerFunc {
-	t.Helper()
+// The real SDK's result sender is unbuffered and closes its body only after the
+// send. Release decoding after cancellation has selected the bounded Stop path.
+type canceledWaitBody struct {
+	io.ReadCloser
+	beforeRead          func()
+	closed              chan struct{}
+	readOnce, closeOnce sync.Once
+}
 
-	return func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("Content-Type", "application/json")
-		rw.WriteHeader(http.StatusOK)
-		flushDockerLogStream(rw)
+func (b *canceledWaitBody) Read(p []byte) (int, error) {
+	b.readOnce.Do(b.beforeRead)
+	return b.ReadCloser.Read(p)
+}
 
-		select {
-		case <-attached:
-		case <-r.Context().Done():
-			return
+func (b *canceledWaitBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.closeOnce.Do(func() { close(b.closed) })
+	return err
+}
+
+//nolint:gocyclo // Keep SDK send, cancellation, Stop and body ownership in one fixture.
+func TestExecuteCancellationReleasesSDKWaitBody(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		for _, body := range []string{`{"StatusCode":0}`, "invalid wait response"} {
+			t.Run(fmt.Sprintf("deadline=%v/%s", deadline, body), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					if deadline {
+						ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+						defer cancel()
+					}
+					stopped, closed := make(chan struct{}), make(chan struct{})
+					waitBody := &canceledWaitBody{ReadCloser: io.NopCloser(strings.NewReader(body)), closed: closed, beforeRead: func() {
+						if deadline {
+							<-ctx.Done()
+						} else {
+							cancel()
+						}
+						waitForSignal(t, stopped, "context never selected Stop")
+					}}
+					cli, err := client.New(
+						client.WithHost("tcp://sdk-wait.test:2375"),
+						client.WithAPIVersion("1.56"),
+						client.WithHTTPClient(&http.Client{Transport: waitTeardownTransport(func(r *http.Request) (*http.Response, error) {
+							response := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: r}
+							switch {
+							case strings.HasSuffix(r.URL.Path, "/start"):
+								response.StatusCode = http.StatusNoContent
+							case strings.HasSuffix(r.URL.Path, "/wait"):
+								response.Body = waitBody
+							case strings.HasSuffix(r.URL.Path, "/stop"):
+								close(stopped)
+								response.StatusCode = http.StatusNoContent
+							case strings.HasSuffix(r.URL.Path, "/logs"):
+							default:
+								t.Errorf("unexpected request: %s", r.URL.Path)
+							}
+							return response, nil
+						})}),
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer cli.Close()
+					logs, errs, startErr := (&DockerWorkflow{Client: cli}).Start(ctx, time.Minute, strings.Repeat("a", 64))
+					if startErr != nil {
+						t.Fatal(startErr)
+					}
+					result := awaitDockerLogStream(t, logs, errs)
+					want := codes.Canceled
+					if deadline {
+						want = codes.DeadlineExceeded
+					}
+					if len(result.errs) != 1 || status.Code(result.errs[0]) != want {
+						t.Fatalf("parent context outcome changed: %v", result.errs)
+					}
+					if reason, tagged := terminalreason.FromError(result.errs[0]); tagged && reason == terminalreason.TimeLimitExceeded {
+						t.Fatal("parent deadline became workload timeout")
+					}
+					waitForSignal(t, closed, "SDK wait sender did not release its response body")
+				})
+			})
 		}
+	}
+}
 
-		writeDockerTestResponse(t, rw, body)
+type waitTeardownTransport func(*http.Request) (*http.Response, error)
+
+func (f waitTeardownTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+//nolint:gocyclo // Each cause/result pair uses the same owned SDK and stream teardown.
+func TestExecuteReceivedExitSurvivesCanceledLogDrain(t *testing.T) {
+	for _, exitCode := range []int{0, 7} {
+		for _, cause := range []string{"caller cancellation", "parent deadline", "workload deadline"} {
+			t.Run(fmt.Sprintf("exit=%d/%s", exitCode, cause), func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					timeout := time.Minute
+					if cause == "parent deadline" {
+						ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+						defer cancel()
+					}
+					if cause == "workload deadline" {
+						timeout = time.Second
+					}
+					consumed, attached := make(chan struct{}), make(chan struct{})
+					var stops atomic.Int32
+					body := &canceledWaitBody{ReadCloser: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"StatusCode":%d}`, exitCode))), closed: consumed, beforeRead: func() {}}
+					cli, err := client.New(
+						client.WithHost("tcp://known-exit.test:2375"),
+						client.WithAPIVersion("1.56"),
+						client.WithHTTPClient(&http.Client{Transport: waitTeardownTransport(func(r *http.Request) (*http.Response, error) {
+							response := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("")), Request: r}
+							switch {
+							case strings.HasSuffix(r.URL.Path, "/start"):
+								response.StatusCode = http.StatusNoContent
+							case strings.HasSuffix(r.URL.Path, "/wait"):
+								response.Body = body
+							case strings.HasSuffix(r.URL.Path, "/logs"):
+								reader, writer := io.Pipe()
+								response.Body = reader
+								close(attached)
+								go func() { <-r.Context().Done(); _ = writer.CloseWithError(r.Context().Err()) }()
+							case strings.HasSuffix(r.URL.Path, "/stop"):
+								stops.Add(1)
+								response.StatusCode = http.StatusNoContent
+							default:
+								t.Errorf("unexpected request: %s", r.URL.Path)
+							}
+							return response, nil
+						})}),
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer cli.Close()
+					logs, errs, startErr := (&DockerWorkflow{Client: cli}).Start(ctx, timeout, strings.Repeat("a", 64))
+					if startErr != nil {
+						t.Fatal(startErr)
+					}
+					waitForSignal(t, consumed, "normal result was not received")
+					waitForSignal(t, attached, "logs never attached")
+					if cause == "caller cancellation" {
+						cancel()
+					}
+					result := awaitDockerLogStream(t, logs, errs)
+					if exitCode == 0 && len(result.errs) != 0 {
+						t.Fatalf("known success was relabeled: %v", result.errs)
+					}
+					if exitCode != 0 {
+						if len(result.errs) != 1 {
+							t.Fatalf("known exit lost: %v", result.errs)
+						}
+						reason, ok := terminalreason.FromError(result.errs[0])
+						if !ok || reason != terminalreason.NonZeroExit {
+							t.Fatalf("known exit relabeled: %v", result.errs[0])
+						}
+					}
+					if stops.Load() != 0 {
+						t.Fatal("known exit caused an unnecessary Stop")
+					}
+				})
+			})
+		}
 	}
 }

@@ -968,6 +968,13 @@ func TestProcessContainerExecutionSanitizesBoundedDiagnostics(t *testing.T) {
 		{"many secondary", safe, []error{exit, errors.New(strings.Repeat("x", 2000)), errors.New("late\x00\xff")}, true, false},
 		{"raw context", context.Canceled, []error{exit}, true, false},
 		{"wrapped deadline", fmt.Errorf("runtime: %w", context.DeadlineExceeded), []error{exit}, true, false},
+		{
+			"long workload timeout",
+			terminalreason.Wrap(terminalreason.TimeLimitExceeded,
+				status.Error(codes.DeadlineExceeded, "container timed out; wait failure: "+strings.Repeat("x", 3000))),
+			[]error{errors.New("log stream failed: connection reset by peer")},
+			false, false,
+		},
 		{"workload reason", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), []error{context.Canceled, errors.New("bad\x00\xff")}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1007,6 +1014,9 @@ func TestProcessContainerExecutionSanitizesBoundedDiagnostics(t *testing.T) {
 				}
 			}
 			normalized := normalizeExecutionError(err)
+			if normalized.Error() != err.Error() || status.Code(normalized) != wantCode {
+				t.Fatalf("normalization changed the settlement diagnostic or code: %v", normalized)
+			}
 			if classifyExecutionFailure(normalized) != classifyExecutionFailure(tc.primary) ||
 				!utf8.ValidString(normalized.Error()) || strings.ContainsRune(normalized.Error(), 0) || len(normalized.Error()) > 2048 {
 				t.Fatalf("normalization lost safe primary contract: %v", normalized)

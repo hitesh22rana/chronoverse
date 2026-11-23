@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -230,5 +231,75 @@ func TestRuntimeInstanceConnectionFailureRemainsUncertain(t *testing.T) {
 	instance, err := workflow.RuntimeInstance(t.Context())
 	if instance != "" || status.Code(err) != codes.Unavailable || CreationOutcome(err) != "UNKNOWN" || t.Context().Err() != nil {
 		t.Fatalf("unreachable original daemon became usable identity: %q %v", instance, err)
+	}
+}
+
+func TestStartFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		response int
+		code     codes.Code
+		outcome  string
+	}{
+		{http.StatusBadRequest, codes.InvalidArgument, CreationOutcomeRejected},
+		{http.StatusNotFound, codes.Unavailable, CreationOutcomeSystem},
+		{http.StatusConflict, codes.AlreadyExists, CreationOutcomeConflict},
+		{http.StatusInternalServerError, codes.Unavailable, CreationOutcomeUnknown},
+		{http.StatusServiceUnavailable, codes.Unavailable, CreationOutcomeUnknown},
+	} {
+		for _, message := range []string{"executable file not found", "daemon storage unavailable"} {
+			t.Run(http.StatusText(tc.response)+"/"+message, func(t *testing.T) {
+				var calls atomic.Int32
+				workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if !strings.HasSuffix(r.URL.Path, "/start") {
+						t.Errorf("unexpected request: %s", r.URL.Path)
+					}
+					calls.Add(1)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(tc.response)
+					if err := json.NewEncoder(w).Encode(map[string]string{"message": message}); err != nil {
+						t.Error(err)
+					}
+				}))
+				logs, errs, err := workflow.Start(t.Context(), time.Second, strings.Repeat("a", 64))
+				reason, tagged := terminalreason.FromError(err)
+				require.Nil(t, logs)
+				require.Nil(t, errs)
+				require.EqualValues(t, 1, calls.Load())
+				require.Equal(t, tc.code, status.Code(err))
+				require.Equal(t, tc.outcome, CreationOutcome(err))
+				require.Contains(t, err.Error(), message)
+				require.Equal(t, tc.response != http.StatusBadRequest, tagged)
+				if tagged {
+					require.Equal(t, terminalreason.SystemError, reason)
+				}
+			})
+		}
+	}
+}
+
+func TestStartParentContextPreventsMutation(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		t.Run(map[bool]string{false: "canceled", true: "deadline"}[deadline], func(t *testing.T) {
+			var calls atomic.Int32
+			workflow := newNetworkTestWorkflow(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if deadline {
+				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			} else {
+				ctx, cancel = context.WithCancel(t.Context())
+				cancel()
+			}
+			defer cancel()
+			logs, errs, err := workflow.Start(ctx, time.Second, strings.Repeat("a", 64))
+			want := codes.Canceled
+			if deadline {
+				want = codes.DeadlineExceeded
+			}
+			reason, ok := terminalreason.FromError(err)
+			if logs != nil || errs != nil || calls.Load() != 0 || status.Code(err) != want || !ok || reason != terminalreason.SystemError {
+				t.Fatalf("parent context result: %v, requests=%d", err, calls.Load())
+			}
+		})
 	}
 }

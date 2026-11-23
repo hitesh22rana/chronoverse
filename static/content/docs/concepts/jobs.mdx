@@ -19,6 +19,15 @@ Infrastructure failures may release a job for a bounded retry. The dispatch atte
 
 User workload failures and system failures are handled differently so an invalid command does not receive the same recovery policy as a lost worker or unavailable Docker host.
 
+Docker-reported invalid Start configuration settles as `USER` / `EXECUTION_FAILED`.
+Generic server errors, including some invalid inherited image metadata, remain
+eligible for finite system retries and end as `SYSTEM_ERROR` at exhaustion.
+Reported wait errors cannot complete a job, even when a response carries a status.
+A normal received exit remains authoritative during canceled tail-log drain;
+independent earlier stream failures still determine retry policy. See
+[execution recovery](/docs/operations/recovery#job-execution) for error precedence,
+diagnostic limits and caller-versus-workload deadline behavior.
+
 Configured container execution timeouts and heartbeat request timeouts use `TIME_LIMIT_EXCEEDED`. Transport and infrastructure failures remain eligible for bounded system retries. Terminal records without a recognized reason code return `FAILURE_REASON_UNAVAILABLE` or `CANCELLATION_REASON_UNAVAILABLE`.
 
 ## Execution ownership

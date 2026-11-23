@@ -3,7 +3,9 @@ package executor
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -86,6 +88,7 @@ func (r *Repository) processContainerExecution(
 	logDone := r.publishContainerLogs(ctx, jobID, attempts, workflow, logs, done)
 	execErrors := errs
 	var execErr error
+	var secondary strings.Builder
 	for execErrors != nil || logDone != nil {
 		select {
 		case err, ok := <-execErrors:
@@ -93,15 +96,94 @@ func (r *Repository) processContainerExecution(
 				execErrors = nil
 				continue
 			}
+			if err == nil {
+				continue
+			}
 			if execErr == nil {
 				execErr = err
+				continue
+			}
+			remaining := maxSecondaryDiagnosticBytes - secondary.Len()
+			if remaining > 1 {
+				if secondary.Len() > 0 {
+					secondary.WriteByte('\n')
+					remaining--
+				}
+				secondary.WriteString(renderExecutionDiagnostic(err.Error(), remaining))
 			}
 		case <-logDone:
 			logDone = nil
 		}
 	}
 
-	return execErr
+	return withExecutionDiagnostics(execErr, secondary.String())
+}
+
+const (
+	// Leave headroom below job storage and intent RPC limits for status/context wrapping.
+	maxExecutionDiagnosticBytes = 1536
+	maxSecondaryDiagnosticBytes = 512
+)
+
+// Only the primary participates in errors.Is/As and retry classification; later
+// errors are diagnostic data, never additional workload reasons or contexts.
+type executionDiagnosticError struct {
+	primary error
+	message string
+}
+
+func (e *executionDiagnosticError) Error() string { return e.message }
+func (e *executionDiagnosticError) Unwrap() error { return e.primary }
+func (e *executionDiagnosticError) GRPCStatus() *status.Status {
+	code := status.Code(e.primary)
+	if code == codes.Unknown {
+		code = status.FromContextError(e.primary).Code()
+	}
+	return status.New(code, e.message)
+}
+
+func withExecutionDiagnostics(primary error, secondary string) error {
+	if primary == nil {
+		return nil
+	}
+	suffix := ""
+	if secondary != "" {
+		suffix = "\nadditional execution diagnostics: " + secondary
+	}
+	message := renderExecutionDiagnostic(primary.Error(), maxExecutionDiagnosticBytes-len(suffix)) + suffix
+	if secondary == "" && message == primary.Error() &&
+		renderExecutionDiagnostic(status.Convert(primary).Message(), maxExecutionDiagnosticBytes) == status.Convert(primary).Message() {
+		return primary
+	}
+	return &executionDiagnosticError{primary: primary, message: message}
+}
+
+// Render before protobuf/SQL: valid UTF-8 can still contain NUL, which PostgreSQL
+// text rejects. Bound while decoding rather than building an unbounded aggregate.
+func renderExecutionDiagnostic(text string, limit int) string {
+	var rendered strings.Builder
+	for text != "" {
+		r, size := utf8.DecodeRuneInString(text)
+		token := string(r)
+		if r == 0 {
+			token = `\x00`
+		}
+		if rendered.Len()+len(token) > limit {
+			const marker = "…"
+			if limit < len(marker) {
+				return strings.Repeat(".", limit)
+			}
+			prefix := rendered.String()
+			prefix = prefix[:min(len(prefix), limit-len(marker))]
+			for !utf8.ValidString(prefix) {
+				prefix = prefix[:len(prefix)-1]
+			}
+			return prefix + marker
+		}
+		rendered.WriteString(token)
+		text = text[size:]
+	}
+	return rendered.String()
 }
 
 func (r *Repository) publishContainerLogs(

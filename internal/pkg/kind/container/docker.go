@@ -442,6 +442,8 @@ func (w *DockerWorkflow) DockerHost() string {
 	return w.Client.DaemonHost()
 }
 
+var errConfiguredExecutionTimeout = errors.New("configured container execution timeout")
+
 func (w *DockerWorkflow) watchContainer(
 	ctx context.Context,
 	timeout time.Duration,
@@ -456,7 +458,7 @@ func (w *DockerWorkflow) watchContainer(
 	// unconditionally: a caller that canceled still needs to learn why it ended.
 	errs := make(chan error, maxContainerLogStreamErrors+1)
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	timeoutCtx, cancel := context.WithTimeoutCause(ctx, timeout, errConfiguredExecutionTimeout)
 
 	go func() {
 		defer close(logs)
@@ -465,6 +467,18 @@ func (w *DockerWorkflow) watchContainer(
 
 		waitResult := w.Client.ContainerWait(timeoutCtx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 		statusCh, waitErrCh := waitResult.Result, waitResult.Error
+		waitReceived := false
+		defer func() {
+			cancel()
+			if !waitReceived {
+				// The pinned SDK sends one message and its result send is unbuffered.
+				// Consume it even after cancellation so its sender can close the body.
+				select {
+				case <-statusCh:
+				case <-waitErrCh: //nolint:errcheck // Outcome was already published; receive only releases SDK teardown.
+				}
+			}
+		}()
 
 		logsDone := make(chan struct{})
 		go func() {
@@ -488,21 +502,28 @@ func (w *DockerWorkflow) watchContainer(
 			return
 
 		case err := <-waitErrCh:
-			if strings.Contains(err.Error(), "No such container") {
-				stopLogStream()
-				return
-			}
-
-			// timeoutCtx, not the caller ctx: the internal deadline is the only
-			// signal available when the wait error races the deadline.
+			waitReceived = true
+			// Missing/error waits cannot authorize success. Capture context before
+			// self-canceling so teardown cannot change the failure attribution.
 			w.publishExecutionFailure(timeoutCtx, containerID, errs, err)
 
 			stopLogStream()
 			return
 
 		case containerStatus := <-statusCh:
-			// The daemon ends the log stream once the container exits, so
-			// wait for it here and let the deferred cancel follow the drain.
+			waitReceived = true
+			if containerStatus.Error != nil {
+				message := containerStatus.Error.Message
+				if message == "" {
+					message = "unspecified daemon error"
+				}
+				w.publishExecutionFailure(timeoutCtx, containerID, errs,
+					fmt.Errorf("container wait failed (status %d): %s", containerStatus.StatusCode, message))
+				stopLogStream()
+				return
+			}
+			// A normal received exit stays authoritative if cancellation ends tail
+			// log drain. The context-aware reader/sends still bound this join.
 			<-logsDone
 
 			if containerStatus.StatusCode != 0 {
@@ -517,11 +538,21 @@ func (w *DockerWorkflow) watchContainer(
 // publishExecutionFailure reports the terminal cause before bounded cleanup.
 func (w *DockerWorkflow) publishExecutionFailure(ctx context.Context, containerID string, errs chan<- error, waitErr error) {
 	contextErr := ctx.Err()
+	// A received wait failure remains diagnostic evidence when context wins policy.
+	// Render it as text only; executor rendering bounds and sanitizes persistence.
+	waitDiagnostic := ""
+	if contextErr != nil && waitErr != nil {
+		waitDiagnostic = fmt.Sprintf("; received wait failure: %v", waitErr)
+	}
 	switch {
 	case errors.Is(contextErr, context.DeadlineExceeded):
-		errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", contextErr))
+		if errors.Is(context.Cause(ctx), errConfiguredExecutionTimeout) {
+			errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v%s", contextErr, waitDiagnostic))
+		} else {
+			errs <- status.Errorf(codes.DeadlineExceeded, "container execution context deadline exceeded: %v%s", contextErr, waitDiagnostic)
+		}
 	case errors.Is(contextErr, context.Canceled):
-		errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", contextErr)
+		errs <- status.Errorf(codes.Canceled, "container execution canceled: %v%s", contextErr, waitDiagnostic)
 	default:
 		errs <- status.Errorf(codes.Aborted, "container execution error: %v", waitErr)
 		return
@@ -615,7 +646,11 @@ func (w *DockerWorkflow) streamContainerLogs(
 		Follow:     follow,
 	})
 	if err != nil {
-		publishContainerLogError(ctx, errs, containerLogRequestError(err))
+		logErr := containerLogRequestError(err)
+		if follow && status.Code(logErr) == codes.NotFound {
+			logErr = terminalreason.Wrap(terminalreason.SystemError, logErr)
+		}
+		publishContainerLogError(ctx, errs, logErr)
 		return
 	}
 	defer reader.Close()

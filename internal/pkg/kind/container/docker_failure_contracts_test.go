@@ -221,8 +221,9 @@ func TestImageExistsDistinguishesAbsenceAndFailure(t *testing.T) {
 	}
 }
 
+//nolint:gocyclo // One shared outage fixture covers the adapter operations.
 func TestDockerUnavailableDaemonContracts(t *testing.T) {
-	for _, op := range []string{"remove", "stop", "build", "exists", "logs", "healthy", "execute"} {
+	for _, op := range []string{"remove", "stop", "build", "exists", "logs", "healthy", "execute", "start"} {
 		t.Run(op, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 			host := server.URL
@@ -234,6 +235,8 @@ func TestDockerUnavailableDaemonContracts(t *testing.T) {
 			defer cli.Close()
 			workflow := &DockerWorkflow{Client: cli}
 			switch op {
+			case "start":
+				_, _, err = workflow.Start(t.Context(), time.Second, strings.Repeat("a", 64))
 			case "remove":
 				err = workflow.Remove(t.Context(), strings.Repeat("a", 64))
 			case "stop":
@@ -258,7 +261,7 @@ func TestDockerUnavailableDaemonContracts(t *testing.T) {
 				_, _, _, err = workflow.ExecuteTestFixture(t.Context(), time.Minute, "alpine", nil, nil)
 			}
 			want := codes.Internal
-			if op == "remove" {
+			if op == "remove" || op == "start" {
 				want = codes.Unavailable
 			}
 			if status.Code(err) != want {

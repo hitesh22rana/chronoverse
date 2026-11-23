@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -971,19 +972,29 @@ func assertDurableFollowUp(ctx context.Context, t *testing.T, pg *postgres.Postg
 	}
 }
 
+//nolint:gocyclo // One durable owner pins retry/exhaustion and stored diagnostic safety.
 func TestIntegrationClaimedRunClassifiesContextAndRuntimeFailures(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		err    error
-		code   codes.Code
-		reason string
+		name       string
+		err        error
+		code       codes.Code
+		reason     string
+		diagnostic string
 	}{
-		{"raw cancellation", context.Canceled, codes.Canceled, ""},
-		{"wrapped cancellation", fmt.Errorf("execution: %w", context.Canceled), codes.Canceled, ""},
-		{"raw deadline", context.DeadlineExceeded, codes.DeadlineExceeded, ""},
-		{"aborted runtime operation", status.Error(codes.Aborted, "runtime operation aborted"), codes.Aborted, ""},
-		{"wrapped deadline", fmt.Errorf("execution: %w", context.DeadlineExceeded), codes.DeadlineExceeded, ""},
-		{"workload timeout", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), codes.DeadlineExceeded, terminalreason.TimeLimitExceeded.String()},
+		{"raw cancellation", context.Canceled, codes.Canceled, "", ""},
+		{"wrapped cancellation", fmt.Errorf("execution: %w", context.Canceled), codes.Canceled, "", ""},
+		{"raw deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "", ""},
+		{"aborted runtime operation", status.Error(codes.Aborted, "runtime operation aborted"), codes.Aborted, "", ""},
+		{"wrapped deadline", fmt.Errorf("execution: %w", context.DeadlineExceeded), codes.DeadlineExceeded, "", ""},
+		{"workload timeout", terminalreason.Wrap(terminalreason.TimeLimitExceeded, context.DeadlineExceeded), codes.DeadlineExceeded, terminalreason.TimeLimitExceeded.String(), ""},
+		{
+			"bounded diagnostics",
+			executionFailureFromStream(t,
+				status.Error(codes.Unavailable, strings.Repeat("runtime prefix ", 1000)),
+				terminalreason.Wrap(terminalreason.NonZeroExit, status.Error(codes.Aborted, "observed exit 137\x00\xff")),
+			),
+			codes.Unavailable, "", "observed exit 137",
+		},
 	} {
 		for _, attempts := range []int32{1, 3} {
 			t.Run(fmt.Sprintf("%s/attempt=%d", tc.name, attempts), func(t *testing.T) {
@@ -1007,6 +1018,15 @@ func TestIntegrationClaimedRunClassifiesContextAndRuntimeFailures(t *testing.T) 
 					t.Errorf("released claim error = %v", err)
 				}
 				assertDurableExecutionFailure(t, &state, attempts, tc.code, tc.reason)
+				if tc.diagnostic != "" {
+					var diagnostic string
+					if readErr := pg.QueryRow(ctx, `SELECT last_error_message FROM jobs WHERE id = $1`, fixture.JobID).Scan(&diagnostic); readErr != nil {
+						t.Fatal(readErr)
+					}
+					if !strings.Contains(diagnostic, tc.diagnostic) || !strings.Contains(diagnostic, `\x00`) || strings.ContainsRune(diagnostic, 0) || !utf8.ValidString(diagnostic) || len(diagnostic) > 2048 {
+						t.Fatalf("unsafe or lost persisted secondary diagnostic: %q", diagnostic)
+					}
+				}
 				if state.LeaseToken.Valid || repo.handoffs.size() != 0 {
 					t.Fatal("accepted settlement retained execution authority")
 				}

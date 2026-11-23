@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -276,6 +277,9 @@ func TestContainerFailureDiagnosticsAndForeignContextErrors(t *testing.T) {
 	long := strings.Repeat("界", 3000)
 	if got := containerDiagnostic(status.Error(codes.Unavailable, long)); len([]rune(got)) != 2048 {
 		t.Fatalf("unbounded diagnostic: %d", len([]rune(got)))
+	}
+	if got := containerDiagnostic(status.Error(codes.Unavailable, "bad\x00\xff")); !utf8.ValidString(got) || strings.ContainsRune(got, 0) || !strings.Contains(got, `\x00`) {
+		t.Fatalf("intent diagnostic is not transport/storage safe: %q", got)
 	}
 	for _, cause := range []error{context.Canceled, fmt.Errorf("remote request: %w", context.DeadlineExceeded)} {
 		_, err := callContainerIntent(t.Context(), func(context.Context, *jobspb.ContainerIntentCommand, ...grpc.CallOption) (*jobspb.ContainerIntentResponse, error) {

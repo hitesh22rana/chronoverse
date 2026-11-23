@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"go.uber.org/zap"
@@ -151,7 +152,7 @@ func (r *Repository) verifyIntentContainer(
 }
 
 func containerDiagnostic(err error) string {
-	runes := []rune(status.Convert(err).Message())
+	runes := []rune(renderExecutionDiagnostic(status.Convert(err).Message(), 2048*utf8.UTFMax))
 	if len(runes) > 2048 {
 		runes = runes[:2048]
 	}

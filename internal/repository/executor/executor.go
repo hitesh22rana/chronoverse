@@ -707,14 +707,20 @@ type executionFailureDecision struct {
 // normalizeExecutionError preserves explicit workload reasons while giving Go
 // context errors the same transport classification as their gRPC equivalents.
 func normalizeExecutionError(err error) error {
+	// The diagnostic wrapper already maps context codes and budgets the full
+	// message. Another status wrapper can push secondary text past that budget.
+	//nolint:errorlint // Only the outermost wrapper guarantees the full message was rendered.
+	if _, ok := err.(*executionDiagnosticError); ok {
+		return err
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		normalized := status.FromContextError(err).Err()
 		if reason, ok := terminalreason.FromError(err); ok {
-			return terminalreason.Wrap(reason, normalized)
+			return withExecutionDiagnostics(terminalreason.Wrap(reason, normalized), "")
 		}
-		return normalized
+		return withExecutionDiagnostics(normalized, "")
 	}
-	return err
+	return withExecutionDiagnostics(err, "")
 }
 
 func classifyExecutionFailure(err error) executionFailureDecision {

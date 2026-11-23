@@ -76,7 +76,7 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				workflow.publishExecutionFailure(ctx, "contract", errs, errors.New("wait interrupted"))
+				workflow.publishExecutionFailure(ctx, "contract", errs, errors.New("container wait failed (status 137): daemon wait interrupted"))
 			}()
 			select {
 			case <-entered:
@@ -85,7 +85,7 @@ func TestExecutionFailurePublishesBeforeBestEffortStop(t *testing.T) {
 			}
 			select {
 			case terminal := <-errs:
-				if status.Code(terminal) != tc.want {
+				if status.Code(terminal) != tc.want || !strings.Contains(terminal.Error(), "container wait failed (status 137): daemon wait interrupted") {
 					t.Fatalf("terminal error=%v", terminal)
 				}
 				reason, found := terminalreason.FromError(terminal)

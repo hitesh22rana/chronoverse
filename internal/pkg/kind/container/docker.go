@@ -538,15 +538,21 @@ func (w *DockerWorkflow) watchContainer(
 // publishExecutionFailure reports the terminal cause before bounded cleanup.
 func (w *DockerWorkflow) publishExecutionFailure(ctx context.Context, containerID string, errs chan<- error, waitErr error) {
 	contextErr := ctx.Err()
+	// A received wait failure remains diagnostic evidence when context wins policy.
+	// Render it as text only; executor rendering bounds and sanitizes persistence.
+	waitDiagnostic := ""
+	if contextErr != nil && waitErr != nil {
+		waitDiagnostic = fmt.Sprintf("; received wait failure: %v", waitErr)
+	}
 	switch {
 	case errors.Is(contextErr, context.DeadlineExceeded):
 		if errors.Is(context.Cause(ctx), errConfiguredExecutionTimeout) {
-			errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v", contextErr))
+			errs <- terminalreason.Wrap(terminalreason.TimeLimitExceeded, status.Errorf(codes.DeadlineExceeded, "container execution timed out: %v%s", contextErr, waitDiagnostic))
 		} else {
-			errs <- status.Errorf(codes.DeadlineExceeded, "container execution context deadline exceeded: %v", contextErr)
+			errs <- status.Errorf(codes.DeadlineExceeded, "container execution context deadline exceeded: %v%s", contextErr, waitDiagnostic)
 		}
 	case errors.Is(contextErr, context.Canceled):
-		errs <- status.Errorf(codes.Canceled, "container execution canceled: %v", contextErr)
+		errs <- status.Errorf(codes.Canceled, "container execution canceled: %v%s", contextErr, waitDiagnostic)
 	default:
 		errs <- status.Errorf(codes.Aborted, "container execution error: %v", waitErr)
 		return

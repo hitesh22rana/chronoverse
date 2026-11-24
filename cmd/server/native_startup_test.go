@@ -286,8 +286,12 @@ func TestIntegrationNativePostgresLifecycle(t *testing.T) {
 			bin, cover := build(t, name)
 			dir := keys(t, name)
 			dependencies := append([]string{}, pg...)
-			if name == "users-service" || name == "workflows-service" || name == "server" {
+			switch name {
+			case "server":
 				dependencies = append(dependencies, redisEnv(t)...)
+			case "users-service", "workflows-service":
+				// These services must start even with unusable Redis settings.
+				dependencies = append(dependencies, unavailableRedisTLS...)
 			}
 			port := availableCommandPort(t, name, bin, dir, cover, dependencies)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -359,21 +363,21 @@ func availableCommandPort(t *testing.T, name, bin, dir, cover string, pg []strin
 	return port
 }
 
-// A valid database must be acquired before the subsequent Redis certificate
-// error. This exercises partial startup and the production database defer.
+var unavailableRedisTLS = []string{
+	"REDIS_TLS_ENABLED=true", "REDIS_TLS_CERT_FILE=missing-client.pem", "REDIS_TLS_KEY_FILE=missing-client.key",
+}
+
+// Jobs acquires a valid database before the Redis certificate error. This
+// exercises partial startup and the production database defer.
 func TestIntegrationNativePartialAcquisitionFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("real PostgreSQL integration")
 	}
+	const name = "jobs-service"
 	pg := postgresEnv(t)
-	for _, name := range []string{"users-service", "workflows-service", "jobs-service"} {
-		t.Run(name, func(t *testing.T) {
-			bin, cover := build(t, name)
-			changes := append(append([]string{}, pg...), "REDIS_TLS_ENABLED=true", "REDIS_TLS_CERT_FILE=missing-client.pem", "REDIS_TLS_KEY_FILE=missing-client.key")
-			reject(t, bin, keys(t, name), cover, "missing-client.pem", changes...)
-			assertCoverage(t, cover, name)
-		})
-	}
+	bin, cover := build(t, name)
+	reject(t, bin, keys(t, name), cover, "missing-client.pem", append(pg, unavailableRedisTLS...)...)
+	assertCoverage(t, cover, name)
 }
 
 func waitReady(ctx context.Context, t *testing.T, done <-chan error, out *outputBuffer, ready func() bool) {

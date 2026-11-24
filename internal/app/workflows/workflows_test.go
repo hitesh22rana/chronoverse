@@ -611,6 +611,9 @@ func TestGetWorkflow(t *testing.T) {
 
 	svc := workflowsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameWorkflows)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
 		Deadline: 500 * time.Millisecond,
@@ -640,11 +643,11 @@ func TestGetWorkflow(t *testing.T) {
 				},
 				req: &workflowspb.GetWorkflowRequest{
 					Id:     "workflow_id",
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -693,7 +696,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 				req: &workflowspb.GetWorkflowRequest{
 					Id:     "workflow_id",
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
@@ -717,11 +720,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().GetWorkflow(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "user_id and name are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -736,7 +735,7 @@ func TestGetWorkflow(t *testing.T) {
 				},
 				req: &workflowspb.GetWorkflowRequest{
 					Id:     "workflow_id",
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock:  func(_ *workflowspb.GetWorkflowRequest) {},
@@ -754,11 +753,11 @@ func TestGetWorkflow(t *testing.T) {
 				},
 				req: &workflowspb.GetWorkflowRequest{
 					Id:     "workflow_id",
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflow(
 					gomock.Any(),
 					gomock.Any(),
@@ -1681,6 +1680,9 @@ func TestListWorkflows(t *testing.T) {
 
 	svc := workflowsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameWorkflows)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(workflows.New(t.Context(), &workflows.Config{
 		Deadline: 500 * time.Millisecond,
@@ -1709,12 +1711,12 @@ func TestListWorkflows(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ListWorkflowsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListWorkflows(
 					gomock.Any(),
 					gomock.Any(),
@@ -1772,7 +1774,7 @@ func TestListWorkflows(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ListWorkflowsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
@@ -1797,11 +1799,7 @@ func TestListWorkflows(t *testing.T) {
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().ListWorkflows(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "user_id is required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -1815,7 +1813,7 @@ func TestListWorkflows(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ListWorkflowsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
@@ -1833,12 +1831,12 @@ func TestListWorkflows(t *testing.T) {
 					)
 				},
 				req: &workflowspb.ListWorkflowsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
 			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListWorkflows(
 					gomock.Any(),
 					gomock.Any(),

@@ -96,6 +96,17 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 			return nil, err
 		}
 
+		switch request := req.(type) {
+		case *userpb.GetUserRequest:
+			if err := auth.RequireOwner(newCtx, request.GetId()); err != nil {
+				return nil, err
+			}
+		case *userpb.UpdateUserRequest:
+			if err := auth.RequireOwner(newCtx, request.GetId()); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(newCtx, req)
 	}
 }

@@ -1509,6 +1509,9 @@ func TestListJobs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -1538,12 +1541,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1596,12 +1599,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1656,7 +1659,7 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -1682,11 +1685,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().ListJobs(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "workflow_id is required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -1701,7 +1700,7 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -1720,12 +1719,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),

@@ -86,6 +86,12 @@ func (n *Notifications) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServe
 			return nil, err
 		}
 
+		if request, ok := req.(*notificationspb.ListNotificationsRequest); ok {
+			if err := authpkg.RequireOwner(newCtx, request.GetUserId()); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(newCtx, req)
 	}
 }

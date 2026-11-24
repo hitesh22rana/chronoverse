@@ -146,6 +146,12 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
+		if request, ok := req.(*jobspb.ListJobsRequest); ok {
+			if err := authpkg.RequireOwner(newCtx, request.GetUserId()); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(newCtx, req)
 	}
 }

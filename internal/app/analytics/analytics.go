@@ -77,6 +77,12 @@ func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
+		if request, ok := req.(interface{ GetUserId() string }); ok {
+			if err := auth.RequireOwner(newCtx, request.GetUserId()); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(newCtx, req)
 	}
 }

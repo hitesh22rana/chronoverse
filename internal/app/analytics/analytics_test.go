@@ -59,6 +59,9 @@ func TestGetUserAnalytics(t *testing.T) {
 
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameAnalytics)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
@@ -86,14 +89,14 @@ func TestGetUserAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetUserAnalyticsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
 				_auth.EXPECT().ValidateToken(
 					gomock.Any(),
 					gomock.Eq(auth.ServiceNameAnalytics),
-				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetUserAnalytics(
 					gomock.Any(),
 					gomock.Any(),
@@ -113,6 +116,19 @@ func TestGetUserAnalytics(t *testing.T) {
 			wantCode: codes.OK,
 		},
 		{
+			name: "error: token subject differs from requested owner",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &analyticspb.GetUserAnalyticsRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameAnalytics).Return(principal, &jwt.Token{}, nil)
+			},
+			wantCode: codes.PermissionDenied,
+		},
+		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
@@ -122,7 +138,7 @@ func TestGetUserAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetUserAnalyticsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
@@ -145,11 +161,7 @@ func TestGetUserAnalytics(t *testing.T) {
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().GetUserAnalytics(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "missing required fields in request"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:      nil,
 			wantCode: codes.InvalidArgument,
@@ -163,7 +175,7 @@ func TestGetUserAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetUserAnalyticsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock:     func(_ *analyticspb.GetUserAnalyticsRequest) {},
@@ -180,11 +192,11 @@ func TestGetUserAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetUserAnalyticsRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *analyticspb.GetUserAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetUserAnalytics(
 					gomock.Any(),
 					gomock.Any(),
@@ -219,6 +231,9 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 
 	svc := analyticsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameAnalytics)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client := analyticspb.NewAnalyticsServiceClient(initClient(t, analytics.New(t.Context(), &analytics.Config{
 		Deadline: 500 * time.Millisecond,
@@ -246,12 +261,12 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetWorkflowAnalyticsRequest{
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					WorkflowId: "workflow_id",
 				},
 			},
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowAnalytics(
 					gomock.Any(),
 					gomock.Any(),
@@ -271,6 +286,19 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 			wantCode: codes.OK,
 		},
 		{
+			name: "error: token subject differs from requested owner",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &analyticspb.GetWorkflowAnalyticsRequest{UserId: "00000000-0000-4000-8000-000000000322", WorkflowId: "workflow_id"},
+			},
+			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameAnalytics).Return(principal, &jwt.Token{}, nil)
+			},
+			wantCode: codes.PermissionDenied,
+		},
+		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
@@ -280,7 +308,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetWorkflowAnalyticsRequest{
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					WorkflowId: "workflow_id",
 				},
 			},
@@ -300,12 +328,12 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetWorkflowAnalyticsRequest{
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					WorkflowId: "",
 				},
 			},
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowAnalytics(
 					gomock.Any(),
 					gomock.Any(),
@@ -323,7 +351,7 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetWorkflowAnalyticsRequest{
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					WorkflowId: "workflow_id",
 				},
 			},
@@ -341,12 +369,12 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 					)
 				},
 				req: &analyticspb.GetWorkflowAnalyticsRequest{
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					WorkflowId: "workflow_id",
 				},
 			},
 			mock: func(_ *analyticspb.GetWorkflowAnalyticsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetWorkflowAnalytics(
 					gomock.Any(),
 					gomock.Any(),

@@ -12,6 +12,8 @@ The production entry point is Nginx. It serves the dashboard, proxies `/api/...`
 
 Five gRPC services own users, workflows, jobs, notifications, and analytics. They expose ports `50051` through `50055` inside Compose.
 
+All five services expose gRPC reflection only outside production. Reflection requires a JWT valid for the target service. Health checks remain available without a JWT.
+
 ## Asynchronous plane
 
 Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Scheduling, workflow preparation, container execution, retained log processing, analytics, and outbox publication scale independently within topic and infrastructure constraints.

@@ -152,6 +152,10 @@ func New(ctx context.Context, cfg *Config, _auth auth.IAuth, svc Service) *grpc.
 
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
+		//nolint:contextcheck // The interceptor wraps the authenticated stream context.
+		grpc.StreamInterceptor(grpcmiddlewares.AuthenticatedStreamInterceptor(
+			loggerpkg.FromContext(ctx), _auth, auth.ServiceNameUsers,
+		)),
 		grpc.ChainUnaryInterceptor(
 			// authToken must run before logging/role authorization so
 			// the JWT-validated audience/role are in context when the

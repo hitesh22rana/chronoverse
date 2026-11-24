@@ -21,6 +21,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -90,7 +91,10 @@ func TestStreamAuthenticationRejectsMethodWithoutOwnershipPolicy(t *testing.T) {
 		Return(auth.WithRole(t.Context(), auth.RoleUser.String()), nil, nil)
 	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer token"))
 	app := &Jobs{auth: tokens}
-	err := app.streamAuthTokenInterceptor(zap.NewNop())(
+	err := grpcmiddlewares.AuthenticatedStreamInterceptor(
+		zap.NewNop(), tokens, auth.ServiceNameJobs,
+		jobspb.JobsService_StreamJobLogs_FullMethodName,
+	)(
 		app,
 		contractLogServerStream{ctx: ctx},
 		&grpc.StreamServerInfo{FullMethod: "/jobs.JobsService/UnclassifiedStream", IsServerStream: true},

@@ -19,8 +19,6 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
-	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
-	reflectionalphapb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
@@ -162,43 +160,6 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 	}
 }
 
-// streamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
-func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
-	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if isHealthCheckRoute(info.FullMethod) {
-			return handler(srv, stream)
-		}
-
-		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
-		if err != nil {
-			grpcmiddlewares.LogAuthenticationFailure(stream.Context(), logger, err)
-			return err
-		}
-
-		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
-		newCtx, _, err := j.auth.ValidateToken(ctx, authpkg.ServiceNameJobs)
-		if err != nil {
-			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return err
-		}
-
-		switch info.FullMethod {
-		case jobspb.JobsService_StreamJobLogs_FullMethodName:
-			// The handler binds ownership after gRPC decodes the request.
-		case reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName,
-			reflectionalphapb.ServerReflection_ServerReflectionInfo_FullMethodName:
-			// Reflection exposes descriptors and has no owner-scoped request.
-		default:
-			return status.Error(codes.PermissionDenied, "stream ownership policy is required")
-		}
-
-		return handler(srv, &grpcmiddlewares.WrappedServerStream{
-			ServerStream: stream,
-			Ctx:          newCtx,
-		})
-	}
-}
-
 // isHealthCheckRoute checks if the method is a health check route.
 func isHealthCheckRoute(method string) bool {
 	return strings.Contains(method, grpc_health_v1.Health_ServiceDesc.ServiceName)
@@ -244,7 +205,10 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		),
 		grpc.ChainStreamInterceptor(
 			//nolint:contextcheck // stream interceptor wraps context via WrappedServerStream
-			jobs.streamAuthTokenInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.AuthenticatedStreamInterceptor(
+				loggerpkg.FromContext(ctx), auth, authpkg.ServiceNameJobs,
+				jobspb.JobsService_StreamJobLogs_FullMethodName,
+			),
 			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.

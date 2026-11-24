@@ -47,6 +47,10 @@ inside the `chronoverse` namespace. Their DNS records return ready Pod IPs so
 the gRPC clients' `round_robin` policy can balance calls across resolved
 replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 
+All five services expose gRPC reflection only outside production. Reflection
+requires a JWT valid for the target service. Health checks remain available
+without a JWT.
+
 ### Workers
 
 - `scheduling-worker` scans PostgreSQL for workflows that are due and creates

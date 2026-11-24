@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 	gootelog "go.opentelemetry.io/otel/sdk/log"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,51 +29,96 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/app/analytics"
+	"github.com/hitesh22rana/chronoverse/internal/app/notifications"
+	"github.com/hitesh22rana/chronoverse/internal/app/users"
+	"github.com/hitesh22rana/chronoverse/internal/app/workflows"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 )
 
-func TestAnalyticsHealthAndReflection(t *testing.T) {
-	for _, tc := range []struct {
-		environment string
-		reflection  bool
+func TestServiceHealthAndReflection(t *testing.T) {
+	for _, service := range []struct {
+		audience string
+		start    func(context.Context, string, auth.IAuth) *grpc.Server
 	}{
-		{"development", true},
-		{"PrOdUcTiOn", false},
+		{auth.ServiceNameAnalytics, func(ctx context.Context, env string, tokens auth.IAuth) *grpc.Server {
+			return analytics.New(ctx, &analytics.Config{Environment: env}, tokens, nil)
+		}},
+		{auth.ServiceNameNotifications, func(ctx context.Context, env string, tokens auth.IAuth) *grpc.Server {
+			return notifications.New(ctx, &notifications.Config{Environment: env}, tokens, nil)
+		}},
+		{auth.ServiceNameUsers, func(ctx context.Context, env string, tokens auth.IAuth) *grpc.Server {
+			return users.New(ctx, &users.Config{Environment: env}, tokens, nil)
+		}},
+		{auth.ServiceNameWorkflows, func(ctx context.Context, env string, tokens auth.IAuth) *grpc.Server {
+			return workflows.New(ctx, &workflows.Config{Environment: env}, tokens, nil)
+		}},
 	} {
-		t.Run(tc.environment, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-			defer cancel()
-			// No auth expectation: infrastructure health checks must work without a JWT.
-			auth := authmock.NewMockIAuth(gomock.NewController(t))
-			server := analytics.New(ctx, &analytics.Config{Environment: tc.environment}, auth, nil)
-			conn := initClient(t, server, insecure.NewCredentials())
-			health, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
-			require.NoError(t, err)
-			require.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, health.GetStatus())
-
-			stream, err := reflectionpb.NewServerReflectionClient(conn).ServerReflectionInfo(ctx)
-			require.NoError(t, err)
-			sendErr := stream.Send(&reflectionpb.ServerReflectionRequest{
-				MessageRequest: &reflectionpb.ServerReflectionRequest_ListServices{ListServices: ""},
-			})
-			response, err := stream.Recv()
-			require.NoError(t, stream.CloseSend())
-			if !tc.reflection {
-				require.Equal(t, codes.Unimplemented, status.Code(err))
-				require.Nil(t, response)
-				return
+		t.Run(service.audience, func(t *testing.T) {
+			for _, env := range []string{"development", "PrOdUcTiOn"} {
+				t.Run(env, func(t *testing.T) {
+					verifyReflectionPolicy(t, service.audience, env, service.start)
+				})
 			}
-			require.NoError(t, sendErr)
-			require.NoError(t, err)
-			var services []string
-			for _, service := range response.GetListServicesResponse().GetService() {
-				services = append(services, service.GetName())
-			}
-			require.Contains(t, services, "analytics.AnalyticsService")
-			require.Contains(t, services, "grpc.health.v1.Health")
 		})
 	}
+}
+
+func verifyReflectionPolicy(
+	t *testing.T,
+	audience, env string,
+	start func(context.Context, string, auth.IAuth) *grpc.Server,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	tokens := authmock.NewMockIAuth(gomock.NewController(t))
+	conn := initClient(t, start(ctx, env, tokens), insecure.NewCredentials())
+	health, err := grpc_health_v1.NewHealthClient(conn).Check(ctx, &grpc_health_v1.HealthCheckRequest{})
+	require.NoError(t, err)
+	require.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, health.GetStatus())
+
+	_, err = getReflectionServices(ctx, conn)
+	if env != "development" {
+		require.Equal(t, codes.Unimplemented, status.Code(err))
+		return
+	}
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+
+	tokens.EXPECT().ValidateToken(gomock.Any(), audience).
+		DoAndReturn(func(tokenCtx context.Context, _ string) (context.Context, *jwt.Token, error) {
+			return auth.WithAudience(auth.WithRole(tokenCtx, auth.RoleUser.String()), audience), &jwt.Token{}, nil
+		})
+	services, err := getReflectionServices(auth.WithAuthorizationTokenInMetadata(ctx, "token"), conn)
+	require.NoError(t, err)
+	require.Contains(t, services, "grpc.health.v1.Health")
+}
+
+func getReflectionServices(ctx context.Context, conn *grpc.ClientConn) ([]string, error) {
+	stream, err := reflectionpb.NewServerReflectionClient(conn).ServerReflectionInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A server that rejects the stream can return EOF from Send. Recv exposes its status.
+	err = stream.Send(&reflectionpb.ServerReflectionRequest{
+		MessageRequest: &reflectionpb.ServerReflectionRequest_ListServices{ListServices: ""},
+	})
+	response, receiveErr := stream.Recv()
+	if receiveErr != nil {
+		return nil, receiveErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if closeErr := stream.CloseSend(); closeErr != nil {
+		return nil, closeErr
+	}
+	var services []string
+	for _, service := range response.GetListServicesResponse().GetService() {
+		services = append(services, service.GetName())
+	}
+	return services, nil
 }
 
 func TestAnalyticsTLS(t *testing.T) {

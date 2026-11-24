@@ -17,6 +17,7 @@ import (
 
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/app/jobs/mock"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -33,14 +34,15 @@ func (s contractLogServerStream) Send(log *jobspb.Log) error { return s.send(log
 func TestStreamHandlerReturnsDeadlineAndSendErrors(t *testing.T) {
 	t.Parallel()
 	request := &jobspb.StreamJobLogsRequest{Id: "job", WorkflowId: "workflow", UserId: "user"}
+	authorized := auth.WithRole(t.Context(), auth.RoleAdmin.String())
 	for _, deadline := range []bool{false, true} {
 		ctrl := gomock.NewController(t)
 		service := jobsmock.NewMockService(ctrl)
 		app := &Jobs{tp: noop.NewTracerProvider().Tracer("contract"), svc: service}
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(authorized)
 		if deadline {
 			cancel()
-			ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			ctx, cancel = context.WithDeadline(authorized, time.Now().Add(-time.Second))
 		}
 		cancel()
 		service.EXPECT().StreamJobLogs(gomock.Any(), request).Return(make(chan *jobsmodel.JobLog), nil)
@@ -61,7 +63,7 @@ func TestStreamHandlerReturnsDeadlineAndSendErrors(t *testing.T) {
 	service.EXPECT().StreamJobLogs(gomock.Any(), request).Return(logs, nil)
 	failed := errors.New("transport send failed")
 	calls := 0
-	err := app.StreamJobLogs(request, contractLogServerStream{ctx: t.Context(), send: func(log *jobspb.Log) error {
+	err := app.StreamJobLogs(request, contractLogServerStream{ctx: authorized, send: func(log *jobspb.Log) error {
 		calls++
 		require.True(t, proto.Equal(&jobspb.Log{EventId: "event", Message: "line", SequenceNum: 9, Stream: "stderr", Timestamp: "2026-11-06T01:02:03Z"}, log))
 		return failed

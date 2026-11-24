@@ -15,11 +15,13 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -105,6 +107,8 @@ func (u *Users) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInterce
 			if err := auth.RequireOwner(newCtx, request.GetId()); err != nil {
 				return nil, err
 			}
+		default:
+			return nil, status.Error(codes.PermissionDenied, "request ownership policy is required")
 		}
 
 		return handler(newCtx, req)
@@ -118,18 +122,8 @@ func isHealthCheckRoute(method string) bool {
 
 // isAuthRequired checks if the method requires authentication.
 func isAuthRequired(method string) bool {
-	authNotRequired := []string{
-		"RegisterUser",
-		"LoginUser",
-	}
-
-	for _, m := range authNotRequired {
-		if strings.Contains(method, m) {
-			return false
-		}
-	}
-
-	return true
+	return method != userpb.UsersService_RegisterUser_FullMethodName &&
+		method != userpb.UsersService_LoginUser_FullMethodName
 }
 
 // isProduction checks if the environment is production.

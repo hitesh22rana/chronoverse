@@ -99,13 +99,8 @@ func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
-		switch request := req.(type) {
-		case *workflowspb.GetWorkflowRequest:
-			if err := authpkg.RequireOwner(newCtx, request.GetUserId()); err != nil {
-				return nil, err
-			}
-		case *workflowspb.ListWorkflowsRequest:
-			if err := authpkg.RequireOwner(newCtx, request.GetUserId()); err != nil {
+		if !isInternalAPI(info.FullMethod) {
+			if err := grpcmiddlewares.RequireRequestOwner(newCtx, req); err != nil {
 				return nil, err
 			}
 		}

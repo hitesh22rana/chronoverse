@@ -146,10 +146,14 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
-		if request, ok := req.(*jobspb.ListJobsRequest); ok {
-			if err := authpkg.RequireOwner(newCtx, request.GetUserId()); err != nil {
+		if !isInternalAPI(info.FullMethod) {
+			if err := grpcmiddlewares.RequireRequestOwner(newCtx, req); err != nil {
 				return nil, err
 			}
+		}
+		if request, ok := req.(*jobspb.ScheduleJobRequest); ok &&
+			request.GetTrigger() == jobsmodel.JobTriggerAutomatic.ToString() && !authpkg.IsInternalService(newCtx) {
+			return nil, status.Error(codes.PermissionDenied, "automatic scheduling requires internal authorization")
 		}
 
 		return handler(newCtx, req)
@@ -174,6 +178,11 @@ func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerI
 		if err != nil {
 			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
 			return err
+		}
+
+		// StreamJobLogs binds ownership after gRPC decodes its request.
+		if info.FullMethod != jobspb.JobsService_StreamJobLogs_FullMethodName {
+			return status.Error(codes.PermissionDenied, "stream ownership policy is required")
 		}
 
 		return handler(srv, &grpcmiddlewares.WrappedServerStream{
@@ -694,6 +703,10 @@ func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.Job
 		}
 		span.End()
 	}()
+
+	if ownerErr := authpkg.RequireOwner(ctx, req.GetUserId()); ownerErr != nil {
+		return ownerErr
+	}
 
 	ch, err := j.svc.StreamJobLogs(ctx, req)
 	if err != nil {

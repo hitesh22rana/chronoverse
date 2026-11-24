@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionalphapb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -62,6 +64,71 @@ func TestHealthWatchBypassesAuthentication(t *testing.T) {
 	}
 	if response.Status != grpc_health_v1.HealthCheckResponse_SERVING {
 		t.Fatalf("expected serving health status, got %s", response.Status)
+	}
+}
+
+func TestJobsReflectionRequiresAuthentication(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tokens := authmock.NewMockIAuth(ctrl)
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).
+		DoAndReturn(func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
+			token, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+			if err != nil || token != "admin-token" {
+				return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
+			}
+			ctx = auth.WithAudience(ctx, auth.ServiceNameJobs)
+			return auth.WithRole(ctx, auth.RoleAdmin.String()), &jwt.Token{}, nil
+		}).Times(3)
+	server := jobs.New(t.Context(), &jobs.Config{Deadline: time.Second}, tokens, jobsmock.NewMockService(ctrl))
+	listener := bufconn.Listen(1024 * 1024)
+	t.Cleanup(server.Stop)
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil {
+			fmt.Fprintf(os.Stderr, "failed to serve reflection test server: %v\n", serveErr)
+		}
+	}()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	for _, tc := range []struct {
+		name, method, token string
+		code                codes.Code
+	}{
+		{"v1", reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName, "admin-token", codes.OK},
+		{"v1alpha", reflectionalphapb.ServerReflection_ServerReflectionInfo_FullMethodName, "admin-token", codes.OK},
+		{"invalid token", reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName, "invalid-token", codes.Unauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			ctx = auth.WithAuthorizationTokenInMetadata(ctx, tc.token)
+			stream, err := conn.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true, ClientStreams: true}, tc.method)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := &reflectionpb.ServerReflectionRequest{
+				MessageRequest: &reflectionpb.ServerReflectionRequest_FileContainingSymbol{
+					FileContainingSymbol: "jobs.JobsService.RedriveContainerCleanup",
+				},
+			}
+			// RecvMsg exposes the final authentication status if the server closes early.
+			if sendErr := stream.SendMsg(request); sendErr != nil && tc.code == codes.OK {
+				t.Fatalf("send reflection request: %v", sendErr)
+			}
+			var response reflectionpb.ServerReflectionResponse
+			if err := stream.RecvMsg(&response); status.Code(err) != tc.code {
+				t.Fatalf("reflection returned %v, want %v", err, tc.code)
+			}
+			if tc.code == codes.OK && len(response.GetFileDescriptorResponse().GetFileDescriptorProto()) == 0 {
+				t.Fatalf("reflection returned no descriptor: %v", response.String())
+			}
+		})
 	}
 }
 

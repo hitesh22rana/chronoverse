@@ -952,10 +952,13 @@ Outstanding count alone is not a failure. Use the query above to identify affect
 work and distinguish backoff, a live lease, publication failure and quarantine.
 
 Repair the runtime/configuration issue, then call the internal jobs-service RPC
-with an admin token for the jobs-service audience and the observed generation:
+with an admin token for the jobs-service audience and the observed generation.
+Run this command from the repository root. It loads the RPC descriptor from
+`proto/jobs/jobs.proto` because production disables gRPC reflection.
 
 ```sh
-grpcurl -H "authorization: Bearer $JOBS_ADMIN_TOKEN" \
+grpcurl -import-path proto -proto jobs/jobs.proto \
+  -H "authorization: Bearer $JOBS_ADMIN_TOKEN" \
   -d '{
     "job_id":"<job UUID>",
     "container_id":"<container ID>",

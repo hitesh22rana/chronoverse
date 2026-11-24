@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionalphapb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
@@ -180,8 +182,13 @@ func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerI
 			return err
 		}
 
-		// StreamJobLogs binds ownership after gRPC decodes its request.
-		if info.FullMethod != jobspb.JobsService_StreamJobLogs_FullMethodName {
+		switch info.FullMethod {
+		case jobspb.JobsService_StreamJobLogs_FullMethodName:
+			// The handler binds ownership after gRPC decodes the request.
+		case reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName,
+			reflectionalphapb.ServerReflection_ServerReflectionInfo_FullMethodName:
+			// Reflection exposes descriptors and has no owner-scoped request.
+		default:
 			return status.Error(codes.PermissionDenied, "stream ownership policy is required")
 		}
 

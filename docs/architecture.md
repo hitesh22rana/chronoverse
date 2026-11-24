@@ -75,8 +75,9 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores HTTP sessions, cached service reads, live log
-  publish/subscribe state, and runtime-node-scoped image pull locks.
+- **Redis** stores HTTP sessions, cached retained-log pages, live log
+  publish/subscribe state, and runtime-node-scoped image pull locks. Workflow
+  and user reads use PostgreSQL directly.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats Docker
   endpoint health/capacity into PostgreSQL.

@@ -20,7 +20,7 @@ Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients
 
 - PostgreSQL: PgBouncer endpoint, connection pool, dial timeout, dedicated application credentials, database, and TLS paths. Kubernetes defines explicit per-workload `POSTGRES_MIN_CONNS`/`POSTGRES_MAX_CONNS` budgets; zero is a valid idle minimum.
 - ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
-- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
+- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths for Redis clients. The users and workflows services use PostgreSQL directly. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
 - Meilisearch: URI, master key, and TLS client settings.
 - Kafka: brokers, consumer group, topic partitions, replication factor, and TLS paths.
 

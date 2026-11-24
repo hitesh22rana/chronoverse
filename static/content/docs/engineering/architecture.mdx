@@ -20,7 +20,7 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 
 - PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, container intents/receipts/holds, redrive audits, and analytics.
 - ClickHouse: retained high-volume job logs.
-- Redis: sessions, cached retained-log pages, live log pub/sub, and image-pull locks. Workflow and user reads use PostgreSQL directly.
+- Redis: sessions, live log pub/sub, and image-pull locks. Workflow and user reads use PostgreSQL directly.
 - Meilisearch: retained log search.
 - Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
 - Docker proxy: token-authenticated, method-and-path-allowlisted node-local container lifecycle access.

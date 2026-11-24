@@ -4,11 +4,8 @@ package jobs
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -16,26 +13,14 @@ import (
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
-	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
-)
-
-const (
-	defaultExpirationTTL      = time.Minute * 30
-	cacheExpirationJitter     = defaultExpirationTTL / 10
-	jobLogSearchExpirationTTL = time.Minute * 15
-	jobLogSearchTTLJitter     = jobLogSearchExpirationTTL / 10
-	cacheTimeout              = time.Second * 5
 )
 
 // Repository provides job related operations.
@@ -78,28 +63,19 @@ type Repository interface {
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
-// Cache provides cache related operations.
-type Cache interface {
-	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Get(ctx context.Context, key string, dest any) (any, error)
-}
-
 // Service provides job related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
-	cache     Cache
-	sf        singleflight.Group
 }
 
 // New creates a new jobs-service.
-func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
+func New(validator *validator.Validate, repo Repository) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
-		cache:     cache,
 	}
 }
 
@@ -621,11 +597,8 @@ type GetJobLogsRequest struct {
 	Filters    *jobsmodel.GetJobLogsFilters `validate:"required"`
 }
 
-// GetJobLogs returns the scheduled job logs.
+// GetJobLogs returns retained logs after the repository checks current visibility.
 func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.GetJobLogs"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.GetJobLogs")
 	defer func() {
 		if err != nil {
@@ -659,74 +632,16 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 
-	cacheKey := jobLogsCacheKey(
-		req.GetUserId(),
+	res, _, err = s.repo.GetJobLogs(
+		ctx,
 		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetUserId(),
 		req.GetCursor(),
-		req.GetFilters().GetStream().String(),
 		sortOrder,
+		filters,
 	)
-	isCursorPage := req.GetCursor() != ""
-	if isCursorPage {
-		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
-		if cacheErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				err = status.FromContextError(ctxErr).Err()
-				return nil, err
-			}
-		} else {
-			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
-		}
-	}
-
-	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		_res, jobStatus, _err := s.repo.GetJobLogs(
-			ctx,
-			req.GetId(),
-			req.GetWorkflowId(),
-			req.GetUserId(),
-			req.GetCursor(),
-			sortOrder,
-			filters,
-		)
-		if _err != nil {
-			return nil, _err
-		}
-
-		// Cache only stable cursor pages. A cursor page with no response cursor is the current tail,
-		// which can still receive late retained logs while the repo reports the job as running.
-		if isCursorPage && (_res.Cursor != "" || isTerminalJobStatus(jobStatus)) {
-			go func() {
-				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-				defer cancel()
-
-				if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-					logger.Warn("failed to cache job logs",
-						zap.String("user_id", req.GetUserId()),
-						zap.String("job_id", req.GetId()),
-						zap.String("cache_key", cacheKey),
-						zap.Error(setErr),
-					)
-				} else if logger.Core().Enabled(zap.DebugLevel) {
-					logger.Debug("cached job logs",
-						zap.String("user_id", req.GetUserId()),
-						zap.String("job_id", req.GetId()),
-						zap.String("cache_key", cacheKey),
-					)
-				}
-			}()
-		}
-
-		return _res, nil
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return res, err
 }
 
 // StreamJobLogsRequest holds the request parameters for streaming scheduled job logs.
@@ -822,9 +737,6 @@ type SearchJobLogsRequest struct {
 
 // SearchJobLogs returns the filtered logs of a job.
 func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRequest) (res *jobsmodel.GetJobLogsResponse, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.SearchJobLogs"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.SearchJobLogs")
 	defer func() {
 		if err != nil {
@@ -860,77 +772,19 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 	disableHighlight := req.GetDisableHighlight()
 
-	cacheKey := searchJobLogsCacheKey(
-		req.GetUserId(),
+	res, _, err = s.repo.SearchJobLogs(
+		ctx,
 		req.GetId(),
+		req.GetWorkflowId(),
+		req.GetUserId(),
 		req.GetCursor(),
-		req.GetFilters().GetMessage(),
-		req.GetFilters().GetStream().String(),
-		sortOrder,
-		disableHighlight,
+		filters,
+		jobsmodel.SearchJobLogsOptions{
+			SortOrder:        sortOrder,
+			DisableHighlight: disableHighlight,
+		},
 	)
-	isCursorPage := req.GetCursor() != ""
-	if isCursorPage {
-		cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &jobsmodel.GetJobLogsResponse{})
-		if cacheErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				err = status.FromContextError(ctxErr).Err()
-				return nil, err
-			}
-		} else {
-			//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-			return cacheRes.(*jobsmodel.GetJobLogsResponse), nil
-		}
-	}
-
-	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		_res, jobStatus, _err := s.repo.SearchJobLogs(
-			ctx,
-			req.GetId(),
-			req.GetWorkflowId(),
-			req.GetUserId(),
-			req.GetCursor(),
-			filters,
-			jobsmodel.SearchJobLogsOptions{
-				SortOrder:        sortOrder,
-				DisableHighlight: disableHighlight,
-			},
-		)
-		if _err != nil {
-			return nil, _err
-		}
-
-		if isCursorPage && (_res.Cursor != "" || isTerminalJobStatus(jobStatus)) {
-			go func() {
-				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-				defer cancel()
-
-				if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(jobLogSearchExpirationTTL, jobLogSearchTTLJitter)); setErr != nil {
-					logger.Warn("failed to cache job logs",
-						zap.String("user_id", req.GetUserId()),
-						zap.String("job_id", req.GetId()),
-						zap.String("cache_key", cacheKey),
-						zap.Error(setErr),
-					)
-				} else if logger.Core().Enabled(zap.DebugLevel) {
-					logger.Debug("cached job logs",
-						zap.String("user_id", req.GetUserId()),
-						zap.String("job_id", req.GetId()),
-						zap.String("cache_key", cacheKey),
-					)
-				}
-			}()
-		}
-
-		return _res, nil
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobLogsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return res, err
 }
 
 // ListJobsRequest holds the request parameters for listing scheduled jobs.
@@ -1039,37 +893,6 @@ func normalizeJobLogsSortOrder(sortOrder jobsmodel.JobLogsSortOrder) jobsmodel.J
 	}
 
 	return jobsmodel.JobLogsSortOrderDesc
-}
-
-// jobLogsCacheKey hashes unbounded read inputs (cursor) into a fixed-size key.
-func jobLogsCacheKey(userID, jobID, cursor, stream string, sortOrder jobsmodel.JobLogsSortOrder) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, stream, fmt.Sprint(sortOrder)}, "\x00")))
-	return fmt.Sprintf("job_logs:%s:%x", userID, sum)
-}
-
-// searchJobLogsCacheKey hashes unbounded search inputs (cursor, message) into a fixed-size key.
-func searchJobLogsCacheKey(
-	userID,
-	jobID,
-	cursor,
-	message,
-	stream string,
-	sortOrder jobsmodel.JobLogsSortOrder,
-	disableHighlight bool,
-) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{jobID, cursor, message, stream, fmt.Sprint(sortOrder), fmt.Sprint(disableHighlight)}, "\x00")))
-	return fmt.Sprintf("job_logs:search:%s:%x", userID, sum)
-}
-
-func isTerminalJobStatus(jobStatus string) bool {
-	switch jobStatus {
-	case jobsmodel.JobStatusCompleted.ToString(),
-		jobsmodel.JobStatusCanceled.ToString(),
-		jobsmodel.JobStatusFailed.ToString():
-		return true
-	default:
-		return false
-	}
 }
 
 func validateListJobsFilters(filters *jobsmodel.ListJobsFilters) error {

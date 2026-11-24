@@ -3,7 +3,6 @@ package jobs
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -11,16 +10,11 @@ import (
 	"github.com/go-playground/validator/v10"
 	redisclient "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/service/jobs/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
@@ -80,7 +74,7 @@ func TestLiveForwardingCancellationReleasesIdleAndBlockedConsumers(t *testing.T)
 
 func TestJobLogBoundaryValidationStopsBeforeRepository(t *testing.T) {
 	t.Parallel()
-	svc := New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
+	svc := New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)))
 	for _, trigger := range []string{"INVALID", "manual"} {
 		id, err := svc.ScheduleJob(t.Context(), &jobspb.ScheduleJobRequest{WorkflowId: "workflow", UserId: "user", ScheduledAt: "2026-11-06T01:02:03Z", Trigger: trigger, IdempotencyKey: "event"})
 		require.Empty(t, id)
@@ -91,198 +85,70 @@ func TestJobLogBoundaryValidationStopsBeforeRepository(t *testing.T) {
 	require.Empty(t, id)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.Contains(t, err.Error(), "IdempotencyKey")
-	for _, state := range []string{"COMPLETED", "CANCELED", "FAILED"} {
-		require.True(t, isTerminalJobStatus(state))
-	}
-	for _, state := range []string{"PENDING", "RUNNING", "QUEUED", "unknown"} {
-		require.False(t, isTerminalJobStatus(state))
-	}
 }
 
-func TestLogReadCacheCancellationDoesNotReachRepository(t *testing.T) {
-	t.Parallel()
-	for _, search := range []bool{false, true} {
-		for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+func TestRetainedLogReadsRecheckPolicyWhileOlderReadIsPending(t *testing.T) {
+	for _, method := range []string{"get", "search"} {
+		t.Run(method, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(t.Context())
-				wantCode := codes.Canceled
-				if errors.Is(cause, context.DeadlineExceeded) {
-					cancel()
-					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
-					wantCode = codes.DeadlineExceeded
+				repo := jobsmock.NewMockRepository(gomock.NewController(t))
+				svc := New(validator.New(), repo)
+				const user, workflow, job = "user", "workflow", "job"
+				entered, release := make(chan struct{}), make(chan struct{})
+				defer close(release)
+				page := &jobsmodel.GetJobLogsResponse{ID: job, WorkflowID: workflow}
+				read := func() (*jobsmodel.GetJobLogsResponse, string, error) {
+					select {
+					case <-entered:
+						return nil, "", status.Error(codes.NotFound, "workflow no longer visible")
+					default:
+						close(entered)
+						<-release
+						return page, "COMPLETED", nil
+					}
 				}
-				cancel()
-				ctrl := gomock.NewController(t)
-				cache := jobsmock.NewMockCache(ctrl)
-				repo := jobsmock.NewMockRepository(ctrl)
-				svc := New(validator.New(), repo, cache)
-				cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-					func(got context.Context, _ string, _ any) (any, error) {
-						require.ErrorIs(t, got.Err(), cause)
-						return nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", cause)
-					},
-				)
-				var result *jobsmodel.GetJobLogsResponse
-				var err error
-				if search {
-					result,
-						err = svc.SearchJobLogs(ctx,
-						&jobspb.SearchJobLogsRequest{
-							Id:         "job",
-							WorkflowId: "workflow",
-							UserId:     "user",
-							Cursor:     "page",
-							Filters: &jobspb.SearchJobLogsFilters{
-								Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-								Message: "query",
-							},
+				var call func() (*jobsmodel.GetJobLogsResponse, error)
+				if method == "get" {
+					req := &jobspb.GetJobLogsRequest{Id: job, WorkflowId: workflow, UserId: user, Filters: &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL}}
+					repo.EXPECT().GetJobLogs(gomock.Any(), job, workflow, user, "", jobsmodel.JobLogsSortOrderDesc, gomock.Any()).Times(2).
+						DoAndReturn(func(
+							context.Context,
+							string, string, string, string,
+							jobsmodel.JobLogsSortOrder,
+							*jobsmodel.GetJobLogsFilters,
+						) (*jobsmodel.GetJobLogsResponse, string, error) {
+							return read()
 						})
+					call = func() (*jobsmodel.GetJobLogsResponse, error) { return svc.GetJobLogs(t.Context(), req) }
 				} else {
-					result,
-						err = svc.GetJobLogs(ctx,
-						&jobspb.GetJobLogsRequest{
-							Id:         "job",
-							WorkflowId: "workflow",
-							UserId:     "user",
-							Cursor:     "page",
-							Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
+					req := &jobspb.SearchJobLogsRequest{Id: job, WorkflowId: workflow, UserId: user, Filters: &jobspb.SearchJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL, Message: "log"}}
+					repo.EXPECT().SearchJobLogs(gomock.Any(), job, workflow, user, "", gomock.Any(), gomock.Any()).Times(2).
+						DoAndReturn(func(
+							context.Context,
+							string, string, string, string,
+							*jobsmodel.SearchJobLogsFilters,
+							jobsmodel.SearchJobLogsOptions,
+						) (*jobsmodel.GetJobLogsResponse, string, error) {
+							return read()
 						})
+					call = func() (*jobsmodel.GetJobLogsResponse, error) { return svc.SearchJobLogs(t.Context(), req) }
 				}
-				require.Nil(t, result)
-				require.Equal(t, wantCode, status.Code(err))
-				require.Contains(t, err.Error(), cause.Error())
-				synctest.Wait()
-			})
-		}
-	}
-}
-
-func TestLogReadCacheFailureWithLiveContextFallsBackToRepository(t *testing.T) {
-	t.Parallel()
-	for _, search := range []bool{false, true} {
-		t.Run(map[bool]string{false: "get", true: "search"}[search], func(t *testing.T) {
-			t.Parallel()
-			ctrl := gomock.NewController(t)
-			cache, repo := jobsmock.NewMockCache(ctrl), jobsmock.NewMockRepository(ctrl)
-			svc := New(validator.New(), repo, cache)
-			// A cache-internal timeout is wrapped in a gRPC status while the caller's
-			// context stays healthy, so the read must fall back to the repository.
-			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(
-				nil, status.Errorf(codes.Internal, "failed to get value from redis: %v", context.DeadlineExceeded),
-			)
-			response := &jobsmodel.GetJobLogsResponse{ID: "job", WorkflowID: "workflow"}
-			var result *jobsmodel.GetJobLogsResponse
-			var err error
-			if search {
-				repo.EXPECT().SearchJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
-				result,
-					err = svc.SearchJobLogs(t.Context(),
-					&jobspb.SearchJobLogsRequest{
-						Id:         "job",
-						WorkflowId: "workflow",
-						UserId:     "user",
-						Cursor:     "page",
-						Filters: &jobspb.SearchJobLogsFilters{
-							Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-							Message: "query",
-						},
-					})
-			} else {
-				repo.EXPECT().GetJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
-				result,
-					err = svc.GetJobLogs(t.Context(),
-					&jobspb.GetJobLogsRequest{
-						Id:         "job",
-						WorkflowId: "workflow",
-						UserId:     "user",
-						Cursor:     "page",
-						Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
-					})
-			}
-			require.NoError(t, err)
-			require.Same(t, response, result)
-		})
-	}
-}
-
-// logContractCache makes asynchronous completion observable without sleeps.
-type logContractCache struct {
-	err  error
-	done chan struct{}
-}
-
-func (*logContractCache) Get(context.Context, string, any) (any, error) {
-	return nil, errors.New("cache miss")
-}
-
-func (c *logContractCache) Set(context.Context, string, any, time.Duration) error {
-	defer close(c.done)
-	return c.err
-}
-
-func TestStableLogPagesReportCacheWriteFailuresAndSuccess(t *testing.T) {
-	// Debug logging exercises the successful asynchronous write acknowledgement.
-	for _, search := range []bool{false, true} {
-		for _, writeErr := range []error{nil, errors.New("cache unavailable")} {
-			synctest.Test(t, func(t *testing.T) {
-				ctrl := gomock.NewController(t)
-				repo := jobsmock.NewMockRepository(ctrl)
-				cache := &logContractCache{err: writeErr, done: make(chan struct{})}
-				core, entries := observer.New(zap.DebugLevel)
-				provider := sdklog.NewLoggerProvider()
-				t.Cleanup(func() {
-					ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
-					defer cancel()
-					require.NoError(t, provider.Shutdown(ctx))
-				})
-				ctx, logger := loggerpkg.Init(t.Context(), "log-contract", provider)
-				*logger = *logger.WithOptions(zap.WrapCore(func(zapcore.Core) zapcore.Core { return core }))
-				svc := New(validator.New(), repo, cache)
-				response := &jobsmodel.GetJobLogsResponse{ID: "job", WorkflowID: "workflow", Cursor: "next"}
-				var result *jobsmodel.GetJobLogsResponse
-				var err error
-				if search {
-					repo.EXPECT().SearchJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
-					result,
-						err = svc.SearchJobLogs(ctx,
-						&jobspb.SearchJobLogsRequest{
-							Id:         "job",
-							WorkflowId: "workflow",
-							UserId:     "user",
-							Cursor:     "page",
-							Filters: &jobspb.SearchJobLogsFilters{
-								Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-								Message: "query",
-							},
-						})
-				} else {
-					repo.EXPECT().GetJobLogs(gomock.Any(), "job", "workflow", "user", "page", gomock.Any(), gomock.Any()).Return(response, "RUNNING", nil)
-					result,
-						err = svc.GetJobLogs(ctx,
-						&jobspb.GetJobLogsRequest{
-							Id:         "job",
-							WorkflowId: "workflow",
-							UserId:     "user",
-							Cursor:     "page",
-							Filters:    &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
-						})
-				}
-				require.NoError(t, err)
-				require.Same(t, response, result)
+				older := make(chan error, 1)
+				go func() { _, err := call(); older <- err }()
+				<-entered
+				latest := make(chan error, 1)
+				go func() { _, err := call(); latest <- err }()
 				synctest.Wait()
 				select {
-				case <-cache.done:
+				case err := <-latest:
+					require.Equal(t, codes.NotFound, status.Code(err))
 				default:
-					t.Fatal("cache write did not finish")
+					t.Error("new read waited on an older result instead of checking current policy")
 				}
-				require.Len(t, entries.All(), 1)
-				if writeErr != nil {
-					require.Equal(t, zap.WarnLevel, entries.All()[0].Level)
-					require.Equal(t, writeErr.Error(), entries.All()[0].ContextMap()["error"])
-				} else {
-					require.Equal(t, zap.DebugLevel, entries.All()[0].Level)
-				}
+				// The request that had already applied policy may complete.
+				release <- struct{}{}
+				require.NoError(t, <-older)
 			})
-		}
+		})
 	}
 }

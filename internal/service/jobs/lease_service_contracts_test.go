@@ -521,7 +521,7 @@ func TestLeaseServiceValidationAndOwnership(t *testing.T) {
 func assertLeaseServiceInvalid(t *testing.T, tc *leaseServiceContract) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
-	svc := jobs.New(validator.New(), jobsmock.NewMockRepository(ctrl), jobsmock.NewMockCache(ctrl))
+	svc := jobs.New(validator.New(), jobsmock.NewMockRepository(ctrl))
 	before := proto.Clone(tc.request)
 	got, err := tc.invoke(t.Context(), svc)
 	if !proto.Equal(tc.request, before) {
@@ -539,7 +539,7 @@ func assertLeaseServiceOutcome(t *testing.T, tc *leaseServiceContract, outcome s
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	repo := jobsmock.NewMockRepository(ctrl)
-	svc := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+	svc := jobs.New(validator.New(), repo)
 	ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), leaseContextKey{}, "claim-owner"), time.Minute)
 	defer cancel()
 	var failure error

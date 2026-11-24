@@ -105,7 +105,7 @@ func run() int {
 
 	validator := validator.New()
 
-	svc := jobssvc.New(validator, repo, rdb)
+	svc := jobssvc.New(validator, repo)
 
 	app := jobs.New(ctx, &jobs.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,

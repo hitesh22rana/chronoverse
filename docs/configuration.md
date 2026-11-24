@@ -217,7 +217,7 @@ Redis socket I/O uses the earlier of the caller context deadline and the configu
 `REDIS_READ_TIMEOUT` or `REDIS_WRITE_TIMEOUT`. Without a caller deadline, the
 configured socket timeout applies.
 
-Redis is used for sessions, cached retained-log pages, live log stream state,
+Redis is used for sessions, live log stream state,
 and worker coordination. The users and workflows services use PostgreSQL directly. Production
 compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
 client process so one late-starting service does not reset Redis back to the

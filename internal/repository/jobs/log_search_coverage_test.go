@@ -58,9 +58,9 @@ func TestSearchJobLogsGuards(t *testing.T) {
 			issuer.EXPECT().IssueToken(gomock.Any(), authSubject, "workflows-service").Return("token", tc.authErr)
 			client := &logSearchWorkflowClient{response: &workflowspb.GetWorkflowResponse{LogRetention: tc.retention}, err: tc.workflowErr}
 			repo := New(&Config{}, issuer, nil, nil, nil, nil, &Services{Workflows: client})
-			result, jobStatus, err := repo.SearchJobLogs(t.Context(), tc.jobID, validID, validID, tc.cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{})
-			if status.Code(err) != tc.code || result != nil || jobStatus != "" {
-				t.Fatalf("result=%v status=%q error=%v, want %v", result, jobStatus, err, tc.code)
+			result, err := repo.SearchJobLogs(t.Context(), tc.jobID, validID, validID, tc.cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{})
+			if status.Code(err) != tc.code || result != nil {
+				t.Fatalf("result=%v error=%v, want %v", result, err, tc.code)
 			}
 			if client.calls != tc.workflowCalls {
 				t.Fatalf("workflow calls=%d, want %d", client.calls, tc.workflowCalls)

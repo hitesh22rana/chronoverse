@@ -789,7 +789,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -860,7 +860,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -925,7 +925,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
 			isErr: true,
@@ -958,7 +958,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1014,7 +1014,7 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 
 	repo.EXPECT().
 		GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderAsc, filters).
-		Return(&jobsmodel.GetJobLogsResponse{ID: req.GetId(), WorkflowID: req.GetWorkflowId()}, jobsmodel.JobStatusRunning.ToString(), nil)
+		Return(&jobsmodel.GetJobLogsResponse{ID: req.GetId(), WorkflowID: req.GetWorkflowId()}, nil)
 
 	res, err := s.GetJobLogs(t.Context(), req)
 	if err != nil {
@@ -1252,7 +1252,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1318,7 +1318,7 @@ func TestSearchJobLogs(t *testing.T) {
 						SortOrder:        jobsmodel.JobLogsSortOrderAsc,
 						DisableHighlight: true,
 					},
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1385,7 +1385,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1452,7 +1452,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1487,7 +1487,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,

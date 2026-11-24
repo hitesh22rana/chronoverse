@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/terminalreason"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -52,14 +51,14 @@ type Repository interface {
 	RecoverExpiredJobLeases(ctx context.Context, batchSize int32, workerID, processInstanceID, commandID string, leaseDuration time.Duration) ([]*jobsmodel.ExpiredJobLease, error)
 	GetJob(ctx context.Context, jobID, workflowID, userID string) (*jobsmodel.GetJobResponse, error)
 	GetJobByID(ctx context.Context, jobID string) (*jobsmodel.GetJobByIDResponse, error)
-	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobsmodel.JobLogsSortOrder, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error)
+	GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobsmodel.JobLogsSortOrder, filters *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, error)
 	StreamJobLogs(ctx context.Context, jobID, workflowID, userID string) (*goredis.PubSub, error)
 	SearchJobLogs(
 		ctx context.Context,
 		jobID, workflowID, userID, cursor string,
 		filters *jobsmodel.SearchJobLogsFilters,
 		options jobsmodel.SearchJobLogsOptions,
-	) (*jobsmodel.GetJobLogsResponse, string, error)
+	) (*jobsmodel.GetJobLogsResponse, error)
 	ListJobs(ctx context.Context, workflowID, userID, cursor string, filters *jobsmodel.ListJobsFilters) (*jobsmodel.ListJobsResponse, error)
 }
 
@@ -632,7 +631,7 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 
-	res, _, err = s.repo.GetJobLogs(
+	res, err = s.repo.GetJobLogs(
 		ctx,
 		req.GetId(),
 		req.GetWorkflowId(),
@@ -641,6 +640,9 @@ func (s *Service) GetJobLogs(ctx context.Context, req *jobspb.GetJobLogsRequest)
 		sortOrder,
 		filters,
 	)
+	if contextErr := ctx.Err(); err != nil && contextErr != nil {
+		return nil, status.FromContextError(contextErr).Err()
+	}
 	return res, err
 }
 
@@ -682,8 +684,6 @@ func (s *Service) StreamJobLogs(ctx context.Context, req *jobspb.StreamJobLogsRe
 	ch = make(chan *jobsmodel.JobLog)
 	go func() {
 		defer close(ch)
-		//nolint:errcheck // Ignore error as we are closing the channel
-		defer sub.Unsubscribe(ctx, redis.GetJobLogsChannel(req.GetId()))
 		defer sub.Close()
 
 		forwardLiveJobLogs(ctx, subscribedChannel, ch)
@@ -772,7 +772,7 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 	sortOrder := normalizeJobLogsSortOrder(jobsmodel.JobLogsSortOrder(req.GetSortOrder()))
 	disableHighlight := req.GetDisableHighlight()
 
-	res, _, err = s.repo.SearchJobLogs(
+	res, err = s.repo.SearchJobLogs(
 		ctx,
 		req.GetId(),
 		req.GetWorkflowId(),
@@ -784,6 +784,9 @@ func (s *Service) SearchJobLogs(ctx context.Context, req *jobspb.SearchJobLogsRe
 			DisableHighlight: disableHighlight,
 		},
 	)
+	if contextErr := ctx.Err(); err != nil && contextErr != nil {
+		return nil, status.FromContextError(contextErr).Err()
+	}
 	return res, err
 }
 

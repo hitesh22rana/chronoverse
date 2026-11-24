@@ -177,13 +177,12 @@ func (mr *MockRepositoryMockRecorder) GetJobByID(ctx, jobID any) *gomock.Call {
 }
 
 // GetJobLogs mocks base method.
-func (m *MockRepository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobs.JobLogsSortOrder, filters *jobs.GetJobLogsFilters) (*jobs.GetJobLogsResponse, string, error) {
+func (m *MockRepository) GetJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, sortOrder jobs.JobLogsSortOrder, filters *jobs.GetJobLogsFilters) (*jobs.GetJobLogsResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetJobLogs", ctx, jobID, workflowID, userID, cursor, sortOrder, filters)
 	ret0, _ := ret[0].(*jobs.GetJobLogsResponse)
-	ret1, _ := ret[1].(string)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetJobLogs indicates an expected call of GetJobLogs.
@@ -326,13 +325,12 @@ func (mr *MockRepositoryMockRecorder) ScheduleJob(ctx, workflowID, userID, sched
 }
 
 // SearchJobLogs mocks base method.
-func (m *MockRepository) SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobs.SearchJobLogsFilters, options jobs.SearchJobLogsOptions) (*jobs.GetJobLogsResponse, string, error) {
+func (m *MockRepository) SearchJobLogs(ctx context.Context, jobID, workflowID, userID, cursor string, filters *jobs.SearchJobLogsFilters, options jobs.SearchJobLogsOptions) (*jobs.GetJobLogsResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SearchJobLogs", ctx, jobID, workflowID, userID, cursor, filters, options)
 	ret0, _ := ret[0].(*jobs.GetJobLogsResponse)
-	ret1, _ := ret[1].(string)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // SearchJobLogs indicates an expected call of SearchJobLogs.

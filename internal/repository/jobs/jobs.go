@@ -44,7 +44,6 @@ const (
 	formattedSearchResultKey  = "_formatted"
 	authSubject               = "internal/jobs"
 	delimiter                 = '$'
-	jobStatusUpdateBuffer     = time.Minute // 1 minute
 
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
@@ -644,8 +643,6 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 }
 
 // GetJobLogs returns the job logs by ID.
-//
-//nolint:gocyclo  // This function is complex due to the nature of having two separate queries.
 func (r *Repository) GetJobLogs(
 	ctx context.Context,
 	jobID,
@@ -654,7 +651,7 @@ func (r *Repository) GetJobLogs(
 	cursor string,
 	sortOrder jobsmodel.JobLogsSortOrder,
 	getJobLogsFilters *jobsmodel.GetJobLogsFilters,
-) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
+) (res *jobsmodel.GetJobLogsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.GetJobLogs")
 	defer func() {
 		if err != nil {
@@ -667,7 +664,7 @@ func (r *Repository) GetJobLogs(
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
-		return nil, "", err
+		return nil, err
 	}
 
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
@@ -676,11 +673,11 @@ func (r *Repository) GetJobLogs(
 	})
 	if workflowErr != nil {
 		err = workflowErr
-		return nil, "", err
+		return nil, err
 	}
 	if !workflow.GetLogRetention() {
 		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
-		return nil, "", err
+		return nil, err
 	}
 
 	ascending := sortOrder == jobsmodel.JobLogsSortOrderAsc
@@ -711,7 +708,7 @@ func (r *Repository) GetJobLogs(
 		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
-			return nil, "", err
+			return nil, err
 		}
 
 		sequenceOperator := "<"
@@ -737,25 +734,10 @@ func (r *Repository) GetJobLogs(
     LIMIT %d;
     `, sequenceDirection, r.cfg.LogsFetchLimit+1)
 
-	statusQueryArgs := []any{jobID, workflowID, userID}
-	statusQuery := fmt.Sprintf(`
-		SELECT
-			status,
-			completed_at
-		FROM
-			%s
-		WHERE
-			id = $1
-			AND workflow_id = $2
-			AND user_id = $3
-	`, postgres.TableJobs)
-
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
-		logs          []*jobsmodel.JobLog
-		nextCursor    jobLogsCursor
-		fetchedStatus string
-		completedAt   sql.NullTime
+		logs       []*jobsmodel.JobLog
+		nextCursor jobLogsCursor
 	)
 
 	eg.Go(func() error {
@@ -776,22 +758,12 @@ func (r *Repository) GetJobLogs(
 	})
 
 	eg.Go(func() error {
-		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
-
-		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
-			return r.mapJobLogsStatusError(scanErr)
-		}
-		return nil
+		return r.requireJobLogScope(egCtx, jobID, workflowID, userID)
 	})
 
 	err = eg.Wait()
 	if err != nil {
-		return nil, "", err
-	}
-
-	// Logs may lag a just-completed job; report RUNNING within the buffer window.
-	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
-		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
+		return nil, err
 	}
 
 	return &jobsmodel.GetJobLogsResponse{
@@ -799,7 +771,7 @@ func (r *Repository) GetJobLogs(
 		WorkflowID: workflowID,
 		JobLogs:    logs,
 		Cursor:     encodeJobLogsCursor(nextCursor),
-	}, fetchedStatus, nil
+	}, nil
 }
 
 // collectJobLogPage decodes the driver rows and retains the first omitted row as
@@ -914,7 +886,8 @@ func (r *Repository) StreamJobLogs(ctx context.Context, jobID, workflowID, userI
 		return nil, err
 	}
 
-	return r.subscribeToJobLogsChannel(ctx, jobID)
+	// PostgreSQL returns the canonical UUID spelling used by the publisher.
+	return r.subscribeToJobLogsChannel(ctx, id)
 }
 
 // subscribeToJobLogsChannel subscribes to the job logs channel and waits for
@@ -956,7 +929,7 @@ func (r *Repository) SearchJobLogs(
 	cursor string,
 	searchJobLogsFilters *jobsmodel.SearchJobLogsFilters,
 	options jobsmodel.SearchJobLogsOptions,
-) (res *jobsmodel.GetJobLogsResponse, jobStatus string, err error) {
+) (res *jobsmodel.GetJobLogsResponse, err error) {
 	ctx, span := r.tp.Start(ctx, "Repository.SearchJobLogs")
 	defer func() {
 		if err != nil {
@@ -969,7 +942,7 @@ func (r *Repository) SearchJobLogs(
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
-		return nil, "", err
+		return nil, err
 	}
 
 	workflow, workflowErr := r.svc.Workflows.GetWorkflow(ctx, &workflowspb.GetWorkflowRequest{
@@ -978,18 +951,18 @@ func (r *Repository) SearchJobLogs(
 	})
 	if workflowErr != nil {
 		err = workflowErr
-		return nil, "", err
+		return nil, err
 	}
 	if !workflow.GetLogRetention() {
 		err = status.Errorf(codes.FailedPrecondition, "logs retention is disabled for workflow: %s", workflowID)
-		return nil, "", err
+		return nil, err
 	}
 
 	// Re-validate IDs immediately before filter build so a relaxed caller
 	// can never turn filter interpolation into cross-tenant filter injection.
 	// The cursor EventID is a composite log key, not a UUID, so it is only escaped.
 	if filterErr := validateJobLogsFilterIDs(userID, workflowID, jobID); filterErr != nil {
-		return nil, "", filterErr
+		return nil, filterErr
 	}
 
 	filter := `user_id = "` + meiliFilterValue(userID) +
@@ -1009,7 +982,7 @@ func (r *Repository) SearchJobLogs(
 		logsCursor, _err := extractDataFromGetJobLogsCursor(cursor)
 		if _err != nil {
 			err = _err
-			return nil, "", err
+			return nil, err
 		}
 
 		sequenceOperator := "<"
@@ -1020,25 +993,10 @@ func (r *Repository) SearchJobLogs(
 		filter = appendJobLogsCursorFilter(filter, sequenceOperator, logsCursor.SequenceNum, idOperator, logsCursor.EventID)
 	}
 
-	statusQueryArgs := []any{jobID, workflowID, userID}
-	statusQuery := fmt.Sprintf(`
-		SELECT
-			status,
-			completed_at
-		FROM
-			%s
-		WHERE
-			id = $1
-			AND workflow_id = $2
-			AND user_id = $3
-	`, postgres.TableJobs)
-
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
-		logs          []*jobsmodel.JobLog
-		nextCursor    jobLogsCursor
-		fetchedStatus string
-		completedAt   sql.NullTime
+		logs       []*jobsmodel.JobLog
+		nextCursor jobLogsCursor
 	)
 	highlightToken := ""
 	if !options.DisableHighlight {
@@ -1075,22 +1033,12 @@ func (r *Repository) SearchJobLogs(
 	})
 
 	eg.Go(func() error {
-		row := r.pg.QueryRow(egCtx, statusQuery, statusQueryArgs...)
-
-		if scanErr := row.Scan(&fetchedStatus, &completedAt); scanErr != nil {
-			return r.mapJobLogsStatusError(scanErr)
-		}
-		return nil
+		return r.requireJobLogScope(egCtx, jobID, workflowID, userID)
 	})
 
 	err = eg.Wait()
 	if err != nil {
-		return nil, "", err
-	}
-
-	// Logs may lag a just-completed job; report RUNNING within the buffer window.
-	if completedAt.Valid && time.Since(completedAt.Time) <= jobStatusUpdateBuffer {
-		fetchedStatus = jobsmodel.JobStatusRunning.ToString()
+		return nil, err
 	}
 
 	return &jobsmodel.GetJobLogsResponse{
@@ -1099,7 +1047,7 @@ func (r *Repository) SearchJobLogs(
 		JobLogs:        logs,
 		Cursor:         encodeJobLogsCursor(nextCursor),
 		HighlightToken: highlightToken,
-	}, fetchedStatus, nil
+	}, nil
 }
 
 // ListJobs returns jobs.
@@ -1439,6 +1387,25 @@ func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobL
 		Stream:      log.Stream,
 		EventID:     searchHitString(source, "id"),
 	}, nil
+}
+
+// requireJobLogScope checks ownership even when the log store returns an empty page.
+func (r *Repository) requireJobLogScope(ctx context.Context, jobID, workflowID, userID string) error {
+	query := fmt.Sprintf(`
+		SELECT
+			1
+		FROM
+			%s
+		WHERE
+			id = $1
+			AND workflow_id = $2
+			AND user_id = $3
+	`, postgres.TableJobs)
+	var found int
+	if err := r.pg.QueryRow(ctx, query, jobID, workflowID, userID).Scan(&found); err != nil {
+		return r.mapJobLogsStatusError(err)
+	}
+	return nil
 }
 
 func (r *Repository) mapJobLogsStatusError(err error) error {

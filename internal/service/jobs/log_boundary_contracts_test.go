@@ -97,14 +97,14 @@ func TestRetainedLogReadsRecheckPolicyWhileOlderReadIsPending(t *testing.T) {
 				entered, release := make(chan struct{}), make(chan struct{})
 				defer close(release)
 				page := &jobsmodel.GetJobLogsResponse{ID: job, WorkflowID: workflow}
-				read := func() (*jobsmodel.GetJobLogsResponse, string, error) {
+				read := func() (*jobsmodel.GetJobLogsResponse, error) {
 					select {
 					case <-entered:
-						return nil, "", status.Error(codes.NotFound, "workflow no longer visible")
+						return nil, status.Error(codes.NotFound, "workflow no longer visible")
 					default:
 						close(entered)
 						<-release
-						return page, "COMPLETED", nil
+						return page, nil
 					}
 				}
 				var call func() (*jobsmodel.GetJobLogsResponse, error)
@@ -116,7 +116,7 @@ func TestRetainedLogReadsRecheckPolicyWhileOlderReadIsPending(t *testing.T) {
 							string, string, string, string,
 							jobsmodel.JobLogsSortOrder,
 							*jobsmodel.GetJobLogsFilters,
-						) (*jobsmodel.GetJobLogsResponse, string, error) {
+						) (*jobsmodel.GetJobLogsResponse, error) {
 							return read()
 						})
 					call = func() (*jobsmodel.GetJobLogsResponse, error) { return svc.GetJobLogs(t.Context(), req) }
@@ -128,7 +128,7 @@ func TestRetainedLogReadsRecheckPolicyWhileOlderReadIsPending(t *testing.T) {
 							string, string, string, string,
 							*jobsmodel.SearchJobLogsFilters,
 							jobsmodel.SearchJobLogsOptions,
-						) (*jobsmodel.GetJobLogsResponse, string, error) {
+						) (*jobsmodel.GetJobLogsResponse, error) {
 							return read()
 						})
 					call = func() (*jobsmodel.GetJobLogsResponse, error) { return svc.SearchJobLogs(t.Context(), req) }
@@ -151,4 +151,27 @@ func TestRetainedLogReadsRecheckPolicyWhileOlderReadIsPending(t *testing.T) {
 			})
 		})
 	}
+}
+
+func TestRetainedLogReadPreservesCancellationOnStorageFailure(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	repo := jobsmock.NewMockRepository(gomock.NewController(t))
+	repo.EXPECT().GetJobLogs(gomock.Any(), "job", "workflow", "user", "", jobsmodel.JobLogsSortOrderDesc, gomock.Any()).
+		DoAndReturn(func(
+			context.Context,
+			string, string, string, string,
+			jobsmodel.JobLogsSortOrder,
+			*jobsmodel.GetJobLogsFilters,
+		) (*jobsmodel.GetJobLogsResponse, error) {
+			cancel()
+			return nil, status.Error(codes.Internal, "log transport interrupted")
+		})
+	result, err := New(validator.New(), repo).GetJobLogs(ctx, &jobspb.GetJobLogsRequest{
+		Id: "job", WorkflowId: "workflow", UserId: "user",
+		Filters: &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL},
+	})
+	require.Nil(t, result)
+	require.Equal(t, codes.Canceled, status.Code(err))
 }

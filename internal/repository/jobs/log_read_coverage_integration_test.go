@@ -70,8 +70,8 @@ func TestIntegrationStreamJobLogsRejections(t *testing.T) {
 	}
 }
 
-//nolint:gocyclo // Checks complete pages and status transitions on one isolated job.
-func TestIntegrationGetJobLogsOrderingAndStatus(t *testing.T) {
+//nolint:gocyclo // Checks complete pages and job scope in the same fixture.
+func TestIntegrationGetJobLogsOrderingAndScope(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
 	ch := testkit.ClickHouse(t)
@@ -123,9 +123,9 @@ func TestIntegrationGetJobLogsOrderingAndStatus(t *testing.T) {
 			cursor := ""
 			finished := false
 			for page := 0; page < 6; page++ {
-				result, state, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, cursor, tc.order, &jobsmodel.GetJobLogsFilters{Stream: tc.stream})
-				if err != nil || state != "PENDING" {
-					t.Fatalf("status=%q error=%v", state, err)
+				result, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, cursor, tc.order, &jobsmodel.GetJobLogsFilters{Stream: tc.stream})
+				if err != nil {
+					t.Fatalf("error=%v", err)
 				}
 				if len(result.JobLogs) == 0 || len(result.JobLogs) > repo.cfg.LogsFetchLimit {
 					t.Fatalf("page size=%d, limit %d", len(result.JobLogs), repo.cfg.LogsFetchLimit)
@@ -147,31 +147,14 @@ func TestIntegrationGetJobLogsOrderingAndStatus(t *testing.T) {
 			}
 		})
 	}
-	for _, tc := range []struct {
-		name string
-		ago  time.Duration
-		want string
-	}{
-		{"recent completion", 10 * time.Second, "RUNNING"}, {"settled completion", 2 * time.Minute, "COMPLETED"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := pg.Exec(ctx, `UPDATE jobs SET status='COMPLETED',completed_at=$2 WHERE id=$1`, jobID, time.Now().UTC().Add(-tc.ago)); err != nil {
-				t.Fatal(err)
-			}
-			result, state, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
-			if err != nil || result == nil || state != tc.want {
-				t.Fatalf("result=%v status=%q error=%v want %s", result, state, err, tc.want)
-			}
-		})
-	}
 	for _, tenant := range []string{userID, uuid.NewString()} {
 		id := jobID
 		if tenant == userID {
 			id = uuid.NewString()
 		}
-		result, state, err := repo.GetJobLogs(ctx, id, workflowID, tenant, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
-		if result != nil || state != "" || status.Code(err) != codes.NotFound {
-			t.Fatalf("ownership result=%v status=%q err=%v", result, state, err)
+		result, err := repo.GetJobLogs(ctx, id, workflowID, tenant, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
+		if result != nil || status.Code(err) != codes.NotFound {
+			t.Fatalf("ownership result=%v err=%v", result, err)
 		}
 	}
 }
@@ -220,9 +203,9 @@ func TestIntegrationJobLogUnavailableClients(t *testing.T) {
 		repo.ch = isolatedCH
 		defer func() { repo.ch = originalCH }()
 
-		result, state, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
-		if result != nil || state != "" || status.Code(err) != codes.Internal {
-			t.Fatalf("result=%v status=%q error=%v", result, state, err)
+		result, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
+		if result != nil || status.Code(err) != codes.Internal {
+			t.Fatalf("result=%v error=%v", result, err)
 		}
 	})
 }
@@ -252,14 +235,14 @@ func TestIntegrationGetJobLogsContextFailures(t *testing.T) {
 			}
 			cancel()
 
-			result, state, err := repo.GetJobLogs(caller, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
-			if result != nil || state != "" || status.Code(err) != tc.code {
-				t.Fatalf("result=%v status=%q error=%v want %v", result, state, err, tc.code)
+			result, err := repo.GetJobLogs(caller, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
+			if result != nil || status.Code(err) != tc.code {
+				t.Fatalf("result=%v error=%v want %v", result, err, tc.code)
 			}
 			// A rejected read leaves its clients usable for a subsequent request.
-			result, state, err = repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
-			if err != nil || result == nil || len(result.JobLogs) != 0 || result.Cursor != "" || state != "PENDING" {
-				t.Fatalf("retry result=%v status=%q error=%v", result, state, err)
+			result, err = repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, &jobsmodel.GetJobLogsFilters{})
+			if err != nil || result == nil || len(result.JobLogs) != 0 || result.Cursor != "" {
+				t.Fatalf("retry result=%v error=%v", result, err)
 			}
 		})
 	}

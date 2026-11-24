@@ -10,14 +10,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/app/jobs/mock"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -78,4 +81,23 @@ func TestInternalJobPolicyRequiresQualifiedMethod(t *testing.T) {
 		require.False(t, isInternalAPI(method))
 	}
 	require.True(t, isInternalAPI("/jobs.Service/CancelJob"))
+}
+
+func TestStreamAuthenticationRejectsMethodWithoutOwnershipPolicy(t *testing.T) {
+	t.Parallel()
+	tokens := authmock.NewMockIAuth(gomock.NewController(t))
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).
+		Return(auth.WithRole(t.Context(), auth.RoleUser.String()), nil, nil)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer token"))
+	app := &Jobs{auth: tokens}
+	err := app.streamAuthTokenInterceptor(zap.NewNop())(
+		app,
+		contractLogServerStream{ctx: ctx},
+		&grpc.StreamServerInfo{FullMethod: "/jobs.JobsService/UnclassifiedStream", IsServerStream: true},
+		func(any, grpc.ServerStream) error {
+			t.Fatal("stream without an ownership policy reached its handler")
+			return nil
+		},
+	)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

@@ -558,15 +558,12 @@ func (r *Repository) GetJob(ctx context.Context, jobID, workflowID, userID strin
 	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID, workflowID, userID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobResponse])
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, status.FromContextError(err).Err()
+	}
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "job not found or not owned by user: %v", err)
@@ -617,15 +614,12 @@ func (r *Repository) GetJobByID(ctx context.Context, jobID string) (res *jobsmod
 	`, postgres.TableJobs)
 
 	rows, err := r.pg.Query(ctx, query, jobID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobByIDResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[jobsmodel.GetJobByIDResponse])
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, status.FromContextError(err).Err()
+	}
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "job not found: %v", err)
@@ -1128,15 +1122,13 @@ func (r *Repository) ListJobs(
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	var data []*jobsmodel.JobByWorkflowIDResponse
+	if err == nil {
+		data, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.JobByWorkflowIDResponse])
 	}
-
-	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.JobByWorkflowIDResponse])
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, status.FromContextError(err).Err()
+	}
 	if err != nil {
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid job ID: %v", err)

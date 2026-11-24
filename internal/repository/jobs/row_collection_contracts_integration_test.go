@@ -5,17 +5,20 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	workflowsrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflows"
 )
 
 // These SQL responses deliberately exercise the collection helpers' input
@@ -199,5 +202,74 @@ func TestIntegrationLogCollectionRejectsStreamingServerFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "division") && !strings.Contains(err.Error(), "Division") {
 		t.Fatalf("missing original server cause: %v", err)
+	}
+}
+
+func TestIntegrationDirectDatabaseReadsPreserveRowCollectionDeadline(t *testing.T) {
+	pg := testkit.Postgres(t)
+	ctx := t.Context()
+	repo := New(&Config{FetchLimit: 2}, nil, pg, nil, nil, nil, nil)
+	userID, workflowID := seedUserWorkflow(ctx, t, pg)
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "read-deadline-"+uuid.NewString(), 1)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		read func(context.Context, *Repository, *workflowsrepo.Repository) error
+	}{
+		{"get job", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := jobs.GetJob(ctx, jobID, workflowID, userID)
+			return readErr
+		}},
+		{"get job by ID", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := jobs.GetJobByID(ctx, jobID)
+			return readErr
+		}},
+		{"list jobs", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := jobs.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{})
+			return readErr
+		}},
+		{"get workflow", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+			_, readErr := workflows.GetWorkflow(ctx, workflowID, userID)
+			return readErr
+		}},
+		{"get workflow by ID", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+			_, readErr := workflows.GetWorkflowByID(ctx, workflowID)
+			return readErr
+		}},
+		{"list workflows", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+			_, readErr := workflows.ListWorkflows(ctx, userID, "", nil)
+			return readErr
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rowWithheld := make(chan struct{}, 1)
+			var armed atomic.Bool
+			release := make(chan struct{})
+			defer close(release)
+			faulty := discoveryWireFault(t, repo, func(kind byte, _ []byte) bool {
+				// Forward RowDescription so Query returns, but hold the first DataRow.
+				// Pool setup may also return rows, so arm this after it connects.
+				if kind != 'D' || !armed.Load() {
+					return false
+				}
+				select {
+				case rowWithheld <- struct{}{}:
+				default:
+				}
+				<-release
+				return true
+			})
+			workflows := workflowsrepo.New(&workflowsrepo.Config{FetchLimit: 2}, faulty.pg)
+			armed.Store(true)
+			caller, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			readErr := tc.read(caller, faulty, workflows)
+			select {
+			case <-rowWithheld:
+			default:
+				t.Fatalf("query did not begin returning rows: %v", readErr)
+			}
+			require.Equal(t, codes.DeadlineExceeded, status.Code(readErr), "%v", readErr)
+		})
 	}
 }

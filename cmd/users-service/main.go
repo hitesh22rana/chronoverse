@@ -19,7 +19,6 @@ import (
 	grpcserverpkg "github.com/hitesh22rana/chronoverse/internal/pkg/grpcserver"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	usersrepo "github.com/hitesh22rana/chronoverse/internal/repository/users"
 	userssvc "github.com/hitesh22rana/chronoverse/internal/service/users"
@@ -57,18 +56,11 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	rdb, err := redis.New(ctx, cfg.Redis.ClientConfig())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer rdb.Close()
-
 	repo := usersrepo.New(auth, pdb)
 
 	validator := validator.New()
 
-	svc := userssvc.New(validator, repo, rdb)
+	svc := userssvc.New(validator, repo)
 
 	app := users.New(ctx, &users.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,

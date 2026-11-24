@@ -327,6 +327,15 @@ func (r *Repository) ListNotifications(
 		span.End()
 	}()
 
+	var cursorID string
+	var cursorTime time.Time
+	if cursor != "" {
+		cursorID, cursorTime, err = extractDataFromCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	ctx, ctxErr := r.withAuthorization(ctx)
 	if ctxErr != nil {
 		err = ctxErr
@@ -383,13 +392,7 @@ func (r *Repository) ListNotifications(
 	}
 
 	if cursor != "" {
-		id, createdAt, _err := extractDataFromCursor(cursor)
-		if _err != nil {
-			err = _err
-			return nil, err
-		}
-
-		args = append(args, createdAt, id)
+		args = append(args, cursorTime, cursorID)
 		// Inclusive: the cursor points at the first unreturned row, so the
 		// next page must include it.
 		query += fmt.Sprintf(` AND (created_at, id) <= ($%d, $%d)`, len(args)-1, len(args))

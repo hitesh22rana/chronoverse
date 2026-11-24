@@ -4,35 +4,21 @@ package workflows
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
-	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
-	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/container"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/kind/heartbeat"
-	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
-)
-
-const (
-	defaultExpirationTTL  = time.Minute * 30
-	cacheExpirationJitter = defaultExpirationTTL / 10
-	cacheTimeout          = time.Second * 5
 )
 
 // Repository provides workflow related operations.
@@ -55,30 +41,19 @@ type Repository interface {
 	ListWorkflows(ctx context.Context, userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) (*workflowsmodel.ListWorkflowsResponse, error)
 }
 
-// Cache provides cache related operations.
-type Cache interface {
-	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Get(ctx context.Context, key string, dest any) (any, error)
-	Delete(ctx context.Context, key string) error
-	DeleteByPattern(ctx context.Context, pattern string) (int64, error)
-}
-
 // Service provides workflow related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
-	cache     Cache
-	sf        singleflight.Group
 }
 
 // New creates a new workflows-service.
-func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
+func New(validator *validator.Validate, repo Repository) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
-		cache:     cache,
 	}
 }
 
@@ -96,9 +71,6 @@ type CreateWorkflowRequest struct {
 
 // CreateWorkflow creates a new workflow and returns its ID.
 func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWorkflowRequest) (workflowID string, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.CreateWorkflow"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.CreateWorkflow")
 	defer func() {
 		if err != nil {
@@ -164,34 +136,6 @@ func (s *Service) CreateWorkflow(ctx context.Context, req *workflowspb.CreateWor
 		return "", err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-
-		if res.IdempotencyReplay {
-			return
-		}
-
-		// We use the combination of user ID and workflow ID as the key to uniquely identify the workflow.
-		// The key is in the format "workflow:{user_id}:{workflow_id}".
-		cacheKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), res.ID)
-
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-			logger.Warn("failed to cache workflow",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cacheKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached workflow",
-				zap.String("user_id", req.GetUserId()),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
-
 	return res.ID, nil
 }
 
@@ -208,9 +152,6 @@ type UpdateWorkflowRequest struct {
 
 // UpdateWorkflow updates the workflow details.
 func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWorkflowRequest) (err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.UpdateWorkflow"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.UpdateWorkflow")
 	defer func() {
 		if err != nil {
@@ -255,15 +196,6 @@ func (s *Service) UpdateWorkflow(ctx context.Context, req *workflowspb.UpdateWor
 		return err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return nil
 }
 
@@ -277,11 +209,6 @@ type UpdateWorkflowBuildStatusRequest struct {
 
 // UpdateWorkflowBuildStatus updates the workflow build status.
 func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowspb.UpdateWorkflowBuildStatusRequest) (err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("user_id", req.GetUserId()),
-		zap.String("workflow_id", req.GetId()),
-		zap.String("build_status", req.GetBuildStatus()),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.UpdateWorkflowBuildStatus")
 	defer func() {
 		if err != nil {
@@ -320,15 +247,6 @@ func (s *Service) UpdateWorkflowBuildStatus(ctx context.Context, req *workflowsp
 		return err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return err
 }
 
@@ -346,9 +264,6 @@ func (s *Service) GetWorkflow(
 	res *workflowsmodel.GetWorkflowResponse,
 	err error,
 ) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.GetWorkflow"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.GetWorkflow")
 	defer func() {
 		if err != nil {
@@ -367,56 +282,7 @@ func (s *Service) GetWorkflow(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	cachedKey := fmt.Sprintf("workflow:%s:%s", req.GetUserId(), req.GetId())
-	cacheRes, cacheErr := s.cache.Get(ctx, cachedKey, &workflowsmodel.GetWorkflowResponse{})
-	if cacheErr != nil {
-		// The cache wraps its own failures in a gRPC status, so read cancellation
-		// from the caller's context instead of inspecting the cache error.
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = status.FromContextError(ctxErr).Err()
-			return nil, err
-		}
-	} else {
-		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-		return cacheRes.(*workflowsmodel.GetWorkflowResponse), nil
-	}
-
-	resultCh := s.sf.DoChan(cachedKey, func() (any, error) {
-		_res, _err := s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
-		if _err != nil {
-			return nil, _err
-		}
-
-		// Refresh the cached item and clear list entries once for the shared result.
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-			defer cancel()
-
-			s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-
-			if setErr := s.cache.Set(bgCtx, cachedKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-				logger.Warn("failed to cache workflow",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("cache_key", cachedKey),
-					zap.Error(setErr),
-				)
-			} else if logger.Core().Enabled(zap.DebugLevel) {
-				logger.Debug("cached workflow",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("cache_key", cachedKey),
-				)
-			}
-		}()
-
-		return _res, nil
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.GetWorkflowResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
 }
 
 // GetWorkflowByIDRequest holds the request parameters for getting a workflow by ID.
@@ -450,16 +316,7 @@ func (s *Service) GetWorkflowByID(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resultCh := s.sf.DoChan(fmt.Sprintf("workflow_by_id:%s", req.GetId()), func() (any, error) {
-		return s.repo.GetWorkflowByID(ctx, req.GetId())
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.GetWorkflowByIDResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetWorkflowByID(ctx, req.GetId())
 }
 
 // IncrementWorkflowConsecutiveJobFailuresCountRequest holds the request parameters for incrementing the job consecutive failures count.
@@ -474,9 +331,6 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 	ctx context.Context,
 	req *workflowspb.IncrementWorkflowConsecutiveJobFailuresCountRequest,
 ) (thresholdReached bool, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.IncrementWorkflowConsecutiveJobFailuresCount"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.IncrementWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -501,15 +355,6 @@ func (s *Service) IncrementWorkflowConsecutiveJobFailuresCount(
 		return false, err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return thresholdReached, nil
 }
 
@@ -527,9 +372,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(
 ) (
 	err error,
 ) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.ResetWorkflowConsecutiveJobFailuresCount"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.ResetWorkflowConsecutiveJobFailuresCount")
 	defer func() {
 		if err != nil {
@@ -554,15 +396,6 @@ func (s *Service) ResetWorkflowConsecutiveJobFailuresCount(
 		return err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return nil
 }
 
@@ -573,12 +406,7 @@ type TerminateWorkflowRequest struct {
 }
 
 // TerminateWorkflow terminates a workflow.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.TerminateWorkflowRequest) (err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.TerminateWorkflow"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.TerminateWorkflow")
 	defer func() {
 		if err != nil {
@@ -602,15 +430,6 @@ func (s *Service) TerminateWorkflow(ctx context.Context, req *workflowspb.Termin
 		return err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return nil
 }
 
@@ -621,12 +440,7 @@ type DeleteWorkflowRequest struct {
 }
 
 // DeleteWorkflow deletes a workflow.
-//
-//nolint:dupl // It's ok to have duplicate code here as the logic is similar to other methods.
 func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWorkflowRequest) (err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.DeleteWorkflow"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.DeleteWorkflow")
 	defer func() {
 		if err != nil {
@@ -650,15 +464,6 @@ func (s *Service) DeleteWorkflow(ctx context.Context, req *workflowspb.DeleteWor
 		return err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		s.invalidateWorkflowCache(bgCtx, req.GetId(), req.GetUserId(), logger)
-
-		s.invalidateWorkflowsCache(bgCtx, req.GetUserId(), logger)
-	}()
-
 	return nil
 }
 
@@ -677,9 +482,6 @@ func (s *Service) ListWorkflows(
 	res *workflowsmodel.ListWorkflowsResponse,
 	err error,
 ) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.ListWorkflows"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.ListWorkflows")
 	defer func() {
 		if err != nil {
@@ -727,52 +529,7 @@ func (s *Service) ListWorkflows(
 		return nil, err
 	}
 
-	cacheKey := generateListWorkflowsCacheKey(req.GetUserId(), req.GetCursor(), filters)
-
-	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &workflowsmodel.ListWorkflowsResponse{})
-	if cacheErr != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = status.FromContextError(ctxErr).Err()
-			return nil, err
-		}
-	} else {
-		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-		return cacheRes.(*workflowsmodel.ListWorkflowsResponse), nil
-	}
-
-	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		_res, _err := s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
-		if _err != nil {
-			return nil, _err
-		}
-
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-			defer cancel()
-
-			if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-				logger.Warn("failed to cache workflows list",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("cache_key", cacheKey),
-					zap.Error(setErr),
-				)
-			} else if logger.Core().Enabled(zap.DebugLevel) {
-				logger.Debug("cached workflows list",
-					zap.String("user_id", req.GetUserId()),
-					zap.String("cache_key", cacheKey),
-				)
-			}
-		}()
-
-		return _res, nil
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*workflowsmodel.ListWorkflowsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.ListWorkflows(ctx, req.GetUserId(), cursor, filters)
 }
 
 func validateWorkflowBuildStatus(s string) error {
@@ -841,55 +598,4 @@ func decodeCursor(token string) (string, error) {
 	}
 
 	return string(decoded), nil
-}
-
-func generateListWorkflowsCacheKey(userID, cursor string, filters *workflowsmodel.ListWorkflowsFilters) string {
-	allFilters := []string{
-		fmt.Sprintf("query=%s", filters.Query),
-		fmt.Sprintf("kind=%s", filters.Kind),
-		fmt.Sprintf("build_status=%s", filters.BuildStatus),
-		fmt.Sprintf("is_terminated=%v", filters.IsTerminated),
-		fmt.Sprintf("interval_min=%d", filters.IntervalMin),
-		fmt.Sprintf("interval_max=%d", filters.IntervalMax),
-	}
-
-	// Hash the unbounded cursor and query so they cannot become oversize Redis keys.
-	// Join on NUL (not "&"/"|") so user-controlled query text cannot shift fields.
-	sum := sha256.Sum256([]byte("cursor=" + cursor + "\x00" + strings.Join(allFilters, "\x00")))
-	return fmt.Sprintf("workflows:%s:%x", userID, sum)
-}
-
-// invalidateWorkflowCache handles cache invalidation for a specific workflow for a user.
-func (s *Service) invalidateWorkflowCache(ctx context.Context, workflowID, userID string, logger *zap.Logger) {
-	// The key is in the format "workflow:{user_id}:{workflow_id}".
-	cacheKey := fmt.Sprintf("workflow:%s:%s", userID, workflowID)
-	if err := s.cache.Delete(ctx, cacheKey); err != nil &&
-		status.Code(err) != codes.NotFound {
-		logger.Warn("failed to invalidate workflow cache",
-			zap.String("user_id", userID),
-			zap.String("cache_key", cacheKey),
-			zap.Error(err))
-	} else if logger.Core().Enabled(zap.DebugLevel) {
-		logger.Debug("invalidated workflow cache",
-			zap.String("user_id", userID),
-			zap.String("cache_key", cacheKey))
-	}
-}
-
-// invalidateWorkflowsCache handles cache invalidation for all workflows for a user.
-func (s *Service) invalidateWorkflowsCache(ctx context.Context, userID string, logger *zap.Logger) {
-	// We use the user ID as the key, and '*' as the pattern.
-	cacheKey := fmt.Sprintf("workflows:%s:*", userID)
-	count, err := s.cache.DeleteByPattern(ctx, cacheKey)
-	if err != nil {
-		logger.Warn("failed to invalidate list caches",
-			zap.String("user_id", userID),
-			zap.String("cache_key", cacheKey),
-			zap.Error(err))
-	} else if logger.Core().Enabled(zap.DebugLevel) {
-		logger.Debug("invalidated workflow list caches",
-			zap.String("user_id", userID),
-			zap.String("cache_key", cacheKey),
-			zap.Int64("count", count))
-	}
 }

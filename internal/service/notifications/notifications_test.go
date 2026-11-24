@@ -2,8 +2,6 @@ package notifications_test
 
 import (
 	"database/sql"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -280,21 +278,17 @@ func TestService_ListNotifications(t *testing.T) {
 	}
 
 	var (
-		createdAt               = time.Now()
-		updatedAt               = time.Now()
-		readAt                  = sql.NullTime{}
-		singleflightRepoCalls   int32
-		singleflightReleaseChan chan struct{}
-		singleflightLeaderRan   chan struct{}
+		createdAt = time.Now()
+		updatedAt = time.Now()
+		readAt    = sql.NullTime{}
 	)
 
 	tests := []struct {
-		name    string
-		req     *notificationspb.ListNotificationsRequest
-		mock    func(req *notificationspb.ListNotificationsRequest)
-		execute func(t *testing.T, req *notificationspb.ListNotificationsRequest, want want)
-		want    want
-		isErr   bool
+		name  string
+		req   *notificationspb.ListNotificationsRequest
+		mock  func(req *notificationspb.ListNotificationsRequest)
+		want  want
+		isErr bool
 	}{
 		{
 			name: "success",
@@ -355,95 +349,6 @@ func TestService_ListNotifications(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "success: singleflight deduplicates concurrent request",
-			req: &notificationspb.ListNotificationsRequest{
-				// Own user ID, so this case's expectation cannot answer another's.
-				UserId: "singleflight_user",
-				Cursor: "",
-			},
-			mock: func(req *notificationspb.ListNotificationsRequest) {
-				singleflightRepoCalls = 0
-				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks, so the wait below cannot be
-				// satisfied by a call that already returned.
-				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
-				// t.Fatalf on the leader goroutine, which Goexits it before
-				// singleflight publishes its result and hangs the package. The dedupe
-				// is asserted on singleflightRepoCalls.
-				repo.EXPECT().ListNotifications(
-					gomock.Any(),
-					req.GetUserId(),
-					req.GetCursor(),
-				).DoAndReturn(func(_ any, _, _ string) (*notificationsmodel.ListNotificationsResponse, error) {
-					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
-						close(singleflightLeaderRan)
-						<-singleflightReleaseChan
-					}
-					return &notificationsmodel.ListNotificationsResponse{
-						Notifications: []*notificationsmodel.NotificationResponse{
-							{
-								ID:        "notification_id_1",
-								Kind:      "kind1",
-								Payload:   `{"key": "value"}`,
-								ReadAt:    readAt,
-								CreatedAt: createdAt,
-								UpdatedAt: updatedAt,
-							},
-						},
-						Cursor: "",
-					}, nil
-				}).AnyTimes()
-			},
-			execute: func(t *testing.T, req *notificationspb.ListNotificationsRequest, want want) {
-				t.Helper()
-
-				var wg sync.WaitGroup
-				results := make([]*notificationsmodel.ListNotificationsResponse, 2)
-				errs := make([]error, 2)
-
-				for i := range 2 {
-					idx := i
-					wg.Go(func() {
-						results[idx], errs[idx] = s.ListNotifications(t.Context(), req)
-					})
-				}
-
-				// Wait for the leader to park, then hold it long enough for the
-				// second caller to join the flight instead of opening a second.
-				select {
-				case <-singleflightLeaderRan:
-				case <-time.After(30 * time.Second):
-					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
-				}
-				time.Sleep(100 * time.Millisecond)
-				close(singleflightReleaseChan)
-				wg.Wait()
-
-				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
-				assert.NoError(t, errs[0])
-				assert.NoError(t, errs[1])
-				assert.Equal(t, want.ListNotificationsResponse, results[0])
-				assert.Equal(t, want.ListNotificationsResponse, results[1])
-			},
-			want: want{
-				ListNotificationsResponse: &notificationsmodel.ListNotificationsResponse{
-					Notifications: []*notificationsmodel.NotificationResponse{
-						{
-							ID:        "notification_id_1",
-							Kind:      "kind1",
-							Payload:   `{"key": "value"}`,
-							ReadAt:    readAt,
-							CreatedAt: createdAt,
-							UpdatedAt: updatedAt,
-						},
-					},
-					Cursor: "",
-				},
-			},
-			isErr: false,
-		},
-		{
 			name: "error: missing user ID",
 			req: &notificationspb.ListNotificationsRequest{
 				UserId: "",
@@ -492,11 +397,6 @@ func TestService_ListNotifications(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.execute != nil {
-				tt.execute(t, tt.req, tt.want)
-				return
-			}
-
 			notifications, err := s.ListNotifications(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {

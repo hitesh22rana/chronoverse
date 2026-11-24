@@ -8,7 +8,6 @@ metadata:
     chronoverse.io/certs: "true"
     chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
-    chronoverse.io/redis-client: "true"
 spec:
   replicas: 2
   selector:
@@ -20,7 +19,6 @@ spec:
         app.kubernetes.io/name: users-service
         app.kubernetes.io/component: backend
         chronoverse.io/postgres-client: "true"
-        chronoverse.io/redis-client: "true"
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -39,8 +37,6 @@ spec:
             name: postgres-connection-config
         - secretRef:
             name: postgres-app-secret
-        - configMapRef:
-            name: redis-connection-config
         - configMapRef:
             name: observability-config
         - configMapRef:
@@ -137,7 +133,6 @@ metadata:
     chronoverse.io/certs: "true"
     chronoverse.io/datastore-client: "true"
     chronoverse.io/postgres-client: "true"
-    chronoverse.io/redis-client: "true"
     chronoverse.io/kafka-client: "true"
 spec:
   replicas: 2
@@ -150,7 +145,6 @@ spec:
         app.kubernetes.io/name: workflows-service
         app.kubernetes.io/component: backend
         chronoverse.io/postgres-client: "true"
-        chronoverse.io/redis-client: "true"
         chronoverse.io/kafka-client: "true"
     spec:
       automountServiceAccountToken: false
@@ -170,8 +164,6 @@ spec:
             name: postgres-connection-config
         - secretRef:
             name: postgres-app-secret
-        - configMapRef:
-            name: redis-connection-config
         - configMapRef:
             name: kafka-connection-config
         - configMapRef:

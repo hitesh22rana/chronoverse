@@ -19,7 +19,6 @@ import (
 	grpcserverpkg "github.com/hitesh22rana/chronoverse/internal/pkg/grpcserver"
 	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
-	"github.com/hitesh22rana/chronoverse/internal/pkg/redis"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	workflowsrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflows"
 	workflowssvc "github.com/hitesh22rana/chronoverse/internal/service/workflows"
@@ -57,20 +56,13 @@ func run() int {
 	}
 	defer pdb.Close()
 
-	rdb, err := redis.New(ctx, cfg.Redis.ClientConfig())
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return ExitError
-	}
-	defer rdb.Close()
-
 	repo := workflowsrepo.New(&workflowsrepo.Config{
 		FetchLimit: cfg.WorkflowsServiceConfig.FetchLimit,
 	}, pdb)
 
 	validator := validator.New()
 
-	svc := workflowssvc.New(validator, repo, rdb)
+	svc := workflowssvc.New(validator, repo)
 	app := workflows.New(ctx, &workflows.Config{
 		Deadline:    cfg.Grpc.RequestTimeout,
 		Environment: cfg.Environment.Env,

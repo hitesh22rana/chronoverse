@@ -205,7 +205,6 @@ func (r *Repository) replayCreatedWorkflow(
 	if err := json.Unmarshal(reservation.Response, res); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
 	}
-	res.IdempotencyReplay = true
 	return res, nil
 }
 

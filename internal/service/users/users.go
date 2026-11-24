@@ -4,9 +4,7 @@ package users
 
 import (
 	"context"
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/trustelem/zxcvbn"
@@ -14,22 +12,12 @@ import (
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	usersmodel "github.com/hitesh22rana/chronoverse/internal/model/users"
-	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
-	loggerpkg "github.com/hitesh22rana/chronoverse/internal/pkg/logger"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	userpb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
-)
-
-const (
-	defaultExpirationTTL  = time.Minute * 30
-	cacheExpirationJitter = defaultExpirationTTL / 10
-	cacheTimeout          = time.Second * 2
 )
 
 // Repository provides user related operations.
@@ -40,29 +28,19 @@ type Repository interface {
 	UpdateUser(ctx context.Context, id, notificationPreference string) error
 }
 
-// Cache provides cache related operations.
-type Cache interface {
-	Set(ctx context.Context, key string, value any, expiration time.Duration) error
-	Get(ctx context.Context, key string, dest any) (any, error)
-	Delete(ctx context.Context, key string) error
-}
-
 // Service provides user related operations.
 type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
-	cache     Cache
-	sf        singleflight.Group
 }
 
 // New creates a new users-service.
-func New(validator *validator.Validate, repo Repository, cache Cache) *Service {
+func New(validator *validator.Validate, repo Repository) *Service {
 	return &Service{
 		validator: validator,
 		tp:        otel.Tracer(svcpkg.Info().GetName()),
 		repo:      repo,
-		cache:     cache,
 	}
 }
 
@@ -100,9 +78,6 @@ type RegisterUserRequest struct {
 
 // RegisterUser registers a new user and returns its ID with an auth token.
 func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequest) (userID, authToken string, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.RegisterUser"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.RegisterUser")
 	defer func() {
 		if err != nil {
@@ -131,26 +106,6 @@ func (s *Service) RegisterUser(ctx context.Context, req *userpb.RegisterUserRequ
 		return "", "", err
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		// The key is in the format "user:{user_id}"
-		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-			logger.Warn("failed to cache user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
-
 	return res.ID, authToken, nil
 }
 
@@ -162,9 +117,6 @@ type LoginUserRequest struct {
 
 // LoginUser authenticates a user and returns its ID with a fresh auth token.
 func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (userID, authToken string, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.LoginUser"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.LoginUser")
 	defer func() {
 		if err != nil {
@@ -188,26 +140,6 @@ func (s *Service) LoginUser(ctx context.Context, req *userpb.LoginUserRequest) (
 		return "", "", normalizeLoginError(err)
 	}
 
-	go func() {
-		bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-		defer cancel()
-
-		// The key is in the format "user:{user_id}"
-		cacheKey := fmt.Sprintf("user:%s", res.ID)
-		if setErr := s.cache.Set(bgCtx, cacheKey, res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-			logger.Warn("failed to cache user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-				zap.Error(setErr),
-			)
-		} else if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("cached user",
-				zap.String("user_id", res.ID),
-				zap.String("cache_key", cacheKey),
-			)
-		}
-	}()
-
 	return res.ID, authToken, nil
 }
 
@@ -218,9 +150,6 @@ type GetUserRequest struct {
 
 // GetUser gets a user.
 func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res *usersmodel.GetUserResponse, err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.GetUser"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.GetUser")
 	defer func() {
 		if err != nil {
@@ -238,54 +167,7 @@ func (s *Service) GetUser(ctx context.Context, req *userpb.GetUserRequest) (res 
 		return nil, err
 	}
 
-	cacheKey := fmt.Sprintf("user:%s", req.GetId())
-	cacheRes, cacheErr := s.cache.Get(ctx, cacheKey, &usersmodel.GetUserResponse{})
-	if cacheErr != nil {
-		// The cache wraps its own failures in a gRPC status, so read cancellation
-		// from the caller's context instead of inspecting the cache error.
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			err = status.FromContextError(ctxErr).Err()
-			return nil, err
-		}
-	} else {
-		//nolint:errcheck,forcetypeassert // Ignore error as we are just reading from cache
-		return cacheRes.(*usersmodel.GetUserResponse), nil
-	}
-
-	resultCh := s.sf.DoChan(cacheKey, func() (any, error) {
-		_res, _err := s.repo.GetUser(ctx, req.GetId())
-		if _err != nil {
-			return nil, _err
-		}
-
-		// Cache the GetUser response in the background once for the shared result.
-		go func() {
-			bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheTimeout)
-			defer cancel()
-
-			if setErr := s.cache.Set(bgCtx, cacheKey, _res, cachepkg.AddJitter(defaultExpirationTTL, cacheExpirationJitter)); setErr != nil {
-				logger.Warn("failed to cache user",
-					zap.String("user_id", _res.ID),
-					zap.String("cache_key", cacheKey),
-					zap.Error(setErr),
-				)
-			} else if logger.Core().Enabled(zap.DebugLevel) {
-				logger.Debug("cached user",
-					zap.String("user_id", _res.ID),
-					zap.String("cache_key", cacheKey),
-				)
-			}
-		}()
-
-		return _res, nil
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*usersmodel.GetUserResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetUser(ctx, req.GetId())
 }
 
 // UpdateUserRequest holds the request parameters for updating a user.
@@ -296,9 +178,6 @@ type UpdateUserRequest struct {
 
 // UpdateUser updates a user.
 func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) (err error) {
-	logger := loggerpkg.FromContext(ctx).With(
-		zap.String("method", "Service.UpdateUser"),
-	)
 	ctx, span := s.tp.Start(ctx, "Service.UpdateUser")
 	defer func() {
 		if err != nil {
@@ -317,33 +196,7 @@ func (s *Service) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest)
 		return err
 	}
 
-	err = s.repo.UpdateUser(
-		ctx,
-		req.GetId(),
-		req.GetNotificationPreference(),
-	)
-	if err != nil {
-		return err
-	}
-
-	// The key is in the format "user:{user_id}"
-	cacheKey := fmt.Sprintf("user:%s", req.GetId())
-	if delErr := s.cache.Delete(ctx, cacheKey); delErr != nil && status.Code(delErr) != codes.NotFound {
-		logger.Warn("failed to delete user cache",
-			zap.String("user_id", req.GetId()),
-			zap.String("cache_key", cacheKey),
-			zap.Error(delErr),
-		)
-
-		return status.Errorf(codes.Internal, "failed to delete user cache: %v", delErr)
-	} else if logger.Core().Enabled(zap.DebugLevel) {
-		logger.Debug("deleted user cache",
-			zap.String("user_id", req.GetId()),
-			zap.String("cache_key", cacheKey),
-		)
-	}
-
-	return err
+	return s.repo.UpdateUser(ctx, req.GetId(), req.GetNotificationPreference())
 }
 
 func normalizeLoginError(err error) error {

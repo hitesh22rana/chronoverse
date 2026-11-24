@@ -608,16 +608,7 @@ func (s *Service) GetJobByID(ctx context.Context, req *jobspb.GetJobByIDRequest)
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resultCh := s.sf.DoChan(fmt.Sprintf("job_by_id:%s", req.GetId()), func() (any, error) {
-		return s.repo.GetJobByID(ctx, req.GetId())
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.GetJobByIDResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetJobByID(ctx, req.GetId())
 }
 
 // GetJobLogsRequest holds the request parameters for getting scheduled job logs.
@@ -996,24 +987,7 @@ func (s *Service) ListJobs(ctx context.Context, req *jobspb.ListJobsRequest) (re
 		return nil, err
 	}
 
-	listKey := fmt.Sprintf(
-		"jobs:%s:%s:cursor=%s&status=%s&trigger=%s",
-		req.GetUserId(),
-		req.GetWorkflowId(),
-		req.GetCursor(),
-		filters.Status,
-		filters.Trigger,
-	)
-	resultCh := s.sf.DoChan(listKey, func() (any, error) {
-		return s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*jobsmodel.ListJobsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.ListJobs(ctx, req.GetWorkflowId(), req.GetUserId(), cursor, filters)
 }
 
 func validateTime(t string) error {

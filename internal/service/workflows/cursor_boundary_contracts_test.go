@@ -39,17 +39,7 @@ func TestListWorkflowsDecodesCursorAndPreservesCaller(t *testing.T) {
 			}
 			original := proto.Clone(req)
 			filters := &model.ListWorkflowsFilters{Kind: kind, BuildStatus: "COMPLETED", IsTerminated: true, Query: strings.Repeat("界", 100), IntervalMin: 1, IntervalMax: 5}
-			cache := mocks.NewMockCache(ctrl)
-			cache.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, status.Error(codes.NotFound, "cache miss"))
-			background := make(chan (<-chan struct{}), 1)
-			cache.EXPECT().Set(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(got context.Context, _ string, _ any, _ time.Duration) error {
-				if got.Value(cursorBoundaryKey{}) != "caller" {
-					t.Error("cache population lost caller values")
-				}
-				background <- got.Done()
-				return nil
-			})
-			svc := service.New(validator.New(), repo, cache)
+			svc := service.New(validator.New(), repo)
 			ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), cursorBoundaryKey{}, "caller"), 5*time.Second)
 			defer cancel()
 			repo.EXPECT().ListWorkflows(gomock.Any(), cursorBoundaryOwner, raw, filters).
@@ -66,16 +56,6 @@ func TestListWorkflowsDecodesCursorAndPreservesCaller(t *testing.T) {
 			if !proto.Equal(req, original) {
 				t.Fatal("request was mutated")
 			}
-			select {
-			case done := <-background:
-				select {
-				case <-done:
-				case <-ctx.Done():
-					t.Fatal("cache population did not release its context")
-				}
-			case <-ctx.Done():
-				t.Fatal("cache population did not run")
-			}
 		})
 	}
 }
@@ -85,7 +65,7 @@ func TestListWorkflowsRejectsBadInputsBeforeRepository(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := mocks.NewMockRepository(ctrl)
-			svc := service.New(validator.New(), repo, mocks.NewMockCache(ctrl))
+			svc := service.New(validator.New(), repo)
 			req := &workflowspb.ListWorkflowsRequest{UserId: cursorBoundaryOwner, Filters: &workflowspb.ListWorkflowsFilters{Kind: "HEARTBEAT"}}
 			switch name {
 			case "cursor":

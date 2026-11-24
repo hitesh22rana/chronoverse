@@ -393,6 +393,7 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+        '504': {$ref: '#/components/responses/AnalyticsTimeout'}
   /analytics/{workflow_id}:
     get:
       operationId: getWorkflowAnalytics
@@ -406,6 +407,7 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+        '504': {$ref: '#/components/responses/AnalyticsTimeout'}
 components:
   securitySchemes:
     cookieSession:
@@ -432,6 +434,9 @@ components:
         minLength: 1
         x-maxBytes: 255
   responses:
+    AnalyticsTimeout:
+      description: The analytics request exceeded its deadline. The analytics service's `GRPC_REQUEST_TIMEOUT` sets its per-request budget and defaults to 500 ms.
+      content: {text/plain: {schema: {type: string}}}
     BadRequest: {description: Invalid input or missing required idempotency key}
     Conflict: {description: Idempotency key was already used with a different logical request}
     Unauthorized: {description: Missing or invalid session}

@@ -16,6 +16,8 @@ Startup requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSR
 
 Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients use per-service host, port, TLS enablement, CA path, plus shared client certificate and key paths.
 
+The analytics service uses `GRPC_REQUEST_TIMEOUT` (default 500 ms) for each analytics RPC. The HTTP gateway returns `504 Gateway Timeout` when the RPC reports that its deadline expired.
+
 ## Infrastructure
 
 - PostgreSQL: PgBouncer endpoint, connection pool, dial timeout, dedicated application credentials, database, and TLS paths. Kubernetes defines explicit per-workload `POSTGRES_MIN_CONNS`/`POSTGRES_MAX_CONNS` budgets; zero is a valid idle minimum.

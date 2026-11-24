@@ -152,6 +152,10 @@ Each gRPC service uses:
 - `GRPC_TLS_ENABLED`, `GRPC_TLS_CA_FILE`, `GRPC_TLS_CERT_FILE`,
   `GRPC_TLS_KEY_FILE`
 
+The analytics service uses `GRPC_REQUEST_TIMEOUT` (default 500 ms) for
+each analytics RPC. The HTTP gateway returns `504 Gateway Timeout` when the
+RPC reports that its deadline expired.
+
 Service clients use:
 
 - `USERS_SERVICE_HOST`, `USERS_SERVICE_PORT`, `USERS_SERVICE_TLS_ENABLED`,

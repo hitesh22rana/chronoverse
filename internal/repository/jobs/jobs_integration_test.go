@@ -458,7 +458,8 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 
 	// Seed logs directly in ClickHouse.
 	now := time.Now().UTC()
-	for i := uint32(1); i <= 3; i++ {
+	const logCount = 5
+	for i := uint32(1); i <= logCount; i++ {
 		if insertErr := ch.Exec(ctx, `
 			INSERT INTO
 				job_logs (
@@ -487,26 +488,25 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 		t.Fatalf("GetJobLogs returned %d logs, want 2", len(logs.JobLogs))
 	}
 	// Newest first by default.
-	if logs.JobLogs[0].SequenceNum != 3 {
-		t.Fatalf("first log sequence_num = %d, want 3 (descending order)", logs.JobLogs[0].SequenceNum)
+	if logs.JobLogs[0].SequenceNum != 5 {
+		t.Fatalf("first log sequence_num = %d, want 5 (descending order)", logs.JobLogs[0].SequenceNum)
 	}
-	if logs.JobLogs[0].Message != "log line 3" {
-		t.Fatalf("first log message = %q, want %q", logs.JobLogs[0].Message, "log line 3")
+	if logs.JobLogs[0].Message != "log line 5" {
+		t.Fatalf("first log message = %q, want %q", logs.JobLogs[0].Message, "log line 5")
 	}
 	if logs.Cursor == "" {
 		t.Fatal("expected a cursor when there are more logs")
 	}
 
-	// Cursor pagination returns the remaining log.
+	// The middle page has a continuation cursor and was eligible for Redis caching.
 	paged, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, logs.Cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
 	if err != nil {
 		t.Fatalf("GetJobLogs (paged): %v", err)
 	}
-	if len(paged.JobLogs) != 1 {
-		t.Fatalf("GetJobLogs (paged) returned %d logs, want 1", len(paged.JobLogs))
-	}
-	if paged.JobLogs[0].SequenceNum != 1 {
-		t.Fatalf("paged log sequence_num = %d, want 1", paged.JobLogs[0].SequenceNum)
+	require.Len(t, paged.JobLogs, 2)
+	require.NotEmpty(t, paged.Cursor)
+	if paged.JobLogs[0].SequenceNum != 3 {
+		t.Fatalf("paged log sequence_num = %d, want 3", paged.JobLogs[0].SequenceNum)
 	}
 
 	verifyDeletedWorkflowDeniesRetainedLogRead(ctx, t, repo, userID, workflowID, func(svc *jobssvc.Service) (*jobsmodel.GetJobLogsResponse, error) {
@@ -521,7 +521,7 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	require.True(t, rows.Next(), "missing retained ClickHouse row count: %v", rows.Err())
 	var remaining uint64
 	require.NoError(t, rows.Scan(&remaining))
-	require.Equal(t, uint64(3), remaining, "retained ClickHouse rows after workflow deletion")
+	require.Equal(t, uint64(logCount), remaining, "retained ClickHouse rows after workflow deletion")
 }
 
 //nolint:gocyclo // Verifies filtering and cursor continuity against the same indexed logs.
@@ -675,6 +675,7 @@ func verifyDeletedWorkflowDeniesRetainedLogRead(
 	if err != nil || page == nil || len(page.JobLogs) == 0 {
 		t.Fatalf("expected a visible retained page before deletion, got %v, %v", page, err)
 	}
+	require.NotEmpty(t, page.Cursor, "pre-deletion page must have qualified for the former Redis cache")
 	if _, seedErr := first.pg.Exec(ctx, "UPDATE workflows SET terminated_at = clock_timestamp() WHERE id = $1", workflowID); seedErr != nil {
 		t.Fatalf("seed terminated workflow: %v", seedErr)
 	}

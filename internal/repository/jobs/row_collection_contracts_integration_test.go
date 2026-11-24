@@ -3,6 +3,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -18,6 +19,7 @@ import (
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/commandidempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	analyticsrepo "github.com/hitesh22rana/chronoverse/internal/repository/analytics"
 	workflowsrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflows"
 )
 
@@ -205,51 +207,85 @@ func TestIntegrationLogCollectionRejectsStreamingServerFailure(t *testing.T) {
 	}
 }
 
-func TestIntegrationDirectDatabaseReadsPreserveRowCollectionDeadline(t *testing.T) {
+func TestIntegrationDatabaseOperationsPreserveRowCollectionDeadline(t *testing.T) {
 	pg := testkit.Postgres(t)
 	ctx := t.Context()
 	repo := New(&Config{FetchLimit: 2}, nil, pg, nil, nil, nil, nil)
 	userID, workflowID := seedUserWorkflow(ctx, t, pg)
 	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "read-deadline-"+uuid.NewString(), 1)
 	require.NoError(t, err)
+	_, err = pg.Exec(ctx, `
+		INSERT INTO analytics (user_id, workflow_id, kind, jobs_count, logs_count)
+		VALUES ($1, $2, 'CONTAINER', 1, 2)
+	`, userID, workflowID)
+	require.NoError(t, err)
 	for _, tc := range []struct {
-		name string
-		read func(context.Context, *Repository, *workflowsrepo.Repository) error
+		name     string
+		skipRows int32
+		columns  uint16
+		read     func(context.Context, *Repository, *workflowsrepo.Repository) error
 	}{
-		{"get job", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+		{"get job", 0, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
 			_, readErr := jobs.GetJob(ctx, jobID, workflowID, userID)
 			return readErr
 		}},
-		{"get job by ID", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+		{"get job by ID", 0, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
 			_, readErr := jobs.GetJobByID(ctx, jobID)
 			return readErr
 		}},
-		{"list jobs", func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+		{"list jobs", 0, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
 			_, readErr := jobs.ListJobs(ctx, workflowID, userID, "", &jobsmodel.ListJobsFilters{})
 			return readErr
 		}},
-		{"get workflow", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+		{"get workflow", 0, 0, func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
 			_, readErr := workflows.GetWorkflow(ctx, workflowID, userID)
 			return readErr
 		}},
-		{"get workflow by ID", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+		{"get workflow by ID", 0, 0, func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
 			_, readErr := workflows.GetWorkflowByID(ctx, workflowID)
 			return readErr
 		}},
-		{"list workflows", func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+		{"list workflows", 0, 0, func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
 			_, readErr := workflows.ListWorkflows(ctx, userID, "", nil)
+			return readErr
+		}},
+		{"user analytics totals", 0, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := analyticsrepo.New(nil, jobs.pg).GetUserAnalytics(ctx, userID)
+			return readErr
+		}},
+		{"user analytics workflow kinds", 1, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := analyticsrepo.New(nil, jobs.pg).GetUserAnalytics(ctx, userID)
+			return readErr
+		}},
+		{"user analytics top workflows", 2, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := analyticsrepo.New(nil, jobs.pg).GetUserAnalytics(ctx, userID)
+			return readErr
+		}},
+		{"workflow analytics", 0, 0, func(ctx context.Context, jobs *Repository, _ *workflowsrepo.Repository) error {
+			_, readErr := analyticsrepo.New(nil, jobs.pg).GetWorkflowAnalytics(ctx, userID, workflowID)
+			return readErr
+		}},
+		{"create workflow returning", 0, 16, func(ctx context.Context, _ *Repository, workflows *workflowsrepo.Repository) error {
+			_, readErr := workflows.CreateWorkflow(ctx, userID, "deadline-write", `{"image":"alpine:3.22.2"}`, "CONTAINER", 60, 3, true, "deadline-write")
 			return readErr
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rowWithheld := make(chan struct{}, 1)
 			var armed atomic.Bool
+			var rowsSeen atomic.Int32
 			release := make(chan struct{})
 			defer close(release)
-			faulty := discoveryWireFault(t, repo, func(kind byte, _ []byte) bool {
-				// Forward RowDescription so Query returns, but hold the first DataRow.
+			faulty := discoveryWireFault(t, repo, func(kind byte, body []byte) bool {
+				// Forward RowDescription, then withhold a row from the target result.
 				// Pool setup may also return rows, so arm this after it connects.
 				if kind != 'D' || !armed.Load() {
+					return false
+				}
+				if tc.columns != 0 && binary.BigEndian.Uint16(body) != tc.columns {
+					return false
+				}
+				if rowsSeen.Add(1) <= tc.skipRows {
 					return false
 				}
 				select {
@@ -270,6 +306,35 @@ func TestIntegrationDirectDatabaseReadsPreserveRowCollectionDeadline(t *testing.
 				t.Fatalf("query did not begin returning rows: %v", readErr)
 			}
 			require.Equal(t, codes.DeadlineExceeded, status.Code(readErr), "%v", readErr)
+			if tc.columns != 0 {
+				var committed bool
+				require.NoError(t, pg.QueryRow(t.Context(), `
+					SELECT EXISTS (SELECT 1 FROM workflows WHERE user_id = $1 AND name = $2)
+				`, userID, "deadline-write").Scan(&committed))
+				require.False(t, committed)
+			}
 		})
+	}
+}
+
+func TestIntegrationRecoveryCollectorsPreserveDeadline(t *testing.T) {
+	pg := testkit.Postgres(t)
+	repo := New(&Config{}, nil, pg, nil, nil, nil, nil)
+	for _, replay := range []bool{false, true} {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		rows, err := pg.Query(ctx, "SELECT 'job'::text FROM pg_sleep(10)")
+		if err != nil {
+			cancel()
+			t.Fatalf("query failed before collecting recovery rows: %v", err)
+		}
+		var result []*jobsmodel.ExpiredJobLease
+		if replay {
+			result, err = collectRenewedRecoveryJobs(rows, nil)
+		} else {
+			result, err = repo.completeExpiredRecovery(ctx, nil, "", "", "", rows)
+		}
+		cancel()
+		require.Nil(t, result)
+		require.Equal(t, codes.DeadlineExceeded, status.Code(err), "%v", err)
 	}
 }

@@ -403,3 +403,47 @@ func TestGetWorkflowAnalytics(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyticsAppliesConfiguredDeadline(t *testing.T) {
+	const owner = "00000000-0000-4000-8000-000000000321"
+	const timeout = 50 * time.Millisecond
+	ctrl := gomock.NewController(t)
+	tokens := authmock.NewMockIAuth(ctrl)
+	service := analyticsmock.NewMockService(ctrl)
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameAnalytics).
+		DoAndReturn(func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
+			ctx = auth.WithSubject(auth.WithAudience(auth.WithRole(ctx, auth.RoleUser.String()), auth.ServiceNameAnalytics), owner)
+			return ctx, &jwt.Token{}, nil
+		}).Times(2)
+	observed := make(chan time.Duration, 2)
+	wait := func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return status.Error(codes.Internal, "handler received no deadline")
+		}
+		observed <- time.Until(deadline)
+		<-ctx.Done()
+		return status.FromContextError(ctx.Err()).Err()
+	}
+	service.EXPECT().GetUserAnalytics(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ *analyticspb.GetUserAnalyticsRequest) (*analyticsmodel.GetUserAnalyticsResponse, error) {
+			return nil, wait(ctx)
+		})
+	service.EXPECT().GetWorkflowAnalytics(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ *analyticspb.GetWorkflowAnalyticsRequest) (*analyticsmodel.GetWorkflowAnalyticsResponse, error) {
+			return nil, wait(ctx)
+		})
+	server := analytics.New(t.Context(), &analytics.Config{Deadline: timeout}, tokens, service)
+	client := analyticspb.NewAnalyticsServiceClient(initClient(t, server, insecure.NewCredentials()))
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	ctx = auth.WithAuthorizationTokenInMetadata(ctx, "token")
+	_, err := client.GetUserAnalytics(ctx, &analyticspb.GetUserAnalyticsRequest{UserId: owner})
+	require.Equal(t, codes.DeadlineExceeded, status.Code(err))
+	require.Len(t, observed, 1, "analytics handler did not observe a deadline")
+	require.LessOrEqual(t, <-observed, timeout)
+	_, err = client.GetWorkflowAnalytics(ctx, &analyticspb.GetWorkflowAnalyticsRequest{UserId: owner, WorkflowId: owner})
+	require.Equal(t, codes.DeadlineExceeded, status.Code(err))
+	require.Len(t, observed, 1, "analytics handler did not observe a deadline")
+	require.LessOrEqual(t, <-observed, timeout)
+}

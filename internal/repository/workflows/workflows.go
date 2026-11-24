@@ -150,18 +150,11 @@ func (r *Repository) CreateWorkflow(
 	args := []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention, buildHashArg}
 
 	rows, err := tx.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to insert workflow: %v", err)
-		return nil, err
+		return nil, mapWorkflowWriteError(err, "failed to insert workflow")
 	}
 
 	event := workflowEventPayload(res.ID, userID, workflowsmodel.ActionBuild, res.Generation)

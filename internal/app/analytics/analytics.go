@@ -175,6 +175,9 @@ func (a *Analytics) GetUserAnalytics(
 		span.End()
 	}()
 
+	ctx, cancel := context.WithTimeout(ctx, a.cfg.Deadline)
+	defer cancel()
+
 	analytics, err := a.svc.GetUserAnalytics(ctx, req)
 	if err != nil {
 		return nil, err
@@ -205,6 +208,9 @@ func (a *Analytics) GetWorkflowAnalytics(
 		}
 		span.End()
 	}()
+
+	ctx, cancel := context.WithTimeout(ctx, a.cfg.Deadline)
+	defer cancel()
 
 	analytics, err := a.svc.GetWorkflowAnalytics(ctx, req)
 	if err != nil {

@@ -1680,6 +1680,9 @@ func activeRecoveryReplayJobs(stored []*jobsmodel.ExpiredJobLease, renewedIDs []
 func collectRenewedRecoveryJobs(rows pgx.Rows, stored []*jobsmodel.ExpiredJobLease) ([]*jobsmodel.ExpiredJobLease, error) {
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	if err != nil {
+		if contextStatus := status.FromContextError(err); contextStatus.Code() != grpccodes.Unknown {
+			return nil, contextStatus.Err()
+		}
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect renewed recovery replay leases: %v", err)
 	}
 	return activeRecoveryReplayJobs(stored, ids), nil
@@ -1695,6 +1698,9 @@ func (r *Repository) completeExpiredRecovery(
 ) ([]*jobsmodel.ExpiredJobLease, error) {
 	jobs, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[jobsmodel.ExpiredJobLease])
 	if err != nil {
+		if contextStatus := status.FromContextError(err); contextStatus.Code() != grpccodes.Unknown {
+			return nil, contextStatus.Err()
+		}
 		return nil, status.Errorf(grpccodes.Internal, "failed to collect expired job leases: %v", err)
 	}
 	if completeErr := commandidempotency.Complete(

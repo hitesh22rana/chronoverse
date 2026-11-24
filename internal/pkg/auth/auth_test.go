@@ -403,7 +403,7 @@ func TestWithInternalServiceAuthorizationRequiresAudience(t *testing.T) {
 	}
 }
 
-func TestRequireOwnerRejectsIncompletePrincipalOrOwner(t *testing.T) {
+func TestRequireOwnerValidatesPrincipalAndOwner(t *testing.T) {
 	t.Parallel()
 	const owner = "00000000-0000-4000-8000-000000000a21"
 	for _, tc := range []struct {
@@ -413,6 +413,7 @@ func TestRequireOwnerRejectsIncompletePrincipalOrOwner(t *testing.T) {
 		owner   string
 		code    codes.Code
 	}{
+		{"internal service delegation", RoleAdmin.String(), "jobs-service", owner, codes.OK},
 		{"missing role", "", owner, owner, codes.FailedPrecondition},
 		{"unrecognized role", "observer", owner, owner, codes.PermissionDenied},
 		{"invalid owner", RoleUser.String(), owner, "invalid-uuid", codes.InvalidArgument},

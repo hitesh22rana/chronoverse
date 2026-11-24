@@ -160,12 +160,6 @@ func TestStoreOperationsAfterClose(t *testing.T) {
 			t.Fatalf("Delete = %v; want Internal with closed client", err)
 		}
 	})
-	t.Run("exists", func(t *testing.T) {
-		exists, err := store.Exists(t.Context(), "closed")
-		if exists || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
-			t.Fatalf("Exists = %v, %v", exists, err)
-		}
-	})
 	t.Run("conditional write", func(t *testing.T) {
 		created, err := store.SetNX(t.Context(), "closed", "value", time.Hour)
 		if created || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
@@ -183,11 +177,11 @@ func TestStoreOperationsAfterClose(t *testing.T) {
 func checkConditionalWriteContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
 	t.Helper()
 	const key = "conditional:first-writer"
-	assertStoreExists(ctx, t, store, key, false)
+	assertRedisKeyExists(ctx, t, admin, key, false)
 	if created, err := store.SetNX(ctx, key, "first", time.Hour); err != nil || !created {
 		t.Fatalf("first SetNX = %v, %v", created, err)
 	}
-	assertStoreExists(ctx, t, store, key, true)
+	assertRedisKeyExists(ctx, t, admin, key, true)
 	if created, err := store.SetNX(ctx, key, "replacement", time.Minute); err != nil || created {
 		t.Fatalf("contended SetNX = %v, %v", created, err)
 	}
@@ -201,7 +195,7 @@ func checkConditionalWriteContracts(ctx context.Context, t *testing.T, admin *go
 	if err := store.Delete(ctx, key); err != nil {
 		t.Fatalf("conditional cleanup: %v", err)
 	}
-	assertStoreExists(ctx, t, store, key, false)
+	assertRedisKeyExists(ctx, t, admin, key, false)
 }
 
 func checkPipelineContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
@@ -249,9 +243,9 @@ func TestSetNXRejectsUnserializableValue(t *testing.T) {
 	}
 }
 
-func assertStoreExists(ctx context.Context, t *testing.T, store *Store, key string, want bool) {
+func assertRedisKeyExists(ctx context.Context, t *testing.T, admin *goredis.Client, key string, want bool) {
 	t.Helper()
-	if exists, err := store.Exists(ctx, key); err != nil || exists != want {
-		t.Fatalf("Exists(%q) = %v, %v; want %v", key, exists, err, want)
+	if count, err := admin.Exists(ctx, key).Result(); err != nil || (count > 0) != want {
+		t.Fatalf("Exists(%q) = %v, %v; want %v", key, count, err, want)
 	}
 }

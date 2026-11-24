@@ -283,15 +283,6 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Exists checks if a key exists.
-func (s *Store) Exists(ctx context.Context, key string) (bool, error) {
-	result, err := s.client.Exists(ctx, key).Result()
-	if err != nil {
-		return false, status.Errorf(codes.Internal, "failed to check if key exists: %v", err)
-	}
-	return result > 0, nil
-}
-
 // SetNX is Set-if-absent; expiration must be positive, same as Set.
 func (s *Store) SetNX(ctx context.Context, key string, value any, expiration time.Duration) (bool, error) {
 	if expiration <= 0 {

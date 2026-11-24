@@ -291,7 +291,7 @@ type GetWorkflowByIDRequest struct {
 }
 
 // GetWorkflowByID returns the workflow details by ID.
-// This is a internal API and we don't want the cached workflow details, so we don't use the cache here.
+// Internal callers use this method when they do not have an owner ID.
 func (s *Service) GetWorkflowByID(
 	ctx context.Context,
 	req *workflowspb.GetWorkflowByIDRequest,

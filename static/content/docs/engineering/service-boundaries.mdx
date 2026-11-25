@@ -33,4 +33,4 @@ Reads user and workflow aggregates maintained by the analytics processor.
 
 ## Authorization boundary
 
-The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Internal services validate the authorization context rather than trusting arbitrary callers on the network.
+The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Services validate the target audience and role. For authenticated owner-scoped RPCs, the requested owner must match the user JWT subject. Internal admin calls can act for the owner within the policy of the target RPC.

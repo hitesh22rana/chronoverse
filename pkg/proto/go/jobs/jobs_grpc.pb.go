@@ -79,6 +79,9 @@ type JobsServiceClient interface {
 	GetContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*GetContainerCleanupReceiptResponse, error)
 	RecordContainerCleanupReceipt(ctx context.Context, in *ContainerCleanupReceiptRequest, opts ...grpc.CallOption) (*RecordContainerCleanupReceiptResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
+	// A user JWT may schedule MANUAL jobs for workflows owned by its subject.
+	// AUTOMATIC requires an internal admin JWT for jobs-service. User JWTs
+	// requesting AUTOMATIC receive PermissionDenied.
 	ScheduleJob(ctx context.Context, in *ScheduleJobRequest, opts ...grpc.CallOption) (*ScheduleJobResponse, error)
 	// CancelJob applies a deterministic workflow-driven cancellation.
 	// This is an internal API and should not be exposed to the public.
@@ -500,6 +503,9 @@ type JobsServiceServer interface {
 	GetContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*GetContainerCleanupReceiptResponse, error)
 	RecordContainerCleanupReceipt(context.Context, *ContainerCleanupReceiptRequest) (*RecordContainerCleanupReceiptResponse, error)
 	// ScheduleJob schedules a job to run at a specific time.
+	// A user JWT may schedule MANUAL jobs for workflows owned by its subject.
+	// AUTOMATIC requires an internal admin JWT for jobs-service. User JWTs
+	// requesting AUTOMATIC receive PermissionDenied.
 	ScheduleJob(context.Context, *ScheduleJobRequest) (*ScheduleJobResponse, error)
 	// CancelJob applies a deterministic workflow-driven cancellation.
 	// This is an internal API and should not be exposed to the public.

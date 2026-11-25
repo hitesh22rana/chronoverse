@@ -9,9 +9,9 @@ message ScheduleJobRequest {
   string workflow_id         = 1; // ID of the workflow
   string user_id             = 2; // ID of the user
   string scheduled_at        = 3; // Time the job is scheduled to run
-  string trigger             = 4; // Trigger type of the job (AUTOMATIC or MANUAL)
+  string trigger             = 4; // MANUAL for user requests; AUTOMATIC requires an internal admin JWT
   string idempotency_key     = 5; // Required idempotency key for scheduling
-  int64  workflow_generation = 6; // Optional workflow generation guard for automatic scheduling
+  int64  workflow_generation = 6; // Positive workflow generation required for AUTOMATIC
 }
 
 // ScheduleJobResponse contains the result of a job creation attempt.
@@ -463,6 +463,9 @@ service JobsService {
   rpc RecordContainerCleanupReceipt(ContainerCleanupReceiptRequest) returns (RecordContainerCleanupReceiptResponse) {}
 
   // ScheduleJob schedules a job to run at a specific time.
+  // A user JWT may schedule MANUAL jobs for workflows owned by its subject.
+  // AUTOMATIC requires an internal admin JWT for jobs-service. User JWTs
+  // requesting AUTOMATIC receive PermissionDenied.
   rpc ScheduleJob(ScheduleJobRequest) returns (ScheduleJobResponse) {}
 
   // CancelJob applies a deterministic workflow-driven cancellation.

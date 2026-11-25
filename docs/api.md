@@ -65,6 +65,7 @@ The server maps gRPC errors to HTTP status codes. Important cases:
   sent as `event: error` frames after stream headers are written.
 - `429 Too Many Requests`: resource exhausted.
 - `503 Service Unavailable`: downstream service unavailable.
+- `504 Gateway Timeout`: the downstream RPC reported that its deadline expired.
 
 ## Authentication
 
@@ -439,6 +440,9 @@ authenticated user; otherwise the request returns `404 Not Found` without
 changing any notification.
 
 ## Analytics
+
+Both analytics routes can return `504 Gateway Timeout`. The analytics service's
+`GRPC_REQUEST_TIMEOUT` sets the per-request budget and defaults to 500 ms.
 
 ### User Analytics
 

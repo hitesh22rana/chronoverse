@@ -4,7 +4,7 @@ Chronoverse supports periodic automatic scheduling and authenticated manual sche
 
 ## Automatic scheduling
 
-The scheduling worker polls PostgreSQL for due workflows in bounded batches. It checks that each workflow is active, has a valid build, and still matches the generation being scheduled.
+The workflow worker creates automatic jobs through jobs-service using an internal admin JWT and the current workflow generation. The scheduling worker polls PostgreSQL in bounded batches and dispatches due jobs whose workflow is active, has a valid build, and still matches the job generation.
 
 The resulting job state and Kafka publication intent use replay-safe persistence. Reprocessing a scheduling decision does not create unbounded duplicate jobs.
 

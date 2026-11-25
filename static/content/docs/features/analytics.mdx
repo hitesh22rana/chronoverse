@@ -16,6 +16,11 @@ If no ranked workflows are available, the dashboard explains that activity will 
 
 Analytics are historical counters. Generated log events are counted whether or not their workflow retains log bodies. Disabling log retention prevents new entries from being stored in ClickHouse and indexed in Meilisearch; it does not stop the generated-log counter or erase previously aggregated history. The dashboard therefore labels the metric as generated logs and separately explains when new logs are not retained.
 
+## Request timeout
+
+Both analytics routes can return `504 Gateway Timeout`. The analytics service's
+`GRPC_REQUEST_TIMEOUT` sets the per-request budget and defaults to 500 ms.
+
 ## Processing model
 
 The analytics processor consumes Kafka events and updates PostgreSQL aggregates. Processed-event records deduplicate replayed events.

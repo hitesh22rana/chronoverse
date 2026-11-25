@@ -4,18 +4,15 @@ package analytics
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	analyticsmodel "github.com/hitesh22rana/chronoverse/internal/model/analytics"
-	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	analyticspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/analytics"
 )
@@ -31,7 +28,6 @@ type Service struct {
 	tp        trace.Tracer
 	validator *validator.Validate
 	repo      Repository
-	sf        singleflight.Group
 }
 
 // New creates a new analytics service.
@@ -73,16 +69,7 @@ func (s *Service) GetUserAnalytics(
 		return nil, err
 	}
 
-	resultCh := s.sf.DoChan(fmt.Sprintf("analytics:user:%s", req.GetUserId()), func() (any, error) {
-		return s.repo.GetUserAnalytics(ctx, req.GetUserId())
-	})
-
-	res, err = cachepkg.WaitSingleflightResult[*analyticsmodel.GetUserAnalyticsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetUserAnalytics(ctx, req.GetUserId())
 }
 
 // GetWorkflowAnalyticsRequest retrieves analytics data for a specific workflow.
@@ -117,17 +104,5 @@ func (s *Service) GetWorkflowAnalytics(
 		return nil, err
 	}
 
-	resultCh := s.sf.DoChan(
-		fmt.Sprintf("analytics:workflow:%s:%s", req.GetUserId(), req.GetWorkflowId()),
-		func() (any, error) {
-			return s.repo.GetWorkflowAnalytics(ctx, req.GetUserId(), req.GetWorkflowId())
-		},
-	)
-
-	res, err = cachepkg.WaitSingleflightResult[*analyticsmodel.GetWorkflowAnalyticsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.GetWorkflowAnalytics(ctx, req.GetUserId(), req.GetWorkflowId())
 }

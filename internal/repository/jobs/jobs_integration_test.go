@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +24,9 @@ import (
 	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/postgres"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	workflowsrepo "github.com/hitesh22rana/chronoverse/internal/repository/workflows"
+	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
 
@@ -452,7 +458,8 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 
 	// Seed logs directly in ClickHouse.
 	now := time.Now().UTC()
-	for i := uint32(1); i <= 3; i++ {
+	const logCount = 5
+	for i := uint32(1); i <= logCount; i++ {
 		if insertErr := ch.Exec(ctx, `
 			INSERT INTO
 				job_logs (
@@ -473,7 +480,7 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	}
 
 	// LogsFetchLimit is 2, so the first page returns the two newest logs plus a cursor.
-	logs, _, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
+	logs, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
 	if err != nil {
 		t.Fatalf("GetJobLogs: %v", err)
 	}
@@ -481,27 +488,40 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 		t.Fatalf("GetJobLogs returned %d logs, want 2", len(logs.JobLogs))
 	}
 	// Newest first by default.
-	if logs.JobLogs[0].SequenceNum != 3 {
-		t.Fatalf("first log sequence_num = %d, want 3 (descending order)", logs.JobLogs[0].SequenceNum)
+	if logs.JobLogs[0].SequenceNum != 5 {
+		t.Fatalf("first log sequence_num = %d, want 5 (descending order)", logs.JobLogs[0].SequenceNum)
 	}
-	if logs.JobLogs[0].Message != "log line 3" {
-		t.Fatalf("first log message = %q, want %q", logs.JobLogs[0].Message, "log line 3")
+	if logs.JobLogs[0].Message != "log line 5" {
+		t.Fatalf("first log message = %q, want %q", logs.JobLogs[0].Message, "log line 5")
 	}
 	if logs.Cursor == "" {
 		t.Fatal("expected a cursor when there are more logs")
 	}
 
-	// Cursor pagination returns the remaining log.
-	paged, _, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, logs.Cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
+	// The middle page has a continuation cursor and was eligible for Redis caching.
+	paged, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, logs.Cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{Stream: 1})
 	if err != nil {
 		t.Fatalf("GetJobLogs (paged): %v", err)
 	}
-	if len(paged.JobLogs) != 1 {
-		t.Fatalf("GetJobLogs (paged) returned %d logs, want 1", len(paged.JobLogs))
+	require.Len(t, paged.JobLogs, 2)
+	require.NotEmpty(t, paged.Cursor)
+	if paged.JobLogs[0].SequenceNum != 3 {
+		t.Fatalf("paged log sequence_num = %d, want 3", paged.JobLogs[0].SequenceNum)
 	}
-	if paged.JobLogs[0].SequenceNum != 1 {
-		t.Fatalf("paged log sequence_num = %d, want 1", paged.JobLogs[0].SequenceNum)
-	}
+
+	verifyDeletedWorkflowDeniesRetainedLogRead(ctx, t, repo, userID, workflowID, func(svc *jobssvc.Service) (*jobsmodel.GetJobLogsResponse, error) {
+		return svc.GetJobLogs(ctx, &jobspb.GetJobLogsRequest{
+			Id: jobID, WorkflowId: workflowID, UserId: userID, Cursor: logs.Cursor,
+			Filters: &jobspb.GetJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_STDOUT},
+		})
+	})
+	rows, err := ch.Query(ctx, "SELECT count() FROM job_logs WHERE job_id = ?", jobID)
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, rows.Next(), "missing retained ClickHouse row count: %v", rows.Err())
+	var remaining uint64
+	require.NoError(t, rows.Scan(&remaining))
+	require.Equal(t, uint64(logCount), remaining, "retained ClickHouse rows after workflow deletion")
 }
 
 //nolint:gocyclo // Verifies filtering and cursor continuity against the same indexed logs.
@@ -551,7 +571,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	})
 
 	// Searching for a term only returns the matching log.
-	search, _, searchErr := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", &jobsmodel.SearchJobLogsFilters{
+	search, searchErr := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", &jobsmodel.SearchJobLogsFilters{
 		Stream:  1,
 		Message: "authentication",
 	}, jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderDesc, DisableHighlight: true})
@@ -565,6 +585,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		t.Fatalf("searched message = %q, want %q", search.JobLogs[0].Message, "authentication succeeded")
 	}
 
+	var retainedCursor string
 	for _, tc := range []struct {
 		name  string
 		order jobsmodel.JobLogsSortOrder
@@ -580,7 +601,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if page >= len(docs) {
 					t.Fatal("search pagination did not terminate")
 				}
-				result, _, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true})
+				result, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true})
 				if err != nil {
 					t.Fatalf("SearchJobLogs(page %d): %v", page, err)
 				}
@@ -593,12 +614,78 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if result.Cursor == "" {
 					break
 				}
+				if page == 0 && tc.order == jobsmodel.JobLogsSortOrderDesc {
+					retainedCursor = result.Cursor
+				}
 				cursor = result.Cursor
 			}
 			if !slices.Equal(got, tc.want) {
 				t.Fatalf("paged log IDs = %v, want %v without omissions or duplicates", got, tc.want)
 			}
 		})
+	}
+	if retainedCursor == "" {
+		t.Fatal("fixture requires a continuation cursor")
+	}
+	verifyDeletedWorkflowDeniesRetainedLogRead(ctx, t, repo, userID, workflowID, func(svc *jobssvc.Service) (*jobsmodel.GetJobLogsResponse, error) {
+		return svc.SearchJobLogs(ctx, &jobspb.SearchJobLogsRequest{
+			Id: jobID, WorkflowId: workflowID, UserId: userID, Cursor: retainedCursor,
+			Filters:          &jobspb.SearchJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL, Message: "pagination"},
+			DisableHighlight: true,
+		})
+	})
+	var document map[string]any
+	if err := ms.Index(meilisearchpkg.IndexJobLogs).GetDocument("doc-"+t.Name()+"-log-3", nil, &document); err != nil || document["job_id"] != jobID {
+		t.Fatalf("retained Meilisearch document unavailable after workflow deletion: %v", err)
+	}
+}
+
+// storedWorkflowLogsClient keeps the workflow policy lookup backed by PostgreSQL.
+type storedWorkflowLogsClient struct {
+	fakeWorkflowsService
+	repo *workflowsrepo.Repository
+}
+
+func (c *storedWorkflowLogsClient) GetWorkflow(
+	ctx context.Context,
+	req *workflowspb.GetWorkflowRequest,
+	_ ...grpc.CallOption,
+) (*workflowspb.GetWorkflowResponse, error) {
+	workflow, err := c.repo.GetWorkflow(ctx, req.GetId(), req.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	return workflow.ToProto(), nil
+}
+
+func verifyDeletedWorkflowDeniesRetainedLogRead(
+	ctx context.Context,
+	t *testing.T,
+	first *Repository,
+	userID, workflowID string,
+	read func(*jobssvc.Service) (*jobsmodel.GetJobLogsResponse, error),
+) {
+	t.Helper()
+	workflow := workflowsrepo.New(&workflowsrepo.Config{}, first.pg)
+	first.svc.Workflows = &storedWorkflowLogsClient{repo: workflow}
+	second := New(first.cfg, first.auth, first.pg, first.rdb, first.ch, first.ms, &Services{
+		Workflows: &storedWorkflowLogsClient{repo: workflowsrepo.New(&workflowsrepo.Config{}, first.pg)},
+	})
+	page, err := read(jobssvc.New(validator.New(), first))
+	if err != nil || page == nil || len(page.JobLogs) == 0 {
+		t.Fatalf("expected a visible retained page before deletion, got %v, %v", page, err)
+	}
+	require.NotEmpty(t, page.Cursor, "pre-deletion page must have qualified for the former Redis cache")
+	if _, seedErr := first.pg.Exec(ctx, "UPDATE workflows SET terminated_at = clock_timestamp() WHERE id = $1", workflowID); seedErr != nil {
+		t.Fatalf("seed terminated workflow: %v", seedErr)
+	}
+	// The delete writes the outbox event. No worker consumes it in this fixture.
+	if deleteErr := workflow.DeleteWorkflow(ctx, workflowID, userID); deleteErr != nil {
+		t.Fatalf("commit workflow deletion: %v", deleteErr)
+	}
+	page, err = read(jobssvc.New(validator.New(), second))
+	if page != nil || status.Code(err) != codes.NotFound {
+		t.Fatalf("fresh read on another service instance returned %v, %v, want NotFound", page, err)
 	}
 }
 
@@ -627,7 +714,7 @@ func TestIntegrationStreamJobLogsOverRedis(t *testing.T) {
 		t.Fatalf("ClaimJob: ok=%v err=%v", ok, claimErr)
 	}
 
-	sub, err := repo.StreamJobLogs(ctx, jobID, workflowID, userID)
+	sub, err := repo.StreamJobLogs(ctx, strings.ToUpper(jobID), workflowID, userID)
 	if err != nil {
 		t.Fatalf("StreamJobLogs: %v", err)
 	}

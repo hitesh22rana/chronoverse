@@ -147,6 +147,9 @@ func TestIntegrationListNotificationsHonorsNonePreference(t *testing.T) {
 	if len(list.Notifications) != 0 {
 		t.Fatalf("ListNotifications with NONE preference returned %d notifications, want 0", len(list.Notifications))
 	}
+	if _, err = repo.ListNotifications(ctx, userID, "malformed"); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("malformed cursor with NONE preference: %v", err)
+	}
 }
 
 // seedUser inserts a fresh user and returns its id. Notifications reference

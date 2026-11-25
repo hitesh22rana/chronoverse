@@ -81,7 +81,7 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 			return nil, err
 		}
 
-		err = status.Errorf(codes.Internal, "failed to get user analytics: %v", err)
+		err = analyticsRepositoryError(err, "failed to get user analytics")
 		return nil, err
 	}
 
@@ -113,7 +113,7 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		pgx.RowToAddrOfStructByName[analyticsmodel.WorkflowKindAnalytics],
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to collect workflow kind analytics: %v", err)
+		return nil, analyticsRepositoryError(err, "failed to collect workflow kind analytics")
 	}
 
 	topWorkflowsQuery := fmt.Sprintf(`
@@ -149,7 +149,7 @@ func (r *Repository) GetUserAnalytics(ctx context.Context, userID string) (res *
 		pgx.RowToAddrOfStructByName[analyticsmodel.WorkflowAnalyticsSummary],
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to collect top workflow analytics: %v", err)
+		return nil, analyticsRepositoryError(err, "failed to collect top workflow analytics")
 	}
 
 	if err = tx.Commit(ctx); err != nil {
@@ -204,15 +204,9 @@ func (r *Repository) GetWorkflowAnalytics(
 	`, postgres.TableAnalytics)
 
 	rows, err := r.pg.Query(ctx, query, userID, workflowID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[analyticsmodel.GetWorkflowAnalyticsResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[analyticsmodel.GetWorkflowAnalyticsResponse])
 	if err != nil {
 		if r.pg.IsNoRows(err) {
 			err = status.Errorf(codes.NotFound, "no analytics found for workflow: %v", err)
@@ -222,7 +216,7 @@ func (r *Repository) GetWorkflowAnalytics(
 			return nil, err
 		}
 
-		err = status.Errorf(codes.Internal, "failed to get workflow analytics: %v", err)
+		err = analyticsRepositoryError(err, "failed to get workflow analytics")
 		return nil, err
 	}
 

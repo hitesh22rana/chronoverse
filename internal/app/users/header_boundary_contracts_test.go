@@ -13,13 +13,17 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	mocks "github.com/hitesh22rana/chronoverse/internal/app/users/mock"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
 	pb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 )
 
@@ -84,4 +88,24 @@ func TestIdentityHeaderFailureReturnsNoResponseAndRecordsTraceError(t *testing.T
 			require.NotContains(t, attributes, secret)
 		}
 	}
+}
+
+func TestUserAuthenticationRejectsRequestWithoutOwnershipPolicy(t *testing.T) {
+	t.Parallel()
+	tokens := authmock.NewMockIAuth(gomock.NewController(t))
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameUsers).
+		Return(auth.WithRole(t.Context(), auth.RoleUser.String()), nil, nil)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer token"))
+	app := &Users{auth: tokens}
+	response, err := app.authTokenInterceptor(zap.NewNop())(
+		ctx,
+		&emptypb.Empty{},
+		&grpc.UnaryServerInfo{FullMethod: "/users.UsersService/UnclassifiedMethod"},
+		func(context.Context, any) (any, error) {
+			t.Fatal("request without an ownership policy reached its handler")
+			return &emptypb.Empty{}, nil
+		},
+	)
+	require.Nil(t, response)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

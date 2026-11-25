@@ -2,8 +2,6 @@ package workflows_test
 
 import (
 	"database/sql"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,9 +25,8 @@ func TestCreateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	type want struct {
 		workflowID string
@@ -82,18 +79,6 @@ func TestCreateWorkflow(t *testing.T) {
 					},
 					LogRetention: false,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -139,18 +124,6 @@ func TestCreateWorkflow(t *testing.T) {
 					},
 					LogRetention: true,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -197,18 +170,6 @@ func TestCreateWorkflow(t *testing.T) {
 					},
 					LogRetention: false,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -255,18 +216,6 @@ func TestCreateWorkflow(t *testing.T) {
 					},
 					LogRetention: true,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -313,18 +262,6 @@ func TestCreateWorkflow(t *testing.T) {
 					},
 					LogRetention: false,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				workflowID: "workflow_id",
@@ -467,9 +404,8 @@ func TestUpdateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -499,16 +435,6 @@ func TestUpdateWorkflow(t *testing.T) {
 					req.GetMaxConsecutiveJobFailuresAllowed(),
 					req.GetIdempotencyKey(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -625,9 +551,8 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -655,16 +580,6 @@ func TestUpdateWorkflowBuildStatus(t *testing.T) {
 					req.GetResolvedImageRef(),
 					req.GetResolvedImageDigest(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -771,47 +686,36 @@ func TestGetWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowResponse
 	}
 
 	var (
-		createdAt               = time.Now()
-		updatedAt               = time.Now()
-		singleflightRepoCalls   int32
-		singleflightReleaseChan chan struct{}
-		singleflightLeaderRan   chan struct{}
-		terminatedAt            = sql.NullTime{
+		createdAt    = time.Now()
+		updatedAt    = time.Now()
+		terminatedAt = sql.NullTime{
 			Time:  time.Now(),
 			Valid: true,
 		}
 	)
 
 	tests := []struct {
-		name    string
-		req     *workflowspb.GetWorkflowRequest
-		mock    func(req *workflowspb.GetWorkflowRequest)
-		execute func(t *testing.T, req *workflowspb.GetWorkflowRequest, want want)
-		want    want
-		isErr   bool
+		name  string
+		req   *workflowspb.GetWorkflowRequest
+		mock  func(req *workflowspb.GetWorkflowRequest)
+		want  want
+		isErr bool
 	}{
 		{
-			name: "success: no cache hit",
+			name: "success: repository result",
 			req: &workflowspb.GetWorkflowRequest{
 				Id:     "workflow_id",
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -830,171 +734,6 @@ func TestGetWorkflow(t *testing.T) {
 					TerminatedAt:                     terminatedAt,
 					LogRetention:                     true,
 				}, nil)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-			},
-			want: want{
-				&workflowsmodel.GetWorkflowResponse{
-					ID:                               "workflow_id",
-					Name:                             "workflow1",
-					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-					Kind:                             "HEARTBEAT",
-					WorkflowBuildStatus:              "COMPLETED",
-					Interval:                         1,
-					ConsecutiveJobFailuresCount:      0,
-					MaxConsecutiveJobFailuresAllowed: 5,
-					CreatedAt:                        createdAt,
-					UpdatedAt:                        updatedAt,
-					TerminatedAt:                     terminatedAt,
-					LogRetention:                     true,
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: cache hit",
-			req: &workflowspb.GetWorkflowRequest{
-				Id:     "workflow_id",
-				UserId: "user_id",
-			},
-			mock: func(_ *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(&workflowsmodel.GetWorkflowResponse{
-					ID:                               "workflow_id",
-					Name:                             "workflow1",
-					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-					Kind:                             "HEARTBEAT",
-					WorkflowBuildStatus:              "COMPLETED",
-					Interval:                         1,
-					ConsecutiveJobFailuresCount:      0,
-					MaxConsecutiveJobFailuresAllowed: 5,
-					CreatedAt:                        createdAt,
-					UpdatedAt:                        updatedAt,
-					TerminatedAt:                     terminatedAt,
-					LogRetention:                     true,
-				}, nil)
-			},
-			want: want{
-				&workflowsmodel.GetWorkflowResponse{
-					ID:                               "workflow_id",
-					Name:                             "workflow1",
-					Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-					Kind:                             "HEARTBEAT",
-					WorkflowBuildStatus:              "COMPLETED",
-					Interval:                         1,
-					ConsecutiveJobFailuresCount:      0,
-					MaxConsecutiveJobFailuresAllowed: 5,
-					CreatedAt:                        createdAt,
-					UpdatedAt:                        updatedAt,
-					TerminatedAt:                     terminatedAt,
-					LogRetention:                     true,
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: singleflight deduplicates cache miss",
-			req: &workflowspb.GetWorkflowRequest{
-				// Own ID, so this case's expectation cannot answer another's.
-				Id:     "singleflight_workflow_id",
-				UserId: "user_id",
-			},
-			mock: func(req *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).Times(2)
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				singleflightRepoCalls = 0
-				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks, so the wait below cannot be
-				// satisfied by a call that already returned.
-				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
-				// t.Fatalf on the leader goroutine, which Goexits it before
-				// singleflight publishes its result and hangs the package. The dedupe
-				// is asserted on singleflightRepoCalls.
-				repo.EXPECT().GetWorkflow(
-					gomock.Any(),
-					req.GetId(),
-					req.GetUserId(),
-				).DoAndReturn(func(_ any, _, _ string) (*workflowsmodel.GetWorkflowResponse, error) {
-					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
-						close(singleflightLeaderRan)
-						<-singleflightReleaseChan
-					}
-					return &workflowsmodel.GetWorkflowResponse{
-						ID:                               "workflow_id",
-						Name:                             "workflow1",
-						Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-						Kind:                             "HEARTBEAT",
-						WorkflowBuildStatus:              "COMPLETED",
-						Interval:                         1,
-						ConsecutiveJobFailuresCount:      0,
-						MaxConsecutiveJobFailuresAllowed: 5,
-						CreatedAt:                        createdAt,
-						UpdatedAt:                        updatedAt,
-						TerminatedAt:                     terminatedAt,
-						LogRetention:                     true,
-					}, nil
-				}).AnyTimes()
-			},
-			execute: func(t *testing.T, req *workflowspb.GetWorkflowRequest, want want) {
-				t.Helper()
-
-				var wg sync.WaitGroup
-				results := make([]*workflowsmodel.GetWorkflowResponse, 2)
-				errs := make([]error, 2)
-
-				for i := range 2 {
-					idx := i
-					wg.Go(func() {
-						results[idx], errs[idx] = s.GetWorkflow(t.Context(), req)
-					})
-				}
-
-				// Wait for the leader to park, then hold it long enough for the
-				// second caller to join the flight instead of opening a second.
-				select {
-				case <-singleflightLeaderRan:
-				case <-time.After(30 * time.Second):
-					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
-				}
-				time.Sleep(100 * time.Millisecond)
-				close(singleflightReleaseChan)
-				wg.Wait()
-
-				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
-				assert.NoError(t, errs[0])
-				assert.NoError(t, errs[1])
-				assert.Equal(t, want.GetWorkflowResponse, results[0])
-				assert.Equal(t, want.GetWorkflowResponse, results[1])
 			},
 			want: want{
 				&workflowsmodel.GetWorkflowResponse{
@@ -1031,12 +770,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "invalid_user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -1053,12 +786,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -1075,12 +802,6 @@ func TestGetWorkflow(t *testing.T) {
 				UserId: "user_id",
 			},
 			mock: func(req *workflowspb.GetWorkflowRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetWorkflow(
 					gomock.Any(),
 					req.GetId(),
@@ -1097,11 +818,6 @@ func TestGetWorkflow(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.execute != nil {
-				tt.execute(t, tt.req, tt.want)
-				return
-			}
-
 			workflow, err := s.GetWorkflow(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
@@ -1124,9 +840,8 @@ func TestGetWorkflowByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	type want struct {
 		*workflowsmodel.GetWorkflowByIDResponse
@@ -1258,9 +973,8 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	type want struct {
 		thresholdReached bool
@@ -1287,16 +1001,6 @@ func TestIncrementWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					req.GetUserId(),
 					req.GetJobId(),
 				).Return(false, nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			want: want{
 				thresholdReached: false,
@@ -1403,9 +1107,8 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -1427,16 +1130,6 @@ func TestResetWorkflowConsecutiveJobFailuresCount(t *testing.T) {
 					req.GetUserId(),
 					req.GetJobId(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -1511,9 +1204,8 @@ func TestTerminateWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -1533,16 +1225,6 @@ func TestTerminateWorkflow(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -1621,9 +1303,8 @@ func TestDeleteWorkflow(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -1643,16 +1324,6 @@ func TestDeleteWorkflow(t *testing.T) {
 					req.GetId(),
 					req.GetUserId(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				cache.EXPECT().DeleteByPattern(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(int64(0), nil).AnyTimes()
 			},
 			isErr: false,
 		},
@@ -1732,9 +1403,8 @@ func TestListWorkflows(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := workflowsmock.NewMockRepository(ctrl)
-	cache := workflowsmock.NewMockCache(ctrl)
 
-	s := workflows.New(validator.New(), repo, cache)
+	s := workflows.New(validator.New(), repo)
 
 	type want struct {
 		*workflowsmodel.ListWorkflowsResponse
@@ -1757,83 +1427,16 @@ func TestListWorkflows(t *testing.T) {
 		isErr bool
 	}{
 		{
-			name: "success: no cache hit",
+			name: "success: repository result",
 			req: &workflowspb.ListWorkflowsRequest{
 				UserId: "user1",
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
 					req.GetCursor(),
-					gomock.Any(),
-				).Return(&workflowsmodel.ListWorkflowsResponse{
-					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
-						{
-							ID:                               "workflow_id",
-							Name:                             "workflow1",
-							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-							Kind:                             "HEARTBEAT",
-							WorkflowBuildStatus:              "COMPLETED",
-							Interval:                         1,
-							ConsecutiveJobFailuresCount:      0,
-							MaxConsecutiveJobFailuresAllowed: 5,
-							CreatedAt:                        createdAt,
-							UpdatedAt:                        updatedAt,
-							TerminatedAt:                     terminatedAt,
-							LogRetention:                     true,
-						},
-					},
-					Cursor: "",
-				}, nil)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-			},
-			want: want{
-				&workflowsmodel.ListWorkflowsResponse{
-					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
-						{
-							ID:                               "workflow_id",
-							Name:                             "workflow1",
-							Payload:                          `{"headers": {"Content-Type": "application/json"}, "endpoint": "https://dummyjson.com/test"}`,
-							Kind:                             "HEARTBEAT",
-							WorkflowBuildStatus:              "COMPLETED",
-							Interval:                         1,
-							ConsecutiveJobFailuresCount:      0,
-							MaxConsecutiveJobFailuresAllowed: 5,
-							CreatedAt:                        createdAt,
-							UpdatedAt:                        updatedAt,
-							TerminatedAt:                     terminatedAt,
-							LogRetention:                     true,
-						},
-					},
-					Cursor: "",
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: cache hit",
-			req: &workflowspb.ListWorkflowsRequest{
-				UserId: "user1",
-				Cursor: "",
-			},
-			mock: func(_ *workflowspb.ListWorkflowsRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
 					gomock.Any(),
 				).Return(&workflowsmodel.ListWorkflowsResponse{
 					Workflows: []*workflowsmodel.WorkflowByUserIDResponse{
@@ -1895,12 +1498,6 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),
@@ -1918,12 +1515,6 @@ func TestListWorkflows(t *testing.T) {
 				Cursor: "",
 			},
 			mock: func(req *workflowspb.ListWorkflowsRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().ListWorkflows(
 					gomock.Any(),
 					req.GetUserId(),

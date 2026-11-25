@@ -402,3 +402,36 @@ func TestWithInternalServiceAuthorizationRequiresAudience(t *testing.T) {
 		t.Fatalf("expected invalid argument without a receiver audience, got %v", err)
 	}
 }
+
+func TestRequireOwnerValidatesPrincipalAndOwner(t *testing.T) {
+	t.Parallel()
+	const owner = "00000000-0000-4000-8000-000000000a21"
+	for _, tc := range []struct {
+		name    string
+		role    string
+		subject string
+		owner   string
+		code    codes.Code
+	}{
+		{"internal service delegation", RoleAdmin.String(), "jobs-service", owner, codes.OK},
+		{"missing role", "", owner, owner, codes.FailedPrecondition},
+		{"unrecognized role", "observer", owner, owner, codes.PermissionDenied},
+		{"invalid owner", RoleUser.String(), owner, "invalid-uuid", codes.InvalidArgument},
+		{"missing subject", RoleUser.String(), "", owner, codes.PermissionDenied},
+		{"invalid subject", RoleUser.String(), "invalid-uuid", owner, codes.PermissionDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			if tc.role != "" {
+				ctx = WithRole(ctx, tc.role)
+			}
+			if tc.subject != "" {
+				ctx = WithSubject(ctx, tc.subject)
+			}
+			if err := RequireOwner(ctx, tc.owner); status.Code(err) != tc.code {
+				t.Fatalf("RequireOwner returned %v, want %v", err, tc.code)
+			}
+		})
+	}
+}

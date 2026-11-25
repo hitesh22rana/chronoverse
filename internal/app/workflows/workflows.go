@@ -99,6 +99,12 @@ func (w *Workflows) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
+		if !isInternalAPI(info.FullMethod) {
+			if err := grpcmiddlewares.RequireRequestOwner(newCtx, req); err != nil {
+				return nil, err
+			}
+		}
+
 		return handler(newCtx, req)
 	}
 }
@@ -135,6 +141,10 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 	var serverOpts []grpc.ServerOption
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
+		//nolint:contextcheck // The interceptor wraps the authenticated stream context.
+		grpc.StreamInterceptor(grpcmiddlewares.AuthenticatedStreamInterceptor(
+			loggerpkg.FromContext(ctx), auth, authpkg.ServiceNameWorkflows,
+		)),
 		grpc.ChainUnaryInterceptor(
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the

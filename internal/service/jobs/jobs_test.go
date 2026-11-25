@@ -2,12 +2,7 @@ package jobs_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"fmt"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,9 +24,8 @@ func TestScheduleJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		jobID string
@@ -300,7 +294,7 @@ func TestCancelJob(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := jobsmock.NewMockRepository(ctrl)
 			tt.setup(repo)
-			service := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+			service := jobs.New(validator.New(), repo)
 
 			snapshot, err := service.CancelJob(t.Context(), tt.request)
 			if code := status.Code(err); code != tt.wantCode {
@@ -318,8 +312,7 @@ func TestClaimJobPropagatesRuntimeUnavailable(t *testing.T) {
 	defer ctrl.Finish()
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 	req := &jobspb.ClaimJobRequest{
 		Id:                   "job_id",
 		WorkflowId:           "workflow_id",
@@ -355,8 +348,7 @@ func TestClaimJobReturnsDurableUnclaimedResponse(t *testing.T) {
 	defer ctrl.Finish()
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 	req := &jobspb.ClaimJobRequest{
 		Id:                   "job_id",
 		WorkflowId:           "workflow_id",
@@ -393,7 +385,7 @@ func TestClaimJobReturnsDurableUnclaimedResponse(t *testing.T) {
 func TestTerminalReasonValidation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := jobsmock.NewMockRepository(ctrl)
-	s := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+	s := jobs.New(validator.New(), repo)
 
 	repo.EXPECT().FailJob(
 		gomock.Any(), "job", "lease", jobsmodel.FailureKindUser.ToString(), "Aborted", "failed",
@@ -431,9 +423,8 @@ func TestGetJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*jobsmodel.GetJobResponse
@@ -612,9 +603,8 @@ func TestGetJobByID(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*jobsmodel.GetJobByIDResponse
@@ -744,20 +734,14 @@ func TestGetJobLogs(t *testing.T) {
 		*jobsmodel.GetJobLogsResponse
 	}
 
-	var (
-		timestamp               = time.Now()
-		singleflightRepoCalls   int32
-		singleflightReleaseChan chan struct{}
-		singleflightLeaderRan   chan struct{}
-	)
+	timestamp := time.Now()
 
 	tests := []struct {
-		name    string
-		req     *jobspb.GetJobLogsRequest
-		mock    func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache)
-		execute func(t *testing.T, s *jobs.Service, req *jobspb.GetJobLogsRequest, want want)
-		want    want
-		isErr   bool
+		name  string
+		req   *jobspb.GetJobLogsRequest
+		mock  func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository)
+		want  want
+		isErr bool
 	}{
 		{
 			name: "success",
@@ -770,7 +754,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository) {
 				data := &jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -789,7 +773,6 @@ func TestGetJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -798,11 +781,6 @@ func TestGetJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.GetJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -811,13 +789,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(data, "COMPLETED", nil)
-				cache.EXPECT().Set(
-					gomock.Any(),
-					cacheKey,
-					data,
-					gomock.Any(),
-				).AnyTimes()
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -842,7 +814,7 @@ func TestGetJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "success: with cache hit",
+			name: "success: cursor page",
 			req: &jobspb.GetJobLogsRequest{
 				Id:         "job_id",
 				WorkflowId: "workflow_id",
@@ -852,66 +824,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest, _ *jobsmock.MockRepository, cache *jobsmock.MockCache) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc),
-					gomock.Any(),
-				).Return(&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "log 1",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-						{
-							Timestamp:   timestamp,
-							Message:     "log 2",
-							SequenceNum: 2,
-							Stream:      "stdout",
-						},
-					},
-					Cursor: "cursor",
-				}, nil)
-			},
-			want: want{
-				&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "log 1",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-						{
-							Timestamp:   timestamp,
-							Message:     "log 2",
-							SequenceNum: 2,
-							Stream:      "stdout",
-						},
-					},
-					Cursor: "cursor",
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: with cache miss",
-			req: &jobspb.GetJobLogsRequest{
-				Id:         "job_id",
-				WorkflowId: "workflow_id",
-				UserId:     "user_id",
-				Cursor:     "cursor",
-				Filters: &jobspb.GetJobLogsFilters{
-					Stream: jobspb.LogStream_LOG_STREAM_ALL,
-				},
-			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository) {
 				data := &jobsmodel.GetJobLogsResponse{
 					ID:         "job_id",
 					WorkflowID: "workflow_id",
@@ -931,7 +844,6 @@ func TestGetJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -940,11 +852,6 @@ func TestGetJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.GetJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -953,13 +860,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(data, "COMPLETED", nil)
-				cache.EXPECT().Set(
-					gomock.Any(),
-					cacheKey,
-					data,
-					gomock.Any(),
-				).AnyTimes()
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -980,162 +881,6 @@ func TestGetJobLogs(t *testing.T) {
 						},
 					},
 					Cursor: "cursor",
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: running cursor tail skips cache write",
-			req: &jobspb.GetJobLogsRequest{
-				Id:         "job_id_tail",
-				WorkflowId: "workflow_id",
-				UserId:     "user_id_tail",
-				Cursor:     "tail-cursor",
-				Filters: &jobspb.GetJobLogsFilters{
-					Stream: jobspb.LogStream_LOG_STREAM_ALL,
-				},
-			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
-				data := &jobsmodel.GetJobLogsResponse{
-					ID:         req.GetId(),
-					WorkflowID: req.GetWorkflowId(),
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "log tail",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-					},
-				}
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
-				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
-				cache.EXPECT().
-					Get(gomock.Any(), cacheKey, gomock.Any()).
-					Return(nil, status.Error(codes.NotFound, "cache miss"))
-				repo.EXPECT().GetJobLogs(
-					gomock.Any(),
-					req.GetId(),
-					req.GetWorkflowId(),
-					req.GetUserId(),
-					req.GetCursor(),
-					jobsmodel.JobLogsSortOrderDesc,
-					filters,
-				).Return(data, jobsmodel.JobStatusRunning.ToString(), nil)
-			},
-			want: want{
-				&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id_tail",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "log tail",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-					},
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: singleflight deduplicates cache miss",
-			req: &jobspb.GetJobLogsRequest{
-				Id:         "job_id",
-				WorkflowId: "workflow_id",
-				UserId:     "user_id",
-				Filters: &jobspb.GetJobLogsFilters{
-					// Own stream, so this case's expectation cannot answer another's.
-					Stream: jobspb.LogStream_LOG_STREAM_STDERR,
-				},
-			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
-				filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
-
-				cache.EXPECT().
-					Get(gomock.Any(), cacheKey, gomock.Any()).
-					Return(nil, status.Error(codes.NotFound, "cache miss")).
-					AnyTimes()
-				cache.EXPECT().
-					Set(gomock.Any(), cacheKey, gomock.Any(), gomock.Any()).
-					Return(nil).
-					AnyTimes()
-
-				singleflightRepoCalls = 0
-				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks, so the wait below cannot be
-				// satisfied by a call that already returned.
-				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
-				// t.Fatalf on the leader goroutine, which Goexits it before
-				// singleflight publishes its result and hangs the package. The dedupe
-				// is asserted on singleflightRepoCalls.
-				repo.EXPECT().
-					GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderDesc, filters).
-					DoAndReturn(func(_ any, _, _, _, _ string, _ jobsmodel.JobLogsSortOrder, _ *jobsmodel.GetJobLogsFilters) (*jobsmodel.GetJobLogsResponse, string, error) {
-						if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
-							close(singleflightLeaderRan)
-							<-singleflightReleaseChan
-						}
-						return &jobsmodel.GetJobLogsResponse{
-							ID:         "job_id",
-							WorkflowID: "workflow_id",
-							JobLogs: []*jobsmodel.JobLog{
-								{
-									Timestamp:   timestamp,
-									Message:     "log 1",
-									SequenceNum: 1,
-									Stream:      "stdout",
-								},
-							},
-						}, "COMPLETED", nil
-					}).AnyTimes()
-			},
-			execute: func(t *testing.T, s *jobs.Service, req *jobspb.GetJobLogsRequest, want want) {
-				t.Helper()
-
-				var wg sync.WaitGroup
-				results := make([]*jobsmodel.GetJobLogsResponse, 2)
-				errs := make([]error, 2)
-
-				for i := range 2 {
-					idx := i
-					wg.Go(func() {
-						results[idx], errs[idx] = s.GetJobLogs(t.Context(), req)
-					})
-				}
-
-				// Wait for the leader to park, then hold it long enough for the
-				// second caller to join the flight instead of opening a second.
-				select {
-				case <-singleflightLeaderRan:
-				case <-time.After(30 * time.Second):
-					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
-				}
-				time.Sleep(100 * time.Millisecond)
-				close(singleflightReleaseChan)
-				wg.Wait()
-
-				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
-				assert.NoError(t, errs[0])
-				assert.NoError(t, errs[1])
-				assert.Equal(t, want.GetJobLogsResponse, results[0])
-				assert.Equal(t, want.GetJobLogsResponse, results[1])
-			},
-			want: want{
-				&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "log 1",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-					},
 				},
 			},
 			isErr: false,
@@ -1148,7 +893,7 @@ func TestGetJobLogs(t *testing.T) {
 				UserId:     "",
 				Cursor:     "",
 			},
-			mock:  func(_ *jobspb.GetJobLogsRequest, _ *jobsmock.MockRepository, _ *jobsmock.MockCache) {},
+			mock:  func(_ *jobspb.GetJobLogsRequest, _ *jobsmock.MockRepository) {},
 			want:  want{},
 			isErr: true,
 		},
@@ -1163,8 +908,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository) {
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -1173,11 +917,6 @@ func TestGetJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.GetJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1186,7 +925,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1202,8 +941,7 @@ func TestGetJobLogs(t *testing.T) {
 					Stream: jobspb.LogStream_LOG_STREAM_ALL,
 				},
 			},
-			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository, cache *jobsmock.MockCache) {
-				cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderDesc)
+			mock: func(req *jobspb.GetJobLogsRequest, repo *jobsmock.MockRepository) {
 				var filters *jobsmodel.GetJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.GetJobLogsFilters{
@@ -1212,11 +950,6 @@ func TestGetJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.GetJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().GetJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1225,7 +958,7 @@ func TestGetJobLogs(t *testing.T) {
 					req.GetCursor(),
 					jobsmodel.JobLogsSortOrderDesc,
 					filters,
-				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1239,15 +972,9 @@ func TestGetJobLogs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := jobsmock.NewMockRepository(ctrl)
-			cache := jobsmock.NewMockCache(ctrl)
-			s := jobs.New(validator.New(), repo, cache)
+			s := jobs.New(validator.New(), repo)
 
-			tt.mock(tt.req, repo, cache)
-
-			if tt.execute != nil {
-				tt.execute(t, s, tt.req, tt.want)
-				return
-			}
+			tt.mock(tt.req, repo)
 
 			jobLogs, err := s.GetJobLogs(t.Context(), tt.req)
 			if tt.isErr {
@@ -1272,8 +999,7 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 	defer ctrl.Finish()
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	req := &jobspb.GetJobLogsRequest{
 		Id:         "job_id",
@@ -1285,12 +1011,10 @@ func TestGetJobLogsAscendingSortOrder(t *testing.T) {
 		},
 	}
 	filters := &jobsmodel.GetJobLogsFilters{Stream: int(req.GetFilters().GetStream())}
-	cacheKey := getJobLogsCacheKeyForTest(req, jobsmodel.JobLogsSortOrderAsc)
 
-	cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 	repo.EXPECT().
 		GetJobLogs(gomock.Any(), req.GetId(), req.GetWorkflowId(), req.GetUserId(), req.GetCursor(), jobsmodel.JobLogsSortOrderAsc, filters).
-		Return(&jobsmodel.GetJobLogsResponse{ID: req.GetId(), WorkflowID: req.GetWorkflowId()}, jobsmodel.JobStatusRunning.ToString(), nil)
+		Return(&jobsmodel.GetJobLogsResponse{ID: req.GetId(), WorkflowID: req.GetWorkflowId()}, nil)
 
 	res, err := s.GetJobLogs(t.Context(), req)
 	if err != nil {
@@ -1305,9 +1029,8 @@ func TestStreamJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		channelType string
@@ -1449,30 +1172,6 @@ func TestStreamJobLogs(t *testing.T) {
 	}
 }
 
-func searchJobLogsCacheKeyForTest(req *jobspb.SearchJobLogsRequest) string {
-	options := searchJobLogsOptionsForTest(req)
-
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		req.GetId(),
-		req.GetCursor(),
-		req.GetFilters().GetMessage(),
-		req.GetFilters().GetStream().String(),
-		fmt.Sprint(options.SortOrder),
-		fmt.Sprint(options.DisableHighlight),
-	}, "\x00")))
-	return fmt.Sprintf("job_logs:search:%s:%x", req.GetUserId(), sum)
-}
-
-func getJobLogsCacheKeyForTest(req *jobspb.GetJobLogsRequest, sortOrder jobsmodel.JobLogsSortOrder) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		req.GetId(),
-		req.GetCursor(),
-		req.GetFilters().GetStream().String(),
-		fmt.Sprint(sortOrder),
-	}, "\x00")))
-	return fmt.Sprintf("job_logs:%s:%x", req.GetUserId(), sum)
-}
-
 func searchJobLogsOptionsForTest(req *jobspb.SearchJobLogsRequest) jobsmodel.SearchJobLogsOptions {
 	sortOrder := jobsmodel.JobLogsSortOrderDesc
 	if req.GetSortOrder() == jobspb.LogSortOrder_LOG_SORT_ORDER_ASC {
@@ -1489,9 +1188,8 @@ func TestSearchJobLogs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*jobsmodel.GetJobLogsResponse
@@ -1537,7 +1235,6 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 				}
-				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1547,11 +1244,6 @@ func TestSearchJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.SearchJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1560,13 +1252,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(data, "COMPLETED", nil)
-				cache.EXPECT().Set(
-					gomock.Any(),
-					cacheKey,
-					data,
-					gomock.Any(),
-				).AnyTimes()
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1632,7 +1318,7 @@ func TestSearchJobLogs(t *testing.T) {
 						SortOrder:        jobsmodel.JobLogsSortOrderAsc,
 						DisableHighlight: true,
 					},
-				).Return(data, "COMPLETED", nil)
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1651,64 +1337,7 @@ func TestSearchJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
-			name: "success: with cache hit",
-			req: &jobspb.SearchJobLogsRequest{
-				Id:         "job_id",
-				WorkflowId: "workflow_id",
-				UserId:     "user_id",
-				Cursor:     "cursor",
-				Filters: &jobspb.SearchJobLogsFilters{
-					Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-					Message: "message",
-				},
-			},
-			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := searchJobLogsCacheKeyForTest(req)
-				cache.EXPECT().Get(gomock.Any(), cacheKey, gomock.Any()).Return(&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "message 1",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-						{
-							Timestamp:   timestamp,
-							Message:     "message 2",
-							SequenceNum: 2,
-							Stream:      "stdout",
-						},
-					},
-					Cursor: "cursor",
-				}, nil)
-			},
-			want: want{
-				&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "message 1",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-						{
-							Timestamp:   timestamp,
-							Message:     "message 2",
-							SequenceNum: 2,
-							Stream:      "stdout",
-						},
-					},
-					Cursor: "cursor",
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: with cache miss",
+			name: "success: cursor page",
 			req: &jobspb.SearchJobLogsRequest{
 				Id:         "job_id",
 				WorkflowId: "workflow_id",
@@ -1739,7 +1368,6 @@ func TestSearchJobLogs(t *testing.T) {
 					},
 					Cursor: "cursor",
 				}
-				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1749,11 +1377,6 @@ func TestSearchJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.SearchJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1762,13 +1385,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(data, "COMPLETED", nil)
-				cache.EXPECT().Set(
-					gomock.Any(),
-					cacheKey,
-					data,
-					gomock.Any(),
-				).AnyTimes()
+				).Return(data, nil)
 			},
 			want: want{
 				&jobsmodel.GetJobLogsResponse{
@@ -1789,65 +1406,6 @@ func TestSearchJobLogs(t *testing.T) {
 						},
 					},
 					Cursor: "cursor",
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: running cursor tail skips cache write",
-			req: &jobspb.SearchJobLogsRequest{
-				Id:         "job_id_search_tail",
-				WorkflowId: "workflow_id",
-				UserId:     "user_id_search_tail",
-				Cursor:     "tail-cursor",
-				Filters: &jobspb.SearchJobLogsFilters{
-					Stream:  jobspb.LogStream_LOG_STREAM_ALL,
-					Message: "message",
-				},
-			},
-			mock: func(req *jobspb.SearchJobLogsRequest) {
-				data := &jobsmodel.GetJobLogsResponse{
-					ID:         req.GetId(),
-					WorkflowID: req.GetWorkflowId(),
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "message tail",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-					},
-				}
-				cacheKey := searchJobLogsCacheKeyForTest(req)
-				filters := &jobsmodel.SearchJobLogsFilters{
-					Stream:  int(req.GetFilters().GetStream()),
-					Message: req.GetFilters().GetMessage(),
-				}
-				cache.EXPECT().
-					Get(gomock.Any(), cacheKey, gomock.Any()).
-					Return(nil, status.Error(codes.NotFound, "cache miss"))
-				repo.EXPECT().SearchJobLogs(
-					gomock.Any(),
-					req.GetId(),
-					req.GetWorkflowId(),
-					req.GetUserId(),
-					req.GetCursor(),
-					filters,
-					searchJobLogsOptionsForTest(req),
-				).Return(data, jobsmodel.JobStatusRunning.ToString(), nil)
-			},
-			want: want{
-				&jobsmodel.GetJobLogsResponse{
-					ID:         "job_id_search_tail",
-					WorkflowID: "workflow_id",
-					JobLogs: []*jobsmodel.JobLog{
-						{
-							Timestamp:   timestamp,
-							Message:     "message tail",
-							SequenceNum: 1,
-							Stream:      "stdout",
-						},
-					},
 				},
 			},
 			isErr: false,
@@ -1877,7 +1435,6 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1887,11 +1444,6 @@ func TestSearchJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.SearchJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1900,7 +1452,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(nil, "", status.Error(codes.NotFound, "job not found"))
+				).Return(nil, status.Error(codes.NotFound, "job not found"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1918,7 +1470,6 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(req *jobspb.SearchJobLogsRequest) {
-				cacheKey := searchJobLogsCacheKeyForTest(req)
 				var filters *jobsmodel.SearchJobLogsFilters
 				if req.GetFilters() != nil {
 					filters = &jobsmodel.SearchJobLogsFilters{
@@ -1928,11 +1479,6 @@ func TestSearchJobLogs(t *testing.T) {
 				} else {
 					filters = &jobsmodel.SearchJobLogsFilters{}
 				}
-				cache.EXPECT().Get(
-					gomock.Any(),
-					cacheKey,
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).AnyTimes()
 				repo.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					req.GetId(),
@@ -1941,7 +1487,7 @@ func TestSearchJobLogs(t *testing.T) {
 					req.GetCursor(),
 					filters,
 					searchJobLogsOptionsForTest(req),
-				).Return(nil, "", status.Error(codes.Internal, "internal server error"))
+				).Return(nil, status.Error(codes.Internal, "internal server error"))
 			},
 			want:  want{},
 			isErr: true,
@@ -1975,9 +1521,8 @@ func TestListJobs(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := jobsmock.NewMockRepository(ctrl)
-	cache := jobsmock.NewMockCache(ctrl)
 
-	s := jobs.New(validator.New(), repo, cache)
+	s := jobs.New(validator.New(), repo)
 
 	type want struct {
 		*jobsmodel.ListJobsResponse

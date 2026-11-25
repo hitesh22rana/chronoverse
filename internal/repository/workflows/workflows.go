@@ -150,18 +150,11 @@ func (r *Repository) CreateWorkflow(
 	args := []any{userID, name, payload, kind, interval, maxConsecutiveJobFailuresAllowed, logRetention, buildHashArg}
 
 	rows, err := tx.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	if err != nil {
-		err = status.Errorf(codes.Internal, "failed to insert workflow: %v", err)
-		return nil, err
+		return nil, mapWorkflowWriteError(err, "failed to insert workflow")
 	}
 
 	event := workflowEventPayload(res.ID, userID, workflowsmodel.ActionBuild, res.Generation)
@@ -205,7 +198,6 @@ func (r *Repository) replayCreatedWorkflow(
 	if err := json.Unmarshal(reservation.Response, res); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to decode workflow replay: %v", err)
 	}
-	res.IdempotencyReplay = true
 	return res, nil
 }
 
@@ -525,15 +517,12 @@ func (r *Repository) GetWorkflow(ctx context.Context, workflowID, userID string)
 	`, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID, userID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowResponse])
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, status.FromContextError(err).Err()
+	}
 	if err != nil {
 		return nil, r.mapWorkflowReadError(err, "workflow not found or not owned by user")
 	}
@@ -580,15 +569,12 @@ func (r *Repository) GetWorkflowByID(ctx context.Context, workflowID string) (re
 	`, postgres.TableWorkflows)
 
 	rows, err := r.pg.Query(ctx, query, workflowID)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	if err == nil {
+		res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowByIDResponse])
 	}
-
-	res, err = pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByName[workflowsmodel.GetWorkflowByIDResponse])
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return nil, status.FromContextError(err).Err()
+	}
 	if err != nil {
 		return nil, r.mapWorkflowReadError(err, "workflow not found")
 	}
@@ -1150,16 +1136,14 @@ func (r *Repository) ListWorkflows(
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d;`, r.cfg.FetchLimit+1)
 
 	rows, err := r.pg.Query(ctx, query, args...)
-	if errors.Is(err, context.DeadlineExceeded) {
-		err = status.Error(codes.DeadlineExceeded, err.Error())
-		return nil, err
-	} else if errors.Is(err, context.Canceled) {
-		err = status.Error(codes.Canceled, err.Error())
-		return nil, err
+	var data []*workflowsmodel.WorkflowByUserIDResponse
+	if err == nil {
+		data, err = pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[workflowsmodel.WorkflowByUserIDResponse])
 	}
-
-	data, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[workflowsmodel.WorkflowByUserIDResponse])
 	if err != nil {
+		if contextStatus := status.FromContextError(err); contextStatus.Code() != codes.Unknown {
+			return nil, contextStatus.Err()
+		}
 		if r.pg.IsInvalidTextRepresentation(err) {
 			err = status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
 			return nil, err

@@ -8,7 +8,6 @@ type WorkflowsConfig struct {
 
 	Grpc
 	Postgres
-	Redis
 	WorkflowsServiceConfig
 }
 

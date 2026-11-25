@@ -864,11 +864,6 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
-      REDIS_HOST: redis
-      REDIS_TLS_ENABLED: true
-      REDIS_TLS_CA_FILE: certs/ca/ca.crt
-      REDIS_TLS_CERT_FILE: certs/clients/client.crt
-      REDIS_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50051
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -929,8 +924,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       lgtm:
         condition: service_started
       init-certs:
@@ -953,11 +946,6 @@ services:
       POSTGRES_TLS_CERT_FILE: certs/clients/client.crt
       POSTGRES_TLS_KEY_FILE: certs/clients/client.key
       POSTGRES_MIN_CONNS: 2
-      REDIS_HOST: redis
-      REDIS_TLS_ENABLED: true
-      REDIS_TLS_CA_FILE: certs/ca/ca.crt
-      REDIS_TLS_CERT_FILE: certs/clients/client.crt
-      REDIS_TLS_KEY_FILE: certs/clients/client.key
       GRPC_PORT: 50052
       GRPC_TLS_ENABLED: true
       GRPC_TLS_CA_FILE: certs/ca/ca.crt
@@ -1017,8 +1005,6 @@ services:
       start_period: 30s
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       lgtm:
         condition: service_started

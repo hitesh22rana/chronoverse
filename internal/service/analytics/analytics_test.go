@@ -2,10 +2,9 @@ package analytics_test
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/assert"
@@ -115,46 +114,75 @@ func TestGetUserAnalytics(t *testing.T) {
 	}
 }
 
-func TestGetUserAnalyticsSingleflight(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		repo := analyticsmock.NewMockRepository(gomock.NewController(t))
-		s := analytics.New(validator.New(), repo)
-		req := &analyticspb.GetUserAnalyticsRequest{UserId: "singleflight_user"}
-		release := make(chan struct{})
-		var calls atomic.Int32
-		// Count instead of Times(1): gomock.Fatal in singleflight's goroutine would prevent result delivery.
-		repo.EXPECT().GetUserAnalytics(gomock.Any(), req.GetUserId()).DoAndReturn(
-			func(_ context.Context, _ string) (*analyticsmodel.GetUserAnalyticsResponse, error) {
-				calls.Add(1)
-				<-release
-				return &analyticsmodel.GetUserAnalyticsResponse{
-					TotalWorkflows: 10, TotalJobs: 200, TotalJoblogs: 5000, TotalJobExecutionDuration: 1000000,
-				}, nil
-			},
-		).AnyTimes()
+func TestAnalyticsReadsKeepEachCallersDeadline(t *testing.T) {
+	for _, method := range []string{"user", "workflow"} {
+		t.Run(method, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				repo := analyticsmock.NewMockRepository(gomock.NewController(t))
+				service := analytics.New(validator.New(), repo)
+				ready := make(chan struct{})
+				waitForData := func(ctx context.Context) error {
+					select {
+					case <-ctx.Done():
+						return status.FromContextError(ctx.Err()).Err()
+					case <-ready:
+						return nil
+					}
+				}
 
-		var (
-			wg      sync.WaitGroup
-			results [2]*analyticsmodel.GetUserAnalyticsResponse
-			errs    [2]error
-		)
-		for i := range results {
-			wg.Go(func() { results[i], errs[i] = s.GetUserAnalytics(t.Context(), req) })
-		}
-		// Both callers must be blocked on the shared result before the repository can return.
-		synctest.Wait()
-		close(release)
-		wg.Wait()
+				var read func(context.Context) error
+				if method == "user" {
+					request := &analyticspb.GetUserAnalyticsRequest{UserId: "user"}
+					repo.EXPECT().GetUserAnalytics(gomock.Any(), "user").DoAndReturn(
+						func(ctx context.Context, _ string) (*analyticsmodel.GetUserAnalyticsResponse, error) {
+							if err := waitForData(ctx); err != nil {
+								return nil, err
+							}
+							return &analyticsmodel.GetUserAnalyticsResponse{}, nil
+						},
+					).AnyTimes()
+					read = func(ctx context.Context) error {
+						_, err := service.GetUserAnalytics(ctx, request)
+						return err
+					}
+				} else {
+					request := &analyticspb.GetWorkflowAnalyticsRequest{UserId: "user", WorkflowId: "workflow"}
+					repo.EXPECT().GetWorkflowAnalytics(gomock.Any(), "user", "workflow").DoAndReturn(
+						func(ctx context.Context, _, _ string) (*analyticsmodel.GetWorkflowAnalyticsResponse, error) {
+							if err := waitForData(ctx); err != nil {
+								return nil, err
+							}
+							return &analyticsmodel.GetWorkflowAnalyticsResponse{}, nil
+						},
+					).AnyTimes()
+					read = func(ctx context.Context) error {
+						_, err := service.GetWorkflowAnalytics(ctx, request)
+						return err
+					}
+				}
 
-		require.Equal(t, int32(1), calls.Load())
-		want := &analyticsmodel.GetUserAnalyticsResponse{
-			TotalWorkflows: 10, TotalJobs: 200, TotalJoblogs: 5000, TotalJobExecutionDuration: 1000000,
-		}
-		for i := range results {
-			require.NoError(t, errs[i])
-			require.Equal(t, want, results[i])
-		}
-	})
+				const budget = 500 * time.Millisecond
+				firstCtx, cancelFirst := context.WithTimeout(t.Context(), budget)
+				defer cancelFirst()
+				first := make(chan error, 1)
+				go func() { first <- read(firstCtx) }()
+				synctest.Wait()
+
+				time.Sleep(250 * time.Millisecond)
+				secondCtx, cancelSecond := context.WithTimeout(t.Context(), budget)
+				defer cancelSecond()
+				second := make(chan error, 1)
+				go func() { second <- read(secondCtx) }()
+				synctest.Wait()
+
+				// Data arrives after the first deadline and before the second.
+				time.Sleep(350 * time.Millisecond)
+				close(ready)
+				require.Equal(t, codes.DeadlineExceeded, status.Code(<-first))
+				require.NoError(t, <-second)
+			})
+		})
+	}
 }
 
 func TestGetWorkflowAnalytics(t *testing.T) {

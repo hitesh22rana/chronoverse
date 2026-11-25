@@ -16,6 +16,7 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
 func TestUnaryLoggingInterceptorDoesNotLogAuthorizationToken(t *testing.T) {
@@ -102,5 +103,14 @@ func TestLogAuthenticationFailure(t *testing.T) {
 	fields := entries[0].ContextMap()
 	if fields["grpc.code"] != codes.Unauthenticated.String() || fields["grpc.error"] != err.Error() {
 		t.Fatalf("unexpected authentication failure fields: %#v", fields)
+	}
+}
+
+func TestRequireRequestOwnerDeniesRequestWithoutOwnerField(t *testing.T) {
+	t.Parallel()
+	ctx := auth.WithRole(t.Context(), auth.RoleAdmin.String())
+	err := grpcmiddlewares.RequireRequestOwner(ctx, &jobspb.GetJobByIDRequest{})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("request without an owner policy returned %v, want PermissionDenied", err)
 	}
 }

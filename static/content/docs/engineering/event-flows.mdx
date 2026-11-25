@@ -11,7 +11,7 @@
 
 ## Automatic scheduling
 
-The scheduling worker scans due workflows, validates generation and build state, then creates replay-safe job dispatch work. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
+The workflow worker creates `AUTOMATIC` jobs through `ScheduleJob` using an internal admin JWT. The scheduling worker checks workflow generation and build state before emitting replay-safe dispatch events for due jobs. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
 
 ## Job execution
 

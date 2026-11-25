@@ -1,8 +1,6 @@
 package users_test
 
 import (
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,9 +20,8 @@ func TestRegisterUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := usersmock.NewMockRepository(ctrl)
-	cache := usersmock.NewMockCache(ctrl)
 
-	s := users.New(validator.New(), repo, cache)
+	s := users.New(validator.New(), repo)
 
 	type want struct {
 		userID string
@@ -58,13 +55,6 @@ func TestRegisterUser(t *testing.T) {
 					CreatedAt:              time.Now(),
 					UpdatedAt:              time.Now(),
 				}, "token", nil)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				userID: "userID",
@@ -158,13 +148,6 @@ func TestRegisterUser(t *testing.T) {
 					CreatedAt:              time.Now(),
 					UpdatedAt:              time.Now(),
 				}, "token", nil)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				userID: "userID",
@@ -218,9 +201,8 @@ func TestLoginUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := usersmock.NewMockRepository(ctrl)
-	cache := usersmock.NewMockCache(ctrl)
 
-	s := users.New(validator.New(), repo, cache)
+	s := users.New(validator.New(), repo)
 
 	type want struct {
 		userID string
@@ -253,13 +235,6 @@ func TestLoginUser(t *testing.T) {
 					CreatedAt:              time.Now(),
 					UpdatedAt:              time.Now(),
 				}, "token", nil)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			want: want{
 				userID: "userID",
@@ -361,42 +336,31 @@ func TestGetUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := usersmock.NewMockRepository(ctrl)
-	cache := usersmock.NewMockCache(ctrl)
 
-	s := users.New(validator.New(), repo, cache)
+	s := users.New(validator.New(), repo)
 
 	type want struct {
 		*usersmodel.GetUserResponse
 	}
 
 	var (
-		createdAt               = time.Now()
-		updatedAt               = time.Now()
-		singleflightRepoCalls   int32
-		singleflightReleaseChan chan struct{}
-		singleflightLeaderRan   chan struct{}
+		createdAt = time.Now()
+		updatedAt = time.Now()
 	)
 
 	tests := []struct {
-		name    string
-		req     *userspb.GetUserRequest
-		mock    func(req *userspb.GetUserRequest)
-		execute func(t *testing.T, req *userspb.GetUserRequest, want want)
-		want    want
-		isErr   bool
+		name  string
+		req   *userspb.GetUserRequest
+		mock  func(req *userspb.GetUserRequest)
+		want  want
+		isErr bool
 	}{
 		{
-			name: "success: no cache hit",
+			name: "success: repository result",
 			req: &userspb.GetUserRequest{
 				Id: "userID",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -407,130 +371,6 @@ func TestGetUser(t *testing.T) {
 					CreatedAt:              createdAt,
 					UpdatedAt:              updatedAt,
 				}, nil)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-			},
-			want: want{
-				GetUserResponse: &usersmodel.GetUserResponse{
-					ID:                     "userID",
-					Email:                  "user@example.com",
-					NotificationPreference: "ALERTS",
-					CreatedAt:              createdAt,
-					UpdatedAt:              updatedAt,
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: cache hit",
-			req: &userspb.GetUserRequest{
-				Id: "userID",
-			},
-			mock: func(_ *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(&usersmodel.GetUserResponse{
-					ID:                     "userID",
-					Email:                  "user@example.com",
-					NotificationPreference: "ALERTS",
-					CreatedAt:              createdAt,
-					UpdatedAt:              updatedAt,
-				}, nil)
-			},
-			want: want{
-				GetUserResponse: &usersmodel.GetUserResponse{
-					ID:                     "userID",
-					Email:                  "user@example.com",
-					NotificationPreference: "ALERTS",
-					CreatedAt:              createdAt,
-					UpdatedAt:              updatedAt,
-				},
-			},
-			isErr: false,
-		},
-		{
-			name: "success: singleflight deduplicates cache miss",
-			req: &userspb.GetUserRequest{
-				// Own ID, so this case's expectation cannot answer another's.
-				Id: "singleflight_user_id",
-			},
-			mock: func(req *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss")).Times(2)
-
-				cache.EXPECT().Set(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
-
-				singleflightRepoCalls = 0
-				singleflightReleaseChan = make(chan struct{})
-				// Closed by the leader as it parks, so the wait below cannot be
-				// satisfied by a call that already returned.
-				singleflightLeaderRan = make(chan struct{})
-				// AnyTimes, not Times(1): a second call under Times(1) makes gomock
-				// t.Fatalf on the leader goroutine, which Goexits it before
-				// singleflight publishes its result and hangs the package. The dedupe
-				// is asserted on singleflightRepoCalls.
-				repo.EXPECT().GetUser(
-					gomock.Any(),
-					req.GetId(),
-				).DoAndReturn(func(_ any, _ string) (*usersmodel.GetUserResponse, error) {
-					if atomic.AddInt32(&singleflightRepoCalls, 1) == 1 {
-						close(singleflightLeaderRan)
-						<-singleflightReleaseChan
-					}
-					return &usersmodel.GetUserResponse{
-						ID:                     "userID",
-						Email:                  "user@example.com",
-						NotificationPreference: "ALERTS",
-						CreatedAt:              createdAt,
-						UpdatedAt:              updatedAt,
-					}, nil
-				}).AnyTimes()
-			},
-			execute: func(t *testing.T, req *userspb.GetUserRequest, want want) {
-				t.Helper()
-
-				var wg sync.WaitGroup
-				results := make([]*usersmodel.GetUserResponse, 2)
-				errs := make([]error, 2)
-
-				for i := range 2 {
-					idx := i
-					wg.Go(func() {
-						results[idx], errs[idx] = s.GetUser(t.Context(), req)
-					})
-				}
-
-				// Wait for the leader to park, then hold it long enough for the
-				// second caller to join the flight instead of opening a second.
-				select {
-				case <-singleflightLeaderRan:
-				case <-time.After(30 * time.Second):
-					t.Fatal("timed out waiting for the singleflight leader to reach the repository")
-				}
-				time.Sleep(100 * time.Millisecond)
-				close(singleflightReleaseChan)
-				wg.Wait()
-
-				assert.Equal(t, int32(1), atomic.LoadInt32(&singleflightRepoCalls))
-				assert.NoError(t, errs[0])
-				assert.NoError(t, errs[1])
-				assert.Equal(t, want.GetUserResponse, results[0])
-				assert.Equal(t, want.GetUserResponse, results[1])
 			},
 			want: want{
 				GetUserResponse: &usersmodel.GetUserResponse{
@@ -558,12 +398,6 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -578,12 +412,6 @@ func TestGetUser(t *testing.T) {
 				Id: "invalid_user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -598,12 +426,6 @@ func TestGetUser(t *testing.T) {
 				Id: "user_id",
 			},
 			mock: func(req *userspb.GetUserRequest) {
-				cache.EXPECT().Get(
-					gomock.Any(),
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.NotFound, "cache miss"))
-
 				repo.EXPECT().GetUser(
 					gomock.Any(),
 					req.GetId(),
@@ -619,11 +441,6 @@ func TestGetUser(t *testing.T) {
 	for _, tt := range tests {
 		tt.mock(tt.req)
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.execute != nil {
-				tt.execute(t, tt.req, tt.want)
-				return
-			}
-
 			user, err := s.GetUser(t.Context(), tt.req)
 			if tt.isErr {
 				if err == nil {
@@ -646,9 +463,8 @@ func TestUpdateUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repo := usersmock.NewMockRepository(ctrl)
-	cache := usersmock.NewMockCache(ctrl)
 
-	s := users.New(validator.New(), repo, cache)
+	s := users.New(validator.New(), repo)
 
 	tests := []struct {
 		name  string
@@ -668,11 +484,6 @@ func TestUpdateUser(t *testing.T) {
 					req.GetId(),
 					req.GetNotificationPreference(),
 				).Return(nil)
-
-				cache.EXPECT().Delete(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil).AnyTimes()
 			},
 			isErr: false,
 		},

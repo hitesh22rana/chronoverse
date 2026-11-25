@@ -38,7 +38,7 @@ func TestListJobsDecodesCursorAndPreservesCaller(t *testing.T) {
 	original := proto.Clone(req)
 	filters := &model.ListJobsFilters{Status: "RUNNING", Trigger: "AUTOMATIC"}
 
-	svc := service.New(validator.New(), repo, mocks.NewMockCache(ctrl))
+	svc := service.New(validator.New(), repo)
 	ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), cursorBoundaryKey{}, "caller"), 5*time.Second)
 	defer cancel()
 	repo.EXPECT().ListJobs(gomock.Any(), cursorBoundaryWorkflow, cursorBoundaryOwner, raw, filters).
@@ -62,7 +62,7 @@ func TestListJobsRejectsBadInputsBeforeRepository(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := mocks.NewMockRepository(ctrl)
-			svc := service.New(validator.New(), repo, mocks.NewMockCache(ctrl))
+			svc := service.New(validator.New(), repo)
 			req := &jobspb.ListJobsRequest{UserId: cursorBoundaryOwner, WorkflowId: cursorBoundaryWorkflow, Filters: &jobspb.ListJobsFilters{}}
 			switch name {
 			case "cursor":

@@ -325,6 +325,9 @@ func TestGetUser(t *testing.T) {
 
 	svc := usersmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameUsers)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
@@ -353,14 +356,14 @@ func TestGetUser(t *testing.T) {
 					)
 				},
 				req: &userpb.GetUserRequest{
-					Id: "user1",
+					Id: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
 				_auth.EXPECT().ValidateToken(
 					gomock.Any(),
 					gomock.Eq(auth.ServiceNameUsers),
-				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -390,7 +393,7 @@ func TestGetUser(t *testing.T) {
 					)
 				},
 				req: &userpb.GetUserRequest{
-					Id: "user1",
+					Id: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
@@ -413,11 +416,7 @@ func TestGetUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().GetUser(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Errorf(codes.InvalidArgument, "user ID is required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -431,7 +430,7 @@ func TestGetUser(t *testing.T) {
 					)
 				},
 				req: &userpb.GetUserRequest{
-					Id: "user1",
+					Id: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock:  func(_ *userpb.GetUserRequest) {},
@@ -448,11 +447,11 @@ func TestGetUser(t *testing.T) {
 					)
 				},
 				req: &userpb.GetUserRequest{
-					Id: "user1",
+					Id: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -471,11 +470,11 @@ func TestGetUser(t *testing.T) {
 					)
 				},
 				req: &userpb.GetUserRequest{
-					Id: "user1",
+					Id: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *userpb.GetUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -502,11 +501,52 @@ func TestGetUser(t *testing.T) {
 	}
 }
 
+func TestGetUserBindsValidatedPrincipal(t *testing.T) {
+	const owner = "00000000-0000-4000-8000-000000000a21"
+	for _, tc := range []struct {
+		name    string
+		role    auth.Role
+		subject string
+		want    codes.Code
+	}{
+		{"equivalent UUID spelling", auth.RoleUser, "00000000-0000-4000-8000-000000000A21", codes.OK},
+		{"different owner", auth.RoleUser, "00000000-0000-4000-8000-000000000a22", codes.PermissionDenied},
+		{"internal delegation", auth.RoleAdmin, "notifications-service", codes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			svc, tokens := usersmock.NewMockService(ctrl), authmock.NewMockIAuth(ctrl)
+			client, stop := initClient(users.New(t.Context(), &users.Config{Deadline: time.Second}, tokens, svc))
+			defer stop()
+			tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameUsers).
+				DoAndReturn(func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
+					ctx = auth.WithRole(ctx, tc.role.String())
+					ctx = auth.WithAudience(ctx, auth.ServiceNameUsers)
+					return auth.WithSubject(ctx, tc.subject), &jwt.Token{}, nil
+				})
+			if tc.want == codes.OK {
+				svc.EXPECT().GetUser(gomock.Any(), gomock.Cond(func(req *userpb.GetUserRequest) bool {
+					return req.GetId() == owner
+				})).Return(&usersmodel.GetUserResponse{ID: owner}, nil)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			_, err := client.GetUser(auth.WithAuthorizationTokenInMetadata(ctx, "token"), &userpb.GetUserRequest{Id: owner})
+			if status.Code(err) != tc.want {
+				t.Fatalf("GetUser returned %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestUpdateUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	svc := usersmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameUsers)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(users.New(t.Context(), &users.Config{
 		Deadline: 500 * time.Millisecond,
@@ -535,12 +575,12 @@ func TestUpdateUser(t *testing.T) {
 					)
 				},
 				req: &userpb.UpdateUserRequest{
-					Id:                     "user1",
+					Id:                     "00000000-0000-4000-8000-000000000321",
 					NotificationPreference: "ALERTS",
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -559,7 +599,7 @@ func TestUpdateUser(t *testing.T) {
 					)
 				},
 				req: &userpb.UpdateUserRequest{
-					Id:                     "user1",
+					Id:                     "00000000-0000-4000-8000-000000000321",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -584,11 +624,7 @@ func TestUpdateUser(t *testing.T) {
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().UpdateUser(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Errorf(codes.InvalidArgument, "user ID, password and notification preference are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -602,7 +638,7 @@ func TestUpdateUser(t *testing.T) {
 					)
 				},
 				req: &userpb.UpdateUserRequest{
-					Id:                     "user1",
+					Id:                     "00000000-0000-4000-8000-000000000321",
 					NotificationPreference: "ALERTS",
 				},
 			},
@@ -620,12 +656,12 @@ func TestUpdateUser(t *testing.T) {
 					)
 				},
 				req: &userpb.UpdateUserRequest{
-					Id:                     "user1",
+					Id:                     "00000000-0000-4000-8000-000000000321",
 					NotificationPreference: "ALERTS",
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),
@@ -644,12 +680,12 @@ func TestUpdateUser(t *testing.T) {
 					)
 				},
 				req: &userpb.UpdateUserRequest{
-					Id:                     "user1",
+					Id:                     "00000000-0000-4000-8000-000000000321",
 					NotificationPreference: "ALERTS",
 				},
 			},
 			mock: func(_ *userpb.UpdateUserRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().UpdateUser(
 					gomock.Any(),
 					gomock.Any(),

@@ -12,7 +12,6 @@ package workflows
 import (
 	context "context"
 	reflect "reflect"
-	time "time"
 
 	workflows "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	gomock "go.uber.org/mock/gomock"
@@ -185,86 +184,4 @@ func (m *MockRepository) UpdateWorkflowBuildStatus(ctx context.Context, workflow
 func (mr *MockRepositoryMockRecorder) UpdateWorkflowBuildStatus(ctx, workflowID, userID, buildStatus, generation, resolvedImageRef, resolvedImageDigest any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWorkflowBuildStatus", reflect.TypeOf((*MockRepository)(nil).UpdateWorkflowBuildStatus), ctx, workflowID, userID, buildStatus, generation, resolvedImageRef, resolvedImageDigest)
-}
-
-// MockCache is a mock of Cache interface.
-type MockCache struct {
-	ctrl     *gomock.Controller
-	recorder *MockCacheMockRecorder
-	isgomock struct{}
-}
-
-// MockCacheMockRecorder is the mock recorder for MockCache.
-type MockCacheMockRecorder struct {
-	mock *MockCache
-}
-
-// NewMockCache creates a new mock instance.
-func NewMockCache(ctrl *gomock.Controller) *MockCache {
-	mock := &MockCache{ctrl: ctrl}
-	mock.recorder = &MockCacheMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockCache) EXPECT() *MockCacheMockRecorder {
-	return m.recorder
-}
-
-// Delete mocks base method.
-func (m *MockCache) Delete(ctx context.Context, key string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, key)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Delete indicates an expected call of Delete.
-func (mr *MockCacheMockRecorder) Delete(ctx, key any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockCache)(nil).Delete), ctx, key)
-}
-
-// DeleteByPattern mocks base method.
-func (m *MockCache) DeleteByPattern(ctx context.Context, pattern string) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteByPattern", ctx, pattern)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DeleteByPattern indicates an expected call of DeleteByPattern.
-func (mr *MockCacheMockRecorder) DeleteByPattern(ctx, pattern any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteByPattern", reflect.TypeOf((*MockCache)(nil).DeleteByPattern), ctx, pattern)
-}
-
-// Get mocks base method.
-func (m *MockCache) Get(ctx context.Context, key string, dest any) (any, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, key, dest)
-	ret0, _ := ret[0].(any)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Get indicates an expected call of Get.
-func (mr *MockCacheMockRecorder) Get(ctx, key, dest any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockCache)(nil).Get), ctx, key, dest)
-}
-
-// Set mocks base method.
-func (m *MockCache) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Set", ctx, key, value, expiration)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Set indicates an expected call of Set.
-func (mr *MockCacheMockRecorder) Set(ctx, key, value, expiration any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Set", reflect.TypeOf((*MockCache)(nil).Set), ctx, key, value, expiration)
 }

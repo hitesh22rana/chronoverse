@@ -53,9 +53,9 @@ func TestJobLogReadGuards(t *testing.T) {
 						t.Fatalf("subscription=%v error=%v, want %v", sub, err, tc.code)
 					}
 				} else {
-					result, state, err := repo.GetJobLogs(t.Context(), "job", "workflow", "user", tc.cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{})
-					if result != nil || state != "" || status.Code(err) != tc.code {
-						t.Fatalf("result=%v state=%q error=%v, want %v", result, state, err, tc.code)
+					result, err := repo.GetJobLogs(t.Context(), "job", "workflow", "user", tc.cursor, jobsmodel.JobLogsSortOrderDesc, &jobsmodel.GetJobLogsFilters{})
+					if result != nil || status.Code(err) != tc.code {
+						t.Fatalf("result=%v error=%v, want %v", result, err, tc.code)
 					}
 				}
 				if client.calls != tc.calls {

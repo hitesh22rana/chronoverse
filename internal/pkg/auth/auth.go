@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -247,6 +248,34 @@ func parseBearerToken(data []string) (string, error) {
 func IsInternalService(ctx context.Context) bool {
 	role, err := roleFromContext(ctx)
 	return err == nil && role == RoleAdmin.String()
+}
+
+// RequireOwner binds a scoped request to the validated user principal.
+// Internal services may explicitly delegate reads for an owner.
+func RequireOwner(ctx context.Context, owner string) error {
+	role, err := ExtractRoleFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	if role == RoleAdmin.String() {
+		return nil
+	}
+	if role != RoleUser.String() {
+		return status.Error(codes.PermissionDenied, "owner access is required")
+	}
+	requested, err := uuid.Parse(owner)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "owner must be a valid UUID")
+	}
+	subject, err := ExtractSubjectFromContext(ctx)
+	if err != nil {
+		return status.Error(codes.PermissionDenied, "owner access is required")
+	}
+	caller, err := uuid.Parse(subject)
+	if err != nil || caller != requested {
+		return status.Error(codes.PermissionDenied, "owner access is required")
+	}
+	return nil
 }
 
 // IAuth is the interface for the Auth service.

@@ -47,6 +47,10 @@ inside the `chronoverse` namespace. Their DNS records return ready Pod IPs so
 the gRPC clients' `round_robin` policy can balance calls across resolved
 replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 
+All five services expose gRPC reflection only outside production. Reflection
+requires a JWT valid for the target service. Health checks remain available
+without a JWT.
+
 ### Workers
 
 - `scheduling-worker` scans PostgreSQL for workflows that are due and creates
@@ -75,8 +79,9 @@ replicas. The HTTP `server` and `dashboard` retain ordinary ClusterIP Services.
 - **Kafka** carries asynchronous events on the `workflows`, `jobs`, `job_logs`,
   and `analytics` topics. Topic creation is explicit; auto-create is disabled.
 - **ClickHouse** stores retained job logs.
-- **Redis** stores HTTP sessions, cached service reads, live log
-  publish/subscribe state, and runtime-node-scoped image pull locks.
+- **Redis** stores HTTP sessions and supports live log pub/sub, workflow lifecycle
+  locks, and runtime-node-scoped image pull locks. Workflow and user reads use
+  PostgreSQL directly.
 - **Meilisearch** indexes retained job logs for search.
 - **Runtime agent** registers each Docker-capable node and heartbeats Docker
   endpoint health/capacity into PostgreSQL.
@@ -114,8 +119,9 @@ workers are deployed together on the user's Kubernetes infrastructure.
 
 ### Scheduling and Manual Runs
 
-- Automatic scheduling is driven by `scheduling-worker`. It scans due workflows,
-  uses workflow generation guards, and creates replay-safe job events.
+- The workflow worker creates automatic jobs through `ScheduleJob` with an
+  internal admin JWT and a workflow generation. The scheduling worker scans for
+  due jobs in PostgreSQL and creates replay-safe dispatch events.
 - Manual scheduling is driven by `POST /workflows/{workflow_id}/jobs/schedule`
   and also requires `Idempotency-Key`.
 - A scheduling instant arriving as text is normalized to UTC in one place, `parseTime`,

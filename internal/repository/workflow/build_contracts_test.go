@@ -5,16 +5,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/go-playground/validator/v10"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	workflowsmodel "github.com/hitesh22rana/chronoverse/internal/model/workflows"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
+	workflowssvc "github.com/hitesh22rana/chronoverse/internal/service/workflows"
+
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
@@ -402,4 +407,91 @@ func TestAutomaticScheduleSuppressesPreconditionRacesAndPreservesFailures(t *tes
 			})
 		})
 	}
+}
+
+// holdFirstWorkflowSnapshot pauses delivery after PostgreSQL has returned the
+// first snapshot. A later request still uses the real workflow repository.
+type holdFirstWorkflowSnapshot struct {
+	workflowssvc.Repository
+	captured chan struct{}
+	release  <-chan struct{}
+	first    sync.Once
+}
+
+func (h *holdFirstWorkflowSnapshot) GetWorkflowByID(ctx context.Context, id string) (*workflowsmodel.GetWorkflowByIDResponse, error) {
+	result, err := h.Repository.GetWorkflowByID(ctx, id)
+	hold := false
+	h.first.Do(func() { hold = true })
+	if hold {
+		close(h.captured)
+		select {
+		case <-h.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return result, err
+}
+
+func TestIntegrationBuildCurrentGenerationDoesNotShareOldRead(t *testing.T) {
+	fixture := durableTerminalSeed(t, 3)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	before, err := fixture.workflows.GetWorkflowByID(ctx, fixture.workflowID)
+	require.NoError(t, err)
+	events := func(generation int64) *workflowsmodel.WorkflowEvent {
+		return &workflowsmodel.WorkflowEvent{
+			ID: fixture.workflowID, UserID: fixture.userID, Generation: generation,
+			Action:   workflowsmodel.ActionBuild,
+			EventKey: idempotency.WorkflowEventKey(fixture.workflowID, workflowsmodel.ActionBuild.ToString(), generation),
+		}
+	}
+	obsolete := events(before.Generation - 1)
+	current := events(before.Generation + 1)
+	release := make(chan struct{})
+	defer close(release)
+	held := &holdFirstWorkflowSnapshot{Repository: fixture.workflows, captured: make(chan struct{}), release: release}
+	svc := workflowssvc.New(validator.New(), held)
+	commands := make(chan *jobspb.ScheduleJobRequest, 2)
+	worker := &Repository{auth: testAuth{}, svc: &Services{
+		Workflows: buildContractClient{get: func(ctx context.Context, req *workflowspb.GetWorkflowByIDRequest) (*workflowspb.GetWorkflowByIDResponse, error) {
+			result, readErr := svc.GetWorkflowByID(ctx, req)
+			if readErr != nil {
+				return nil, readErr
+			}
+			return result.ToProto(), nil
+		}},
+		Jobs: &testJobsClient{scheduleJob: func(_ context.Context, req *jobspb.ScheduleJobRequest) (*jobspb.ScheduleJobResponse, error) {
+			commands <- req
+			return &jobspb.ScheduleJobResponse{}, nil
+		}},
+	}}
+	oldDone := make(chan error, 1)
+	go func() { oldDone <- worker.buildWorkflow(ctx, obsolete) }()
+	select {
+	case <-held.captured:
+	case <-ctx.Done():
+		t.Fatal("old workflow read did not reach the barrier")
+	}
+	// Autocommit advances generation while the earlier snapshot is still held.
+	tag, err := fixture.pg.Exec(ctx, "UPDATE workflows SET generation = $1 WHERE id = $2", current.Generation, current.ID)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, tag.RowsAffected())
+	require.NoError(t, worker.buildWorkflow(ctx, current))
+	select {
+	case req := <-commands:
+		require.Equal(t, current.Generation, req.GetWorkflowGeneration())
+		require.Equal(t, current.ID, req.GetWorkflowId())
+		require.Equal(t, idempotency.AutomaticScheduleEventKey(current.EventKey), req.GetIdempotencyKey())
+	default:
+		t.Fatal("current event was acknowledged without reaching its guarded command")
+	}
+	select {
+	case release <- struct{}{}:
+	case <-ctx.Done():
+		t.Fatal("timed out releasing the old snapshot")
+	}
+	require.NoError(t, <-oldDone)
+	require.Empty(t, commands, "obsolete event scheduled work")
 }

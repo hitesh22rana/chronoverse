@@ -14,6 +14,11 @@ Workflow CRUD, build status, list filters, failure counters, termination, deleti
 
 Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
 
+`ScheduleJob` accepts `MANUAL` from a user JWT for a workflow owned by the token subject.
+`AUTOMATIC` requires an internal admin JWT valid for jobs-service and a positive
+`workflow_generation`. A user JWT requesting `AUTOMATIC` receives `PermissionDenied`,
+even when the caller owns the workflow.
+
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
 ### Container cleanup RPCs
@@ -62,7 +67,8 @@ Notification creation, listing, and marking records read.
 
 ## Analytics service
 
-User and workflow aggregate reads.
+User and workflow aggregate reads. Each RPC uses the analytics service's
+`GRPC_REQUEST_TIMEOUT`, which defaults to 500 ms.
 
 ## Transport security
 

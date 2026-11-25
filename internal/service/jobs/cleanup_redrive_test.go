@@ -33,7 +33,7 @@ func TestCleanupRedriveRequiresAuthenticatedActorAndRepairReason(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := jobsmock.NewMockRepository(gomock.NewController(t))
-			service := jobsservice.New(validator.New(), repo, nil)
+			service := jobsservice.New(validator.New(), repo)
 			ctx := auth.WithRole(t.Context(), tc.role)
 			if tc.actor != "" {
 				ctx = auth.WithSubject(ctx, tc.actor)

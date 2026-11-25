@@ -29,7 +29,7 @@ func TestContainerIntentAdmissionRequiresExecutionPrincipal(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := jobsmock.NewMockRepository(gomock.NewController(t))
-			service := jobsservice.New(validator.New(), repo, nil)
+			service := jobsservice.New(validator.New(), repo)
 			ctx := auth.WithSubject(auth.WithRole(t.Context(), tc.role), tc.subject)
 			if tc.want == codes.OK {
 				repo.EXPECT().UpdateContainerIntent(gomock.Any(), jobsmodel.ContainerIntentOperationEnsure, gomock.Any()).
@@ -53,7 +53,7 @@ func TestContainerIntentAdmissionRequiresExecutionPrincipal(t *testing.T) {
 
 func TestContainerIntentRedriveAuditsValidatedPrincipal(t *testing.T) {
 	repo := jobsmock.NewMockRepository(gomock.NewController(t))
-	service := jobsservice.New(validator.New(), repo, nil)
+	service := jobsservice.New(validator.New(), repo)
 	ctx := auth.WithSubject(auth.WithRole(t.Context(), auth.RoleAdmin.String()), "operations/alice")
 	repo.EXPECT().UpdateContainerIntent(gomock.Any(), jobsmodel.ContainerIntentOperationRedrive, gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ string, cmd *jobsmodel.ContainerIntentCommand) (*jobsmodel.ContainerIntentResult, error) {

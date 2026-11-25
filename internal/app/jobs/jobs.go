@@ -146,34 +146,17 @@ func (j *Jobs) unaryAuthTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
+		if !isInternalAPI(info.FullMethod) {
+			if err := grpcmiddlewares.RequireRequestOwner(newCtx, req); err != nil {
+				return nil, err
+			}
+		}
+		if request, ok := req.(*jobspb.ScheduleJobRequest); ok &&
+			request.GetTrigger() == jobsmodel.JobTriggerAutomatic.ToString() && !authpkg.IsInternalService(newCtx) {
+			return nil, status.Error(codes.PermissionDenied, "automatic scheduling requires internal authorization")
+		}
+
 		return handler(newCtx, req)
-	}
-}
-
-// streamAuthTokenInterceptor extracts and validates the authToken from the metadata and adds it to the context for the streaming RPC calls.
-func (j *Jobs) streamAuthTokenInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
-	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if isHealthCheckRoute(info.FullMethod) {
-			return handler(srv, stream)
-		}
-
-		authToken, err := authpkg.ExtractAuthorizationTokenFromMetadata(stream.Context())
-		if err != nil {
-			grpcmiddlewares.LogAuthenticationFailure(stream.Context(), logger, err)
-			return err
-		}
-
-		ctx := authpkg.WithAuthorizationToken(stream.Context(), authToken)
-		newCtx, _, err := j.auth.ValidateToken(ctx, authpkg.ServiceNameJobs)
-		if err != nil {
-			grpcmiddlewares.LogAuthenticationFailure(ctx, logger, err)
-			return err
-		}
-
-		return handler(srv, &grpcmiddlewares.WrappedServerStream{
-			ServerStream: stream,
-			Ctx:          newCtx,
-		})
 	}
 }
 
@@ -222,7 +205,10 @@ func New(ctx context.Context, cfg *Config, auth authpkg.IAuth, svc Service) *grp
 		),
 		grpc.ChainStreamInterceptor(
 			//nolint:contextcheck // stream interceptor wraps context via WrappedServerStream
-			jobs.streamAuthTokenInterceptor(loggerpkg.FromContext(ctx)),
+			grpcmiddlewares.AuthenticatedStreamInterceptor(
+				loggerpkg.FromContext(ctx), auth, authpkg.ServiceNameJobs,
+				jobspb.JobsService_StreamJobLogs_FullMethodName,
+			),
 			grpcmiddlewares.StreamLoggingInterceptor(loggerpkg.FromContext(ctx)),
 			grpcmiddlewares.StreamAudienceInterceptor(),
 			//nolint:contextcheck // This is a wrapper around grpc.ServerStream that allows to modify the context.
@@ -688,6 +674,10 @@ func (j *Jobs) StreamJobLogs(req *jobspb.StreamJobLogsRequest, stream jobspb.Job
 		}
 		span.End()
 	}()
+
+	if ownerErr := authpkg.RequireOwner(ctx, req.GetUserId()); ownerErr != nil {
+		return ownerErr
+	}
 
 	ch, err := j.svc.StreamJobLogs(ctx, req)
 	if err != nil {

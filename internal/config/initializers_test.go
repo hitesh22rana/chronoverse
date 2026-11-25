@@ -147,12 +147,10 @@ func TestExecutionWorkerConfiguration(t *testing.T) {
 func TestServiceInitializerOverrides(t *testing.T) {
 	initializerEnvironment(t)
 	t.Setenv("POSTGRES_PORT", "5434")
-	t.Setenv("REDIS_DB", "9")
 	t.Run("users", func(t *testing.T) {
 		cfg, err := config.InitUsersServiceConfig()
 		require.NoError(t, err)
 		require.Equal(t, 5434, cfg.Postgres.Port)
-		require.Equal(t, 9, cfg.Redis.DB)
 	})
 	t.Run("analytics", func(t *testing.T) {
 		cfg, err := config.InitAnalyticsServiceConfig()

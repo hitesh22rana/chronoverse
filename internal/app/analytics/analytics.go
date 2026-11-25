@@ -77,6 +77,10 @@ func (a *Analytics) authTokenInterceptor(logger *zap.Logger) grpc.UnaryServerInt
 			return nil, err
 		}
 
+		if err := grpcmiddlewares.RequireRequestOwner(newCtx, req); err != nil {
+			return nil, err
+		}
+
 		return handler(newCtx, req)
 	}
 }
@@ -92,10 +96,10 @@ func isProduction(environment string) bool {
 }
 
 // New creates a new analytics analytics-service.
-func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.Server {
+func New(ctx context.Context, cfg *Config, tokens auth.IAuth, svc Service) *grpc.Server {
 	analytics := &Analytics{
 		tp:   otel.Tracer(svcpkg.Info().GetName()),
-		auth: auth,
+		auth: tokens,
 		cfg:  cfg,
 		svc:  svc,
 	}
@@ -113,6 +117,10 @@ func New(ctx context.Context, cfg *Config, auth auth.IAuth, svc Service) *grpc.S
 
 	serverOpts = append(serverOpts,
 		grpc.StatsHandler(otelpkg.GRPCServerHandler()),
+		//nolint:contextcheck // The interceptor wraps the authenticated stream context.
+		grpc.StreamInterceptor(grpcmiddlewares.AuthenticatedStreamInterceptor(
+			loggerpkg.FromContext(ctx), tokens, auth.ServiceNameAnalytics,
+		)),
 		grpc.ChainUnaryInterceptor(
 			// authToken must run before the audience/role interceptors so
 			// the JWT-validated audience/role are in context when the
@@ -167,6 +175,9 @@ func (a *Analytics) GetUserAnalytics(
 		span.End()
 	}()
 
+	ctx, cancel := context.WithTimeout(ctx, a.cfg.Deadline)
+	defer cancel()
+
 	analytics, err := a.svc.GetUserAnalytics(ctx, req)
 	if err != nil {
 		return nil, err
@@ -197,6 +208,9 @@ func (a *Analytics) GetWorkflowAnalytics(
 		}
 		span.End()
 	}()
+
+	ctx, cancel := context.WithTimeout(ctx, a.cfg.Deadline)
+	defer cancel()
 
 	analytics, err := a.svc.GetWorkflowAnalytics(ctx, req)
 	if err != nil {

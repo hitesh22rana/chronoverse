@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionalphapb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -65,6 +67,71 @@ func TestHealthWatchBypassesAuthentication(t *testing.T) {
 	}
 }
 
+func TestJobsReflectionRequiresAuthentication(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tokens := authmock.NewMockIAuth(ctrl)
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).
+		DoAndReturn(func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
+			token, err := auth.ExtractAuthorizationTokenFromMetadata(ctx)
+			if err != nil || token != "admin-token" {
+				return ctx, nil, status.Error(codes.Unauthenticated, "invalid token")
+			}
+			ctx = auth.WithAudience(ctx, auth.ServiceNameJobs)
+			return auth.WithRole(ctx, auth.RoleAdmin.String()), &jwt.Token{}, nil
+		}).Times(3)
+	server := jobs.New(t.Context(), &jobs.Config{Deadline: time.Second}, tokens, jobsmock.NewMockService(ctrl))
+	listener := bufconn.Listen(1024 * 1024)
+	t.Cleanup(server.Stop)
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil {
+			fmt.Fprintf(os.Stderr, "failed to serve reflection test server: %v\n", serveErr)
+		}
+	}()
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	for _, tc := range []struct {
+		name, method, token string
+		code                codes.Code
+	}{
+		{"v1", reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName, "admin-token", codes.OK},
+		{"v1alpha", reflectionalphapb.ServerReflection_ServerReflectionInfo_FullMethodName, "admin-token", codes.OK},
+		{"invalid token", reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName, "invalid-token", codes.Unauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			ctx = auth.WithAuthorizationTokenInMetadata(ctx, tc.token)
+			stream, err := conn.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true, ClientStreams: true}, tc.method)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := &reflectionpb.ServerReflectionRequest{
+				MessageRequest: &reflectionpb.ServerReflectionRequest_FileContainingSymbol{
+					FileContainingSymbol: "jobs.JobsService.RedriveContainerCleanup",
+				},
+			}
+			// RecvMsg exposes the final authentication status if the server closes early.
+			if sendErr := stream.SendMsg(request); sendErr != nil && tc.code == codes.OK {
+				t.Fatalf("send reflection request: %v", sendErr)
+			}
+			var response reflectionpb.ServerReflectionResponse
+			if err := stream.RecvMsg(&response); status.Code(err) != tc.code {
+				t.Fatalf("reflection returned %v, want %v", err, tc.code)
+			}
+			if tc.code == codes.OK && len(response.GetFileDescriptorResponse().GetFileDescriptorProto()) == 0 {
+				t.Fatalf("reflection returned no descriptor: %v", response.String())
+			}
+		})
+	}
+}
+
 func initClient(server *grpc.Server) (client jobspb.JobsServiceClient, _close func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -109,6 +176,9 @@ func TestScheduleJob(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -121,11 +191,12 @@ func TestScheduleJob(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.ScheduleJobRequest)
-		res   *jobspb.ScheduleJobResponse
-		isErr bool
+		name                 string
+		args                 args
+		mock                 func(*jobspb.ScheduleJobRequest)
+		res                  *jobspb.ScheduleJobResponse
+		isErr                bool
+		wantPermissionDenied bool
 	}{
 		{
 			name: "success",
@@ -138,15 +209,16 @@ func TestScheduleJob(t *testing.T) {
 				},
 				req: &jobspb.ScheduleJobRequest{
 					WorkflowId:  "workflow_id",
-					UserId:      "user1",
+					UserId:      "00000000-0000-4000-8000-000000000321",
 					ScheduledAt: time.Now().Format(time.RFC3339Nano),
+					Trigger:     jobsmodel.JobTriggerManual.ToString(),
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
 				_auth.EXPECT().ValidateToken(
 					gomock.Any(),
 					gomock.Eq(auth.ServiceNameJobs),
-				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -156,6 +228,52 @@ func TestScheduleJob(t *testing.T) {
 				Id: "job_id",
 			},
 			isErr: false,
+		},
+		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.ScheduleJobRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
+		},
+		{
+			name: "error: user attempts automatic scheduling",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.ScheduleJobRequest{
+					UserId: "00000000-0000-4000-8000-000000000321", Trigger: jobsmodel.JobTriggerAutomatic.ToString(), WorkflowGeneration: 2,
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
+		},
+		{
+			name: "success: internal automatic scheduling",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.ScheduleJobRequest{
+					UserId: "00000000-0000-4000-8000-000000000321", Trigger: jobsmodel.JobTriggerAutomatic.ToString(), WorkflowGeneration: 2,
+				},
+			},
+			mock: func(_ *jobspb.ScheduleJobRequest) {
+				internal := auth.WithSubject(auth.WithRole(principal, auth.RoleAdmin.String()), "workflow-worker")
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(internal, &jwt.Token{}, nil)
+				svc.EXPECT().ScheduleJob(gomock.Any(), gomock.Any()).Return("job_id", nil)
+			},
 		},
 		{
 			name: "error: invalid token",
@@ -168,7 +286,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 				req: &jobspb.ScheduleJobRequest{
 					WorkflowId:  "workflow_id",
-					UserId:      "user1",
+					UserId:      "00000000-0000-4000-8000-000000000321",
 					ScheduledAt: time.Now().Format(time.RFC3339Nano),
 				},
 			},
@@ -194,11 +312,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().ScheduleJob(
-					gomock.Any(),
-					gomock.Any(),
-				).Return("", status.Error(codes.InvalidArgument, "job_id, user_id, and scheduled_at are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -213,7 +327,7 @@ func TestScheduleJob(t *testing.T) {
 				},
 				req: &jobspb.ScheduleJobRequest{
 					WorkflowId:  "workflow_id",
-					UserId:      "user1",
+					UserId:      "00000000-0000-4000-8000-000000000321",
 					ScheduledAt: time.Now().Format(time.RFC3339Nano),
 				},
 			},
@@ -232,12 +346,12 @@ func TestScheduleJob(t *testing.T) {
 				},
 				req: &jobspb.ScheduleJobRequest{
 					WorkflowId:  "workflow_id",
-					UserId:      "user1",
+					UserId:      "00000000-0000-4000-8000-000000000321",
 					ScheduledAt: time.Now().Format(time.RFC3339Nano),
 				},
 			},
 			mock: func(_ *jobspb.ScheduleJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ScheduleJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -254,6 +368,9 @@ func TestScheduleJob(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := client.ScheduleJob(tt.args.getCtx(), tt.args.req)
+			if tt.wantPermissionDenied && status.Code(err) != codes.PermissionDenied {
+				t.Errorf("authorization result = %v, want PermissionDenied", err)
+			}
 			if (err != nil) != tt.isErr {
 				t.Errorf("ScheduleJob() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -400,6 +517,9 @@ func TestGetJob(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -412,11 +532,12 @@ func TestGetJob(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.GetJobRequest)
-		res   *jobspb.GetJobResponse
-		isErr bool
+		name                 string
+		args                 args
+		mock                 func(*jobspb.GetJobRequest)
+		res                  *jobspb.GetJobResponse
+		isErr                bool
+		wantPermissionDenied bool
 	}{
 		{
 			name: "success",
@@ -428,11 +549,11 @@ func TestGetJob(t *testing.T) {
 					)
 				},
 				req: &jobspb.GetJobRequest{
-					UserId: "user1",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -466,6 +587,20 @@ func TestGetJob(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.GetJobRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *jobspb.GetJobRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
+		},
+		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
@@ -477,7 +612,7 @@ func TestGetJob(t *testing.T) {
 				req: &jobspb.GetJobRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
@@ -502,11 +637,7 @@ func TestGetJob(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().GetJob(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "job_id, workflow_id and user_id are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -522,7 +653,7 @@ func TestGetJob(t *testing.T) {
 				req: &jobspb.GetJobRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock:  func(_ *jobspb.GetJobRequest) {},
@@ -541,11 +672,11 @@ func TestGetJob(t *testing.T) {
 				req: &jobspb.GetJobRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.GetJobRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetJob(
 					gomock.Any(),
 					gomock.Any(),
@@ -562,6 +693,9 @@ func TestGetJob(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := client.GetJob(tt.args.getCtx(), tt.args.req)
+			if tt.wantPermissionDenied && status.Code(err) != codes.PermissionDenied {
+				t.Errorf("authorization result = %v, want PermissionDenied", err)
+			}
 			if (err != nil) != tt.isErr {
 				t.Errorf("GetJob() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -777,6 +911,9 @@ func TestGetJobLogs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -789,11 +926,12 @@ func TestGetJobLogs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.GetJobLogsRequest)
-		res   *jobspb.GetJobLogsResponse
-		isErr bool
+		name                 string
+		args                 args
+		mock                 func(*jobspb.GetJobLogsRequest)
+		res                  *jobspb.GetJobLogsResponse
+		isErr                bool
+		wantPermissionDenied bool
 	}{
 		{
 			name: "success",
@@ -807,12 +945,12 @@ func TestGetJobLogs(t *testing.T) {
 				req: &jobspb.GetJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -853,6 +991,20 @@ func TestGetJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.GetJobLogsRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *jobspb.GetJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
+		},
+		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
@@ -864,7 +1016,7 @@ func TestGetJobLogs(t *testing.T) {
 				req: &jobspb.GetJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -891,11 +1043,7 @@ func TestGetJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().GetJobLogs(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "job_id, workflow_id and user_id are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -911,7 +1059,7 @@ func TestGetJobLogs(t *testing.T) {
 				req: &jobspb.GetJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -931,12 +1079,12 @@ func TestGetJobLogs(t *testing.T) {
 				req: &jobspb.GetJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.GetJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().GetJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -953,6 +1101,9 @@ func TestGetJobLogs(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := client.GetJobLogs(tt.args.getCtx(), tt.args.req)
+			if tt.wantPermissionDenied && status.Code(err) != codes.PermissionDenied {
+				t.Errorf("authorization result = %v, want PermissionDenied", err)
+			}
 			if (err != nil) != tt.isErr {
 				t.Errorf("GetJobLogs() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -976,6 +1127,9 @@ func TestStreamJobLogs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	server := jobs.New(t.Context(), &jobs.Config{}, _auth, svc)
 
@@ -997,11 +1151,12 @@ func TestStreamJobLogs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.StreamJobLogsRequest)
-		want  want
-		isErr bool
+		name                 string
+		args                 args
+		mock                 func(*jobspb.StreamJobLogsRequest)
+		want                 want
+		isErr                bool
+		wantPermissionDenied bool
 	}{
 		{
 			name: "success: stream logs",
@@ -1015,14 +1170,14 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
 				_auth.EXPECT().ValidateToken(
 					gomock.Any(),
 					gomock.Eq(auth.ServiceNameJobs),
-				).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				).Return(principal, &jwt.Token{}, nil)
 
 				ch := make(chan *jobsmodel.JobLog, 3)
 				go func() {
@@ -1071,13 +1226,14 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
 				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(ctx context.Context, _ string) (context.Context, *jwt.Token, error) {
-						return auth.WithAudience(auth.WithRole(ctx, string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil
+						ctx = auth.WithAudience(auth.WithRole(ctx, auth.RoleUser.String()), auth.ServiceNameJobs)
+						return auth.WithSubject(ctx, "00000000-0000-4000-8000-000000000321"), &jwt.Token{}, nil
 					},
 				)
 				svc.EXPECT().StreamJobLogs(gomock.Any(), gomock.Any()).DoAndReturn(
@@ -1105,7 +1261,7 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {},
@@ -1114,6 +1270,20 @@ func TestStreamJobLogs(t *testing.T) {
 				expectClosed: false,
 			},
 			isErr: true,
+		},
+		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.StreamJobLogsRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *jobspb.StreamJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
 		},
 		{
 			name: "error: invalid token",
@@ -1127,7 +1297,7 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
@@ -1151,11 +1321,11 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().StreamJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1179,11 +1349,11 @@ func TestStreamJobLogs(t *testing.T) {
 				req: &jobspb.StreamJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *jobspb.StreamJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().StreamJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1214,6 +1384,9 @@ func TestStreamJobLogs(t *testing.T) {
 				}
 
 				_, err = stream.Recv()
+				if tt.wantPermissionDenied && status.Code(err) != codes.PermissionDenied {
+					t.Errorf("authorization result = %v, want PermissionDenied", err)
+				}
 				if err == nil {
 					t.Error("StreamJobLogs() error = nil, want error")
 				}
@@ -1299,6 +1472,9 @@ func TestSearchJobLogs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -1311,11 +1487,12 @@ func TestSearchJobLogs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*jobspb.SearchJobLogsRequest)
-		res   *jobspb.GetJobLogsResponse
-		isErr bool
+		name                 string
+		args                 args
+		mock                 func(*jobspb.SearchJobLogsRequest)
+		res                  *jobspb.GetJobLogsResponse
+		isErr                bool
+		wantPermissionDenied bool
 	}{
 		{
 			name: "success",
@@ -1329,7 +1506,7 @@ func TestSearchJobLogs(t *testing.T) {
 				req: &jobspb.SearchJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 					Filters: &jobspb.SearchJobLogsFilters{
 						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
@@ -1338,7 +1515,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1379,6 +1556,20 @@ func TestSearchJobLogs(t *testing.T) {
 			isErr: false,
 		},
 		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &jobspb.SearchJobLogsRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *jobspb.SearchJobLogsRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:                true,
+			wantPermissionDenied: true,
+		},
+		{
 			name: "error: invalid token",
 			args: args{
 				getCtx: func() context.Context {
@@ -1390,7 +1581,7 @@ func TestSearchJobLogs(t *testing.T) {
 				req: &jobspb.SearchJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 					Filters: &jobspb.SearchJobLogsFilters{
 						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
@@ -1422,11 +1613,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().SearchJobLogs(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "job_id, workflow_id and user_id are required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -1442,7 +1629,7 @@ func TestSearchJobLogs(t *testing.T) {
 				req: &jobspb.SearchJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 					Filters:    &jobspb.SearchJobLogsFilters{},
 				},
@@ -1463,7 +1650,7 @@ func TestSearchJobLogs(t *testing.T) {
 				req: &jobspb.SearchJobLogsRequest{
 					Id:         "job_id",
 					WorkflowId: "workflow_id",
-					UserId:     "user1",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 					Filters: &jobspb.SearchJobLogsFilters{
 						Stream:  jobspb.LogStream_LOG_STREAM_ALL,
@@ -1472,7 +1659,7 @@ func TestSearchJobLogs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.SearchJobLogsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().SearchJobLogs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1489,6 +1676,9 @@ func TestSearchJobLogs(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := client.SearchJobLogs(tt.args.getCtx(), tt.args.req)
+			if tt.wantPermissionDenied && status.Code(err) != codes.PermissionDenied {
+				t.Errorf("authorization result = %v, want PermissionDenied", err)
+			}
 			if (err != nil) != tt.isErr {
 				t.Errorf("SearchJobLogs() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -1509,6 +1699,9 @@ func TestListJobs(t *testing.T) {
 
 	svc := jobsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameJobs)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(jobs.New(t.Context(), &jobs.Config{
 		Deadline: 500 * time.Millisecond,
@@ -1538,12 +1731,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1596,12 +1789,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),
@@ -1656,7 +1849,7 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -1682,11 +1875,7 @@ func TestListJobs(t *testing.T) {
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().ListJobs(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "workflow_id is required"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -1701,7 +1890,7 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
@@ -1720,12 +1909,12 @@ func TestListJobs(t *testing.T) {
 				},
 				req: &jobspb.ListJobsRequest{
 					WorkflowId: "workflow_id",
-					UserId:     "user_id",
+					UserId:     "00000000-0000-4000-8000-000000000321",
 					Cursor:     "",
 				},
 			},
 			mock: func(_ *jobspb.ListJobsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListJobs(
 					gomock.Any(),
 					gomock.Any(),

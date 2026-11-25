@@ -285,7 +285,7 @@ export default function Home() {
           <div className="infra-grid">
             <Card><CardHeader><Database /><CardTitle>PostgreSQL</CardTitle></CardHeader><CardContent><CardDescription>Transactional state, idempotency, outbox rows, leases, retries, and analytics.</CardDescription></CardContent></Card>
             <Card><CardHeader><Boxes /><CardTitle>ClickHouse + Meilisearch</CardTitle></CardHeader><CardContent><CardDescription>Ordered retained output with low-latency text search and safe highlights.</CardDescription></CardContent></Card>
-<Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>Sessions, cached reads, live log delivery, and image pulls scoped to each runtime node.</CardDescription></CardContent></Card>
+<Card><CardHeader><KeyRound /><CardTitle>Redis</CardTitle></CardHeader><CardContent><CardDescription>HTTP sessions, live log delivery, workflow lifecycle locks, and runtime-node-scoped image pull locks.</CardDescription></CardContent></Card>
           <Card><CardHeader><ShieldCheck /><CardTitle>TLS + OpenTelemetry</CardTitle></CardHeader><CardContent><CardDescription>mTLS between services, and trace propagation across HTTP, gRPC and Kafka.</CardDescription></CardContent></Card>
 
           </div>

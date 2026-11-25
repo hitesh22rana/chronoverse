@@ -17,6 +17,16 @@ import (
 // RoleInterceptorCallbackFunc reports whether role is invalid for method.
 type RoleInterceptorCallbackFunc func(method, role string) bool
 
+// RequireRequestOwner checks an authenticated, owner-scoped request. A new
+// user-facing RPC with no owner field must define its authorization explicitly.
+func RequireRequestOwner(ctx context.Context, req any) error {
+	request, ok := req.(interface{ GetUserId() string })
+	if !ok {
+		return status.Error(codes.PermissionDenied, "request ownership policy is required")
+	}
+	return auth.RequireOwner(ctx, request.GetUserId())
+}
+
 // UnaryAudienceInterceptor propagates the JWT-validated audience from context
 // for log enrichment. It does NOT trust the metadata header on authenticated
 // RPCs — that audience is established by ValidateToken and must already be

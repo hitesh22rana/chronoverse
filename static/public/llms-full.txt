@@ -315,7 +315,7 @@ Chronoverse supports periodic automatic scheduling and authenticated manual sche
 
 ## Automatic scheduling
 
-The scheduling worker polls PostgreSQL for due workflows in bounded batches. It checks that each workflow is active, has a valid build, and still matches the generation being scheduled.
+The workflow worker creates automatic jobs through jobs-service using an internal admin JWT and the current workflow generation. The scheduling worker polls PostgreSQL in bounded batches and dispatches due jobs whose workflow is active, has a valid build, and still matches the job generation.
 
 The resulting job state and Kafka publication intent use replay-safe persistence. Reprocessing a scheduling decision does not create unbounded duplicate jobs.
 
@@ -446,6 +446,8 @@ The production entry point is Nginx. It serves the dashboard, proxies `/api/...`
 
 Five gRPC services own users, workflows, jobs, notifications, and analytics. They expose ports `50051` through `50055` inside Compose.
 
+All five services expose gRPC reflection only outside production. Reflection requires a JWT valid for the target service. Health checks remain available without a JWT.
+
 ## Asynchronous plane
 
 Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Scheduling, workflow preparation, container execution, retained log processing, analytics, and outbox publication scale independently within topic and infrastructure constraints.
@@ -454,7 +456,7 @@ Kafka carries `workflows`, `jobs`, `job_logs`, and `analytics` topics. Schedulin
 
 - PostgreSQL: transactional state, runtime nodes, leases, idempotency, outbox rows, container intents/receipts/holds, redrive audits, and analytics.
 - ClickHouse: retained high-volume job logs.
-- Redis: sessions, cached reads, live log pub/sub, and image-pull locks.
+- Redis: HTTP sessions, live log pub/sub, workflow lifecycle locks, and runtime-node-scoped image pull locks. Workflow and user reads use PostgreSQL directly.
 - Meilisearch: retained log search.
 - Runtime agent: Docker-capable node registration, heartbeat, and capacity metadata.
 - Docker proxy: token-authenticated, method-and-path-allowlisted node-local container lifecycle access.
@@ -522,7 +524,7 @@ Reads user and workflow aggregates maintained by the analytics processor.
 
 ## Authorization boundary
 
-The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Internal services validate the authorization context rather than trusting arbitrary callers on the network.
+The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Services validate the target audience and role. For authenticated owner-scoped RPCs, the requested owner must match the user JWT subject. Internal admin calls can act for the owner within the policy of the target RPC.
 </doc>
 
 <doc title="Event flows" path="./docs/engineering/event-flows/">
@@ -539,7 +541,7 @@ The HTTP gateway attaches service JWT metadata to downstream gRPC calls. Interna
 
 ## Automatic scheduling
 
-The scheduling worker scans due workflows, validates generation and build state, then creates replay-safe job dispatch work. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
+The workflow worker creates `AUTOMATIC` jobs through `ScheduleJob` using an internal admin JWT. The scheduling worker checks workflow generation and build state before emitting replay-safe dispatch events for due jobs. Manual scheduling enters the same job lifecycle with trigger `MANUAL`.
 
 ## Job execution
 
@@ -948,7 +950,7 @@ Chronoverse creates jobs automatically from workflow intervals or immediately th
 
 ## Automatic runs
 
-The scheduling worker polls for due workflows, validates generation and build state, and creates a job with trigger `AUTOMATIC`.
+The workflow worker calls jobs-service with an internal admin JWT to create jobs with trigger `AUTOMATIC`. The scheduling worker dispatches due jobs after checking workflow generation and build state.
 
 ## Manual runs
 
@@ -1053,6 +1055,11 @@ If no ranked workflows are available, the dashboard explains that activity will 
 `GET /analytics/{workflow_id}` returns job count, generated log count, total execution duration, and derived average runtime for one workflow. Workflow-level analytics load with the workflow details view and use the same five-minute freshness window.
 
 Analytics are historical counters. Generated log events are counted whether or not their workflow retains log bodies. Disabling log retention prevents new entries from being stored in ClickHouse and indexed in Meilisearch; it does not stop the generated-log counter or erase previously aggregated history. The dashboard therefore labels the metric as generated logs and separately explains when new logs are not retained.
+
+## Request timeout
+
+Both analytics routes can return `504 Gateway Timeout`. The analytics service's
+`GRPC_REQUEST_TIMEOUT` sets the per-request budget and defaults to 500 ms.
 
 ## Processing model
 
@@ -1189,6 +1196,7 @@ Filters must remain stable while traversing a result set. A cursor created for o
 | `412` | Resource state does not permit the operation |
 | `429` | Downstream resource exhausted |
 | `503` | Required downstream service unavailable |
+| `504` | Downstream RPC reported that its deadline expired |
 
 ## Stream exceptions
 
@@ -1576,7 +1584,7 @@ Client pools are budgeted per workload rather than inheriting ten connections pe
 
 PgBouncer and PostgreSQL limits are safety boundaries, not a throughput guarantee. Before raising replicas, pool sizes, or partitions, load-test representative transaction duration, pool wait time, PostgreSQL CPU/memory, locks, and active connections.
 
-Controllers and their pod templates carry `chronoverse.io/datastore-client` plus specific `postgres-client`, `redis-client`, `kafka-client`, `clickhouse-client`, and `meilisearch-client` dependency labels for operational inventory. Query them with commands such as `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`. Every datastore-client Deployment uses `maxSurge: 0`, preventing a rollout from creating an extra wave of database, cache, search, or broker clients. This does not replace datastore readiness and application retry behavior during a cold cluster start.
+Controllers and their pod templates carry `chronoverse.io/datastore-client` plus specific `postgres-client`, `redis-client`, `kafka-client`, `clickhouse-client`, and `meilisearch-client` dependency labels for operational inventory. Query them with commands such as `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`. Every datastore-client Deployment uses `maxSurge: 0`, preventing a rollout from creating an extra wave of datastore clients. This does not replace datastore readiness and application retry behavior during a cold cluster start.
 
 ## Startup behavior
 
@@ -1677,11 +1685,13 @@ Startup requires persistent, distinct values for `CRYPTO_SECRET` and `SERVER_CSR
 
 Servers use `GRPC_HOST`, `GRPC_PORT`, request timeout, and `GRPC_TLS_*`. Clients use per-service host, port, TLS enablement, CA path, plus shared client certificate and key paths.
 
+The analytics service uses `GRPC_REQUEST_TIMEOUT` (default 500 ms) for each analytics RPC. The HTTP gateway returns `504 Gateway Timeout` when the RPC reports that its deadline expired.
+
 ## Infrastructure
 
 - PostgreSQL: PgBouncer endpoint, connection pool, dial timeout, dedicated application credentials, database, and TLS paths. Kubernetes defines explicit per-workload `POSTGRES_MIN_CONNS`/`POSTGRES_MAX_CONNS` budgets; zero is a valid idle minimum.
 - ClickHouse: hosts, credentials, pool limits, dial timeout, and TLS paths.
-- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
+- Redis: pool sizes, timeouts, memory policy, password, database, and TLS paths for Redis clients. The users and workflows services use PostgreSQL directly. Production compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` for every Redis client process so startup order cannot reset the server to the lower code default.
 - Meilisearch: URI, master key, and TLS client settings.
 - Kafka: brokers, consumer group, topic partitions, replication factor, and TLS paths.
 
@@ -2188,6 +2198,7 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/UserAnalytics'}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+        '504': {$ref: '#/components/responses/AnalyticsTimeout'}
   /analytics/{workflow_id}:
     get:
       operationId: getWorkflowAnalytics
@@ -2201,6 +2212,7 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowAnalytics'}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+        '504': {$ref: '#/components/responses/AnalyticsTimeout'}
 components:
   securitySchemes:
     cookieSession:
@@ -2227,6 +2239,9 @@ components:
         minLength: 1
         x-maxBytes: 255
   responses:
+    AnalyticsTimeout:
+      description: The analytics request exceeded its deadline. The analytics service's `GRPC_REQUEST_TIMEOUT` sets its per-request budget and defaults to 500 ms.
+      content: {text/plain: {schema: {type: string}}}
     BadRequest: {description: Invalid input or missing required idempotency key}
     Conflict: {description: Idempotency key was already used with a different logical request}
     Unauthorized: {description: Missing or invalid session}
@@ -2449,6 +2464,11 @@ Workflow CRUD, build status, list filters, failure counters, termination, deleti
 
 Scheduling, reads, status updates, lease claim and renewal, container attachment, completion, failure, cancellation, retry release, expired-lease recovery, logs, search, live streaming, and job listing.
 
+`ScheduleJob` accepts `MANUAL` from a user JWT for a workflow owned by the token subject.
+`AUTOMATIC` requires an internal admin JWT valid for jobs-service and a positive
+`workflow_generation`. A user JWT requesting `AUTOMATIC` receives `PermissionDenied`,
+even when the caller owns the workflow.
+
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
 ### Container cleanup RPCs
@@ -2497,7 +2517,8 @@ Notification creation, listing, and marking records read.
 
 ## Analytics service
 
-User and workflow aggregate reads.
+User and workflow aggregate reads. Each RPC uses the analytics service's
+`GRPC_REQUEST_TIMEOUT`, which defaults to 500 ms.
 
 ## Transport security
 
@@ -2575,7 +2596,7 @@ Stores retained job logs optimized for high-volume ordered reads. It is not the 
 
 ## Redis
 
-Stores HTTP sessions, cached service reads, live log pub/sub state, and runtime-node-scoped image-pull locks.
+Stores HTTP sessions and supports live log pub/sub, workflow lifecycle locks, and runtime-node-scoped image pull locks. Workflow and user reads use PostgreSQL directly.
 
 ## Meilisearch
 

@@ -4,7 +4,7 @@ Chronoverse creates jobs automatically from workflow intervals or immediately th
 
 ## Automatic runs
 
-The scheduling worker polls for due workflows, validates generation and build state, and creates a job with trigger `AUTOMATIC`.
+The workflow worker calls jobs-service with an internal admin JWT to create jobs with trigger `AUTOMATIC`. The scheduling worker dispatches due jobs after checking workflow generation and build state.
 
 ## Manual runs
 

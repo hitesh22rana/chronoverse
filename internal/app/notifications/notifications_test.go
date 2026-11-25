@@ -254,6 +254,9 @@ func TestMarkNotificationsRead(t *testing.T) {
 
 	svc := notificationsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameNotifications)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(notifications.New(t.Context(), &notifications.Config{
 		Deadline: 500 * time.Millisecond,
@@ -266,11 +269,12 @@ func TestMarkNotificationsRead(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		args  args
-		mock  func(*notificationspb.MarkNotificationsReadRequest)
-		res   *notificationspb.MarkNotificationsReadResponse
-		isErr bool
+		name            string
+		args            args
+		mock            func(*notificationspb.MarkNotificationsReadRequest)
+		res             *notificationspb.MarkNotificationsReadResponse
+		isErr           bool
+		wantOwnerDenial bool
 	}{
 		{
 			name: "success",
@@ -283,11 +287,11 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
@@ -295,6 +299,20 @@ func TestMarkNotificationsRead(t *testing.T) {
 			},
 			res:   &notificationspb.MarkNotificationsReadResponse{},
 			isErr: false,
+		},
+		{
+			name: "error: request owner differs from token subject",
+			args: args{
+				getCtx: func() context.Context {
+					return auth.WithAuthorizationTokenInMetadata(t.Context(), "token")
+				},
+				req: &notificationspb.MarkNotificationsReadRequest{UserId: "00000000-0000-4000-8000-000000000322"},
+			},
+			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
+				_auth.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameNotifications).Return(principal, &jwt.Token{}, nil)
+			},
+			isErr:           true,
+			wantOwnerDenial: true,
 		},
 		{
 			name: "error: invalid token",
@@ -307,7 +325,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
@@ -331,11 +349,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().MarkNotificationsRead(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(status.Error(codes.InvalidArgument, "user_id and ids are required fields"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -350,7 +364,7 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock:  func(_ *notificationspb.MarkNotificationsReadRequest) {},
@@ -368,11 +382,11 @@ func TestMarkNotificationsRead(t *testing.T) {
 				},
 				req: &notificationspb.MarkNotificationsReadRequest{
 					Ids:    []string{"notification-id-1", "notification-id-2"},
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 				},
 			},
 			mock: func(_ *notificationspb.MarkNotificationsReadRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().MarkNotificationsRead(
 					gomock.Any(),
 					gomock.Any(),
@@ -389,6 +403,9 @@ func TestMarkNotificationsRead(t *testing.T) {
 		tt.mock(tt.args.req)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := client.MarkNotificationsRead(tt.args.getCtx(), tt.args.req)
+			if tt.wantOwnerDenial && status.Code(err) != codes.PermissionDenied {
+				t.Errorf("authorization result = %v, want PermissionDenied", err)
+			}
 			if (err != nil) != tt.isErr {
 				t.Errorf("MarkNotificationsRead() error = %v, wantErr %v", err, tt.isErr)
 				return
@@ -409,6 +426,9 @@ func TestListNotifications(t *testing.T) {
 
 	svc := notificationsmock.NewMockService(ctrl)
 	_auth := authmock.NewMockIAuth(ctrl)
+	principal := auth.WithRole(t.Context(), auth.RoleUser.String())
+	principal = auth.WithAudience(principal, auth.ServiceNameNotifications)
+	principal = auth.WithSubject(principal, "00000000-0000-4000-8000-000000000321")
 
 	client, _close := initClient(notifications.New(t.Context(), &notifications.Config{
 		Deadline: 500 * time.Millisecond,
@@ -437,12 +457,12 @@ func TestListNotifications(t *testing.T) {
 					)
 				},
 				req: &notificationspb.ListNotificationsRequest{
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListNotifications(
 					gomock.Any(),
 					gomock.Any(),
@@ -500,7 +520,7 @@ func TestListNotifications(t *testing.T) {
 					)
 				},
 				req: &notificationspb.ListNotificationsRequest{
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
@@ -525,11 +545,7 @@ func TestListNotifications(t *testing.T) {
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
-				svc.EXPECT().ListNotifications(
-					gomock.Any(),
-					gomock.Any(),
-				).Return(nil, status.Error(codes.InvalidArgument, "user_id is required field"))
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 			},
 			res:   nil,
 			isErr: true,
@@ -543,7 +559,7 @@ func TestListNotifications(t *testing.T) {
 					)
 				},
 				req: &notificationspb.ListNotificationsRequest{
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
@@ -561,12 +577,12 @@ func TestListNotifications(t *testing.T) {
 					)
 				},
 				req: &notificationspb.ListNotificationsRequest{
-					UserId: "user-id",
+					UserId: "00000000-0000-4000-8000-000000000321",
 					Cursor: "",
 				},
 			},
 			mock: func(_ *notificationspb.ListNotificationsRequest) {
-				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(auth.WithAudience(auth.WithRole(context.Background(), string(auth.RoleUser)), "users-service"), &jwt.Token{}, nil)
+				_auth.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).Return(principal, &jwt.Token{}, nil)
 				svc.EXPECT().ListNotifications(
 					gomock.Any(),
 					gomock.Any(),

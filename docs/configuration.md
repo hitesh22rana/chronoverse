@@ -152,6 +152,10 @@ Each gRPC service uses:
 - `GRPC_TLS_ENABLED`, `GRPC_TLS_CA_FILE`, `GRPC_TLS_CERT_FILE`,
   `GRPC_TLS_KEY_FILE`
 
+The analytics service uses `GRPC_REQUEST_TIMEOUT` (default 500 ms) for
+each analytics RPC. The HTTP gateway returns `504 Gateway Timeout` when the
+RPC reports that its deadline expired.
+
 Service clients use:
 
 - `USERS_SERVICE_HOST`, `USERS_SERVICE_PORT`, `USERS_SERVICE_TLS_ENABLED`,
@@ -217,24 +221,20 @@ Redis socket I/O uses the earlier of the caller context deadline and the configu
 `REDIS_READ_TIMEOUT` or `REDIS_WRITE_TIMEOUT`. Without a caller deadline, the
 configured socket timeout applies.
 
-Redis is used for sessions, cached reads, and live log stream state. Production
-compose sets `REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis
-client process so one late-starting service does not reset Redis back to the
-code default of `100mb`.
+Redis stores HTTP sessions and supports live log pub/sub, workflow lifecycle
+locks, and runtime-node-scoped image pull locks. The users and workflows services
+use PostgreSQL directly. Production Compose sets
+`REDIS_MAX_MEMORY=${REDIS_MAX_MEMORY:-768mb}` on every Redis client process so
+late-starting services preserve the deployment limit instead of the code default
+of `100mb`.
 
-The default eviction policy is `volatile-ttl`: under memory pressure the
-shortest-TTL keys (locks, 30m caches) are sacrificed before the 2h sessions.
-Sessions live a fixed 2h from login, aligned with the browser cookie — there
-is no sliding refresh, deliberately: it would double auth-path Redis
-operations for zero user-visible gain (the cookie still ends the browser
-session) while letting retained tokens live unbounded. Near-expiry sessions
-are earlier eviction candidates, and heavier pressure can reach fresher ones
-too; no worst-case bound is guaranteed — the pressure test covers one
-representative scenario.
-Every write path carries a TTL (`Store.Set`/`SetNX` reject non-positive
-expirations), so there is always a sacrificial key. Watch the `redis.evicted_keys`
-counter (exported over OTEL): sustained growth means pressure is eating cache,
-growth approaching session lifetimes means `REDIS_MAX_MEMORY` is too small.
+Under memory pressure the default Redis policy, [`volatile-ttl`](https://redis.io/docs/latest/develop/reference/eviction/),
+favors evicting keys with a short remaining lifetime. HTTP sessions have a
+fixed two-hour lifetime by default, with no sliding refresh. Redis can evict
+session and lock keys before their TTLs expire. Session eviction requires the
+user to sign in again. Lock eviction can interrupt worker coordination, so
+monitor increases in the cumulative `redis.evicted_keys` metric and check
+memory headroom against `REDIS_MAX_MEMORY`.
 
 ### Workload isolation
 

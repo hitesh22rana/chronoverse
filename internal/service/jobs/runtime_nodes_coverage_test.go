@@ -37,7 +37,7 @@ func TestListReadyRuntimeNodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := jobsmock.NewMockRepository(ctrl)
-			svc := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+			svc := jobs.New(validator.New(), repo)
 			ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), contextKey{}, "runtime-selection"), time.Minute)
 			defer cancel()
 			if status.Code(tc.err) == codes.Canceled {
@@ -89,7 +89,7 @@ func TestGetReadyRuntimeNode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			repo := jobsmock.NewMockRepository(ctrl)
-			svc := jobs.New(validator.New(), repo, jobsmock.NewMockCache(ctrl))
+			svc := jobs.New(validator.New(), repo)
 			ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), contextKey{}, "single-runtime-selection"), time.Minute)
 			defer cancel()
 			if status.Code(tc.err) == codes.Canceled {

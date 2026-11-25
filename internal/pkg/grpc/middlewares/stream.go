@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
@@ -9,6 +10,8 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	reflectionalphapb "google.golang.org/grpc/reflection/grpc_reflection_v1alpha"
 	"google.golang.org/grpc/status"
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -25,6 +28,49 @@ type WrappedServerStream struct {
 // Context returns the context of the wrapped stream.
 func (w *WrappedServerStream) Context() context.Context {
 	return w.Ctx
+}
+
+// AuthenticatedStreamInterceptor authenticates reflection and explicitly listed
+// application methods. Application handlers own any request-specific authorization.
+func AuthenticatedStreamInterceptor(
+	logger *zap.Logger,
+	tokens auth.IAuth,
+	audience string,
+	applicationMethods ...string,
+) grpc.StreamServerInterceptor {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if isHealthCheckRoute(info.FullMethod) {
+			return handler(srv, stream)
+		}
+
+		authToken, err := auth.ExtractAuthorizationTokenFromMetadata(stream.Context())
+		if err != nil {
+			LogAuthenticationFailure(stream.Context(), logger, err)
+			return err
+		}
+
+		ctx := auth.WithAuthorizationToken(stream.Context(), authToken)
+		newCtx, _, err := tokens.ValidateToken(ctx, audience)
+		if err != nil {
+			LogAuthenticationFailure(ctx, logger, err)
+			return err
+		}
+
+		switch info.FullMethod {
+		case reflectionpb.ServerReflection_ServerReflectionInfo_FullMethodName,
+			reflectionalphapb.ServerReflection_ServerReflectionInfo_FullMethodName:
+			// Reflection exposes descriptors and has no owner-scoped request.
+		default:
+			if !slices.Contains(applicationMethods, info.FullMethod) {
+				return status.Error(codes.PermissionDenied, "stream ownership policy is required")
+			}
+		}
+
+		return handler(srv, &WrappedServerStream{
+			ServerStream: stream,
+			Ctx:          newCtx,
+		})
+	}
 }
 
 // StreamAudienceInterceptor propagates the JWT-validated audience from

@@ -151,14 +151,14 @@ func TestIntegrationCreateWorkflowCanonicalReplayAndConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.ID == "" || created.BuildHash.Valid || created.IdempotencyReplay {
+	if created.ID == "" || created.BuildHash.Valid {
 		t.Fatalf("created=%+v", created)
 	}
 	replay, err := repo.CreateWorkflow(ctx, strings.ToUpper(userID), "heartbeat", `{ "timeout": "10s", "endpoint": "https://example.com" }`, "HEARTBEAT", 60, 3, true, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replay.ID != created.ID || !replay.IdempotencyReplay || !replay.CreatedAt.Equal(created.CreatedAt) {
+	if replay.ID != created.ID || !replay.CreatedAt.Equal(created.CreatedAt) {
 		t.Fatalf("replay=%+v, created=%+v", replay, created)
 	}
 	assertCreateEffects(ctx, t, repo, userID, 1, 1, 1)
@@ -205,7 +205,7 @@ func TestIntegrationCreateWorkflowInterruptedInsertRollsBack(t *testing.T) {
 			}
 			assertCreateEffects(ctx, t, repo, userID, 0, 0, 0)
 			created, err := repo.CreateWorkflow(ctx, userID, "interrupted-create", `{"image":"alpine:3.22.2"}`, "CONTAINER", 60, 3, true, key)
-			if err != nil || created == nil || created.IdempotencyReplay {
+			if err != nil || created == nil {
 				t.Fatalf("retry=%+v err=%v", created, err)
 			}
 			assertCreateEffects(ctx, t, repo, userID, 1, 1, 1)

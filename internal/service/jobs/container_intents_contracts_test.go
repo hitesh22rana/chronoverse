@@ -72,9 +72,9 @@ func validIntentServiceRequest() *jobspb.ContainerIntentCommand {
 //nolint:gocyclo // One public RPC matrix preserves authority evidence and repository failure semantics.
 func TestContainerIntentServicePreservesAuthorityAndRepositoryFailures(t *testing.T) {
 	for _, failure := range []bool{false, true} {
-		for index := range intentServiceCalls(jobsservice.New(validator.New(), nil, nil)) {
+		for index := range intentServiceCalls(jobsservice.New(validator.New(), nil)) {
 			repo := jobsmock.NewMockRepository(gomock.NewController(t))
-			s := jobsservice.New(validator.New(), repo, nil)
+			s := jobsservice.New(validator.New(), repo)
 			call := intentServiceCalls(s)[index]
 			name := call.name + "/success"
 			if failure {
@@ -186,7 +186,7 @@ func TestContainerIntentServiceRejectsMalformedCommandsBeforeStorage(t *testing.
 		{"missing repair reason", jobsmodel.ContainerIntentOperationRedrive, func(r *jobspb.ContainerIntentCommand) { r.Reason = " " }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
+			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)))
 			ctx := auth.WithSubject(auth.WithRole(t.Context(), auth.RoleAdmin.String()), "internal/executor")
 			req := validIntentServiceRequest()
 			tc.change(req)
@@ -205,7 +205,7 @@ func TestContainerIntentServiceRejectsMalformedCommandsBeforeStorage(t *testing.
 		"claim", jobsmodel.ContainerIntentOperationList, jobsmodel.ContainerIntentOperationRedrive,
 	} {
 		t.Run(method+"/nil", func(t *testing.T) {
-			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
+			s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)))
 			ctx := auth.WithSubject(auth.WithRole(t.Context(), auth.RoleAdmin.String()), "internal/executor")
 			for _, call := range intentServiceCalls(s) {
 				if call.name == method {
@@ -226,7 +226,7 @@ func TestContainerIntentDiscoveryAndRedriveRequireVerifiedPrincipal(t *testing.T
 				continue
 			}
 			t.Run(method+"/"+subject, func(t *testing.T) {
-				s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)), nil)
+				s := jobsservice.New(validator.New(), jobsmock.NewMockRepository(gomock.NewController(t)))
 				ctx := auth.WithRole(t.Context(), auth.RoleAdmin.String())
 				if subject != "" {
 					ctx = auth.WithSubject(ctx, subject)

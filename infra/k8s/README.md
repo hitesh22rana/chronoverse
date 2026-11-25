@@ -284,7 +284,7 @@ Workload and pod-template labels describe each datastore dependency:
 
 These labels support inventory queries and datastore-specific policy. Every
 datastore-client Deployment uses `maxSurge: 0` so a rollout does not create an
-extra wave of database, cache, search, or broker clients. The specific labels
+extra wave of datastore clients. The specific labels
 remain available for targeted inspection; for example, list every Kafka-using
 pod with `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`.
 This rollout guard does not replace datastore readiness or application startup

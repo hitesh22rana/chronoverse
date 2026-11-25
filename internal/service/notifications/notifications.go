@@ -5,18 +5,15 @@ package notifications
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 
 	"github.com/go-playground/validator/v10"
 	"go.opentelemetry.io/otel"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	notificationsmodel "github.com/hitesh22rana/chronoverse/internal/model/notifications"
-	cachepkg "github.com/hitesh22rana/chronoverse/internal/pkg/cache"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	svcpkg "github.com/hitesh22rana/chronoverse/internal/pkg/svc"
 	notificationspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/notifications"
@@ -34,7 +31,6 @@ type Service struct {
 	validator *validator.Validate
 	tp        trace.Tracer
 	repo      Repository
-	sf        singleflight.Group
 }
 
 // New creates a new notifications service.
@@ -169,19 +165,7 @@ func (s *Service) ListNotifications(
 		}
 	}
 
-	resultCh := s.sf.DoChan(
-		fmt.Sprintf("notifications:%s:cursor=%s", req.GetUserId(), req.GetCursor()),
-		func() (any, error) {
-			return s.repo.ListNotifications(ctx, req.GetUserId(), cursor)
-		},
-	)
-
-	res, err = cachepkg.WaitSingleflightResult[*notificationsmodel.ListNotificationsResponse](ctx, resultCh)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	return s.repo.ListNotifications(ctx, req.GetUserId(), cursor)
 }
 
 func decodeCursor(token string) (string, error) {

@@ -1,16 +1,18 @@
-//nolint:testpackage // Exercises search orchestration with a real status lookup.
+//nolint:testpackage // Exercises search orchestration with a real job scope check.
 package jobs
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
 	"google.golang.org/grpc/codes"
@@ -18,9 +20,11 @@ import (
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
+	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
-//nolint:gocyclo // Keeps request, pagination and status assertions beside the scenario.
+//nolint:gocyclo // Keeps request, pagination and failure assertions beside the scenario.
 func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 	ctx := context.Background()
 	pg := testkit.Postgres(t)
@@ -39,13 +43,11 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 		response             string
 		httpStatus           int
 		missingJob           bool
-		completedAgo         time.Duration
 		code                 codes.Code
-		wantStatus           string
 		wantMore             bool
 	}{
 		{
-			name: "descending stdout page", stream: 1, wantMore: true, wantStatus: "PENDING",
+			name: "descending stdout page", stream: 1, wantMore: true,
 			response: fmt.Sprintf(`{"hits":[
                 {"id":"a","event_id":"event-a","sequence_num":3,"stream":"stdout","message":"three","timestamp":%q},
                 {"id":"b","event_id":"event-b","sequence_num":2,"stream":"stdout","message":"two"},
@@ -53,28 +55,18 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
             ]}`, timestamp),
 		},
 		{
-			name: "ascending stderr cursor highlighted", stream: 2, ascending: true, highlight: true, wantStatus: "PENDING",
+			name: "ascending stderr cursor highlighted", stream: 2, ascending: true, highlight: true,
 			cursor: encodeJobLogsCursor(jobLogsCursor{SequenceNum: 5, Stream: "stderr", EventID: "cursor-doc"}),
 			response: `{"hits":[
                 {"id":"f","event_id":"event-f","sequence_num":6,"stream":"stderr","message":"raw","_formatted":{"message":"marked"}}
             ]}`,
 		},
-		{name: "recent completion buffer", response: `{"hits":[]}`, completedAgo: 10 * time.Second, wantStatus: "RUNNING"},
-		{name: "settled completion", response: `{"hits":[]}`, completedAgo: 2 * time.Minute, wantStatus: "COMPLETED"},
 		{name: "search failure", response: `{"message":"search failed","code":"internal","type":"internal","link":""}`, httpStatus: http.StatusBadRequest, code: codes.Internal},
 		{name: "malformed hit", response: `{"hits":[{"id":"bad","timestamp":"invalid"}]}`, code: codes.Internal},
 		{name: "missing owned job", response: `{"hits":[]}`, missingJob: true, code: codes.NotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := pg.Exec(ctx, `UPDATE jobs SET status='PENDING', completed_at=NULL WHERE id=$1`, jobID); err != nil {
-				t.Fatal(err)
-			}
-			if tc.completedAgo != 0 {
-				if _, err := pg.Exec(ctx, `UPDATE jobs SET status='COMPLETED', completed_at=$2 WHERE id=$1`, jobID, time.Now().UTC().Add(-tc.completedAgo)); err != nil {
-					t.Fatal(err)
-				}
-			}
 			requests := make(chan map[string]any, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/indexes/job_logs/search" {
@@ -107,7 +99,7 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 			if tc.ascending {
 				sortOrder = jobsmodel.JobLogsSortOrderAsc
 			}
-			result, jobStatus, err := repo.SearchJobLogs(
+			result, err := repo.SearchJobLogs(
 				ctx, searchID, workflowID, userID, tc.cursor,
 				&jobsmodel.SearchJobLogsFilters{Stream: tc.stream, Message: "needle"},
 				jobsmodel.SearchJobLogsOptions{SortOrder: sortOrder, DisableHighlight: !tc.highlight},
@@ -116,13 +108,10 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 				t.Fatalf("error=%v, want %v", err, tc.code)
 			}
 			if tc.code != codes.OK {
-				if result != nil || jobStatus != "" {
-					t.Fatalf("failure exposed result=%v status=%q", result, jobStatus)
+				if result != nil {
+					t.Fatalf("failure exposed result=%v", result)
 				}
 				return
-			}
-			if jobStatus != tc.wantStatus {
-				t.Fatalf("status=%q, want %q", jobStatus, tc.wantStatus)
 			}
 			if (result.Cursor != "") != tc.wantMore {
 				t.Fatalf("cursor=%q, want more=%v", result.Cursor, tc.wantMore)
@@ -179,5 +168,45 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestIntegrationRetainedLogSearchPreservesRequestDeadline(t *testing.T) {
+	repo := newTestRepository(t)
+	userID, workflowID := seedUserWorkflow(t.Context(), t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(t.Context(), workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "search-timeout-"+uuid.NewString(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if _, readErr := io.Copy(io.Discard, r.Body); readErr != nil {
+			t.Errorf("read search request: %v", readErr)
+			return
+		}
+		started <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+	repo.ms = meilisearch.New(server.URL)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	result, err := jobssvc.New(validator.New(), repo).SearchJobLogs(ctx, &jobspb.SearchJobLogsRequest{
+		Id: jobID, WorkflowId: workflowID, UserId: userID,
+		Filters: &jobspb.SearchJobLogsFilters{Stream: jobspb.LogStream_LOG_STREAM_ALL, Message: "needle"},
+	})
+	select {
+	case <-started:
+	default:
+		t.Fatalf("search did not reach the backend: %v", err)
+	}
+	if result != nil || status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("search result=%v error=%v, want DeadlineExceeded", result, err)
 	}
 }

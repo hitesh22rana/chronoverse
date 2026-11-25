@@ -121,7 +121,7 @@ Client pools are budgeted per workload rather than inheriting ten connections pe
 
 PgBouncer and PostgreSQL limits are safety boundaries, not a throughput guarantee. Before raising replicas, pool sizes, or partitions, load-test representative transaction duration, pool wait time, PostgreSQL CPU/memory, locks, and active connections.
 
-Controllers and their pod templates carry `chronoverse.io/datastore-client` plus specific `postgres-client`, `redis-client`, `kafka-client`, `clickhouse-client`, and `meilisearch-client` dependency labels for operational inventory. Query them with commands such as `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`. Every datastore-client Deployment uses `maxSurge: 0`, preventing a rollout from creating an extra wave of database, cache, search, or broker clients. This does not replace datastore readiness and application retry behavior during a cold cluster start.
+Controllers and their pod templates carry `chronoverse.io/datastore-client` plus specific `postgres-client`, `redis-client`, `kafka-client`, `clickhouse-client`, and `meilisearch-client` dependency labels for operational inventory. Query them with commands such as `kubectl -n chronoverse get pods -l chronoverse.io/kafka-client=true`. Every datastore-client Deployment uses `maxSurge: 0`, preventing a rollout from creating an extra wave of datastore clients. This does not replace datastore readiness and application retry behavior during a cold cluster start.
 
 ## Startup behavior
 

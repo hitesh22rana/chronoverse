@@ -10,13 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	jobsmock "github.com/hitesh22rana/chronoverse/internal/app/jobs/mock"
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
+	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	grpcmiddlewares "github.com/hitesh22rana/chronoverse/internal/pkg/grpc/middlewares"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
@@ -33,14 +38,15 @@ func (s contractLogServerStream) Send(log *jobspb.Log) error { return s.send(log
 func TestStreamHandlerReturnsDeadlineAndSendErrors(t *testing.T) {
 	t.Parallel()
 	request := &jobspb.StreamJobLogsRequest{Id: "job", WorkflowId: "workflow", UserId: "user"}
+	authorized := auth.WithRole(t.Context(), auth.RoleAdmin.String())
 	for _, deadline := range []bool{false, true} {
 		ctrl := gomock.NewController(t)
 		service := jobsmock.NewMockService(ctrl)
 		app := &Jobs{tp: noop.NewTracerProvider().Tracer("contract"), svc: service}
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancel(authorized)
 		if deadline {
 			cancel()
-			ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			ctx, cancel = context.WithDeadline(authorized, time.Now().Add(-time.Second))
 		}
 		cancel()
 		service.EXPECT().StreamJobLogs(gomock.Any(), request).Return(make(chan *jobsmodel.JobLog), nil)
@@ -61,7 +67,7 @@ func TestStreamHandlerReturnsDeadlineAndSendErrors(t *testing.T) {
 	service.EXPECT().StreamJobLogs(gomock.Any(), request).Return(logs, nil)
 	failed := errors.New("transport send failed")
 	calls := 0
-	err := app.StreamJobLogs(request, contractLogServerStream{ctx: t.Context(), send: func(log *jobspb.Log) error {
+	err := app.StreamJobLogs(request, contractLogServerStream{ctx: authorized, send: func(log *jobspb.Log) error {
 		calls++
 		require.True(t, proto.Equal(&jobspb.Log{EventId: "event", Message: "line", SequenceNum: 9, Stream: "stderr", Timestamp: "2026-11-06T01:02:03Z"}, log))
 		return failed
@@ -76,4 +82,26 @@ func TestInternalJobPolicyRequiresQualifiedMethod(t *testing.T) {
 		require.False(t, isInternalAPI(method))
 	}
 	require.True(t, isInternalAPI("/jobs.Service/CancelJob"))
+}
+
+func TestStreamAuthenticationRejectsMethodWithoutOwnershipPolicy(t *testing.T) {
+	t.Parallel()
+	tokens := authmock.NewMockIAuth(gomock.NewController(t))
+	tokens.EXPECT().ValidateToken(gomock.Any(), auth.ServiceNameJobs).
+		Return(auth.WithRole(t.Context(), auth.RoleUser.String()), nil, nil)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer token"))
+	app := &Jobs{auth: tokens}
+	err := grpcmiddlewares.AuthenticatedStreamInterceptor(
+		zap.NewNop(), tokens, auth.ServiceNameJobs,
+		jobspb.JobsService_StreamJobLogs_FullMethodName,
+	)(
+		app,
+		contractLogServerStream{ctx: ctx},
+		&grpc.StreamServerInfo{FullMethod: "/jobs.JobsService/UnclassifiedStream", IsServerStream: true},
+		func(any, grpc.ServerStream) error {
+			t.Fatal("stream without an ownership policy reached its handler")
+			return nil
+		},
+	)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }

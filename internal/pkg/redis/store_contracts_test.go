@@ -4,7 +4,6 @@ package redis
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -18,8 +17,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestIntegrationDeleteByPattern(t *testing.T) {
-	requirePatternDocker(t)
+func TestIntegrationStoreOperations(t *testing.T) {
+	requireStoreDocker(t)
 	ctx := t.Context()
 	container, err := tcredis.Run(ctx, "redis:8.10.2-alpine3.23")
 	if err != nil {
@@ -42,12 +41,8 @@ func TestIntegrationDeleteByPattern(t *testing.T) {
 	})
 	store := &Store{client: admin}
 
-	t.Run("multiple scan pages preserve other keys", func(t *testing.T) {
-		checkPatternPages(ctx, t, admin, store)
-	})
-
-	t.Run("preserved keys retain store contracts", func(t *testing.T) {
-		checkPreservedKeyContracts(ctx, t, admin, store)
+	t.Run("value storage and deletion", func(t *testing.T) {
+		checkStoreValueContracts(ctx, t, admin, store)
 	})
 	t.Run("conditional writes preserve first value and TTL", func(t *testing.T) {
 		checkConditionalWriteContracts(ctx, t, admin, store)
@@ -56,58 +51,13 @@ func TestIntegrationDeleteByPattern(t *testing.T) {
 		checkPipelineContracts(ctx, t, admin, store)
 	})
 	t.Run("log channel preserves messages", func(t *testing.T) {
-		checkPatternLogChannel(ctx, t, store)
+		checkStoreLogChannel(ctx, t, store)
 	})
-
-	t.Run("canceled context", func(t *testing.T) {
-		canceled, cancel := context.WithCancel(ctx)
-		cancel()
-		assertPatternFailure(canceled, t, store, "context canceled", "failed to scan keys")
-	})
-	t.Run("expired deadline", func(t *testing.T) {
-		expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
-		defer cancel()
-		assertPatternFailure(expired, t, store, "context deadline exceeded", "failed to scan keys")
-	})
-
-	for _, denied := range []struct{ name, permission, operation string }{
-		{"scan denied", "-scan", "failed to scan keys"},
-		{"pipeline delete denied", "-del", "failed to delete keys"},
-	} {
-		t.Run(denied.name, func(t *testing.T) {
-			username := strings.ReplaceAll(denied.name, " ", "-")
-			if err := admin.Do(ctx, "ACL", "SETUSER", username, "on", ">test-password", "~*", "+@all", denied.permission).Err(); err != nil {
-				t.Fatal(err)
-			}
-			client := goredis.NewClient(&goredis.Options{Addr: address, Username: username, Password: "test-password", MaxRetries: -1})
-			t.Cleanup(func() {
-				if err := client.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			key := "denied:" + username
-			if err := admin.Set(ctx, key, "preserved", time.Hour).Err(); err != nil {
-				t.Fatal(err)
-			}
-			assertPatternFailure(ctx, t, &Store{client: client}, "NOPERM", denied.operation)
-			if value, err := admin.Get(ctx, key).Result(); err != nil || value != "preserved" {
-				t.Fatalf("failed operation changed key: value=%q error=%v", value, err)
-			}
-		})
-	}
 }
 
-func assertPatternFailure(ctx context.Context, t *testing.T, store *Store, cause, operation string) {
-	t.Helper()
-	deleted, err := store.DeleteByPattern(ctx, "denied:*")
-	if deleted != 0 || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), cause) || !strings.Contains(err.Error(), operation) {
-		t.Fatalf("DeleteByPattern = %d, %v; want zero/Internal with %q and %q", deleted, err, cause, operation)
-	}
-}
-
-// requirePatternDocker mirrors testkit.RequireDocker: testkit imports this
+// requireStoreDocker mirrors testkit.RequireDocker: testkit imports this
 // package, so an in-package test file cannot import it without a cycle.
-func requirePatternDocker(t *testing.T) {
+func requireStoreDocker(t *testing.T) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("integration test")
@@ -135,45 +85,8 @@ func requirePatternDocker(t *testing.T) {
 	}
 }
 
-func checkPatternPages(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
+func checkStoreValueContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
 	t.Helper()
-	pipe := admin.Pipeline()
-	const matched = 1400
-	for i := range matched {
-		pipe.Set(ctx, fmt.Sprintf("cache:tenant-a:%04d", i), "cached", time.Hour)
-	}
-	for i := range 300 {
-		pipe.Set(ctx, fmt.Sprintf("cache:tenant-b:%04d", i), "retained", time.Hour)
-	}
-	if _, err := pipe.Exec(ctx); err != nil {
-		t.Fatal(err)
-	}
-	_, cursor, err := admin.Scan(ctx, 0, "cache:tenant-a:*", 100).Result()
-	if err != nil || cursor == 0 {
-		t.Fatalf("fixture must require multiple SCAN pages: cursor=%d error=%v", cursor, err)
-	}
-	deleted, err := store.DeleteByPattern(ctx, "cache:tenant-a:*")
-	if err != nil || deleted != matched {
-		t.Fatalf("DeleteByPattern = %d, %v; want %d, nil", deleted, err, matched)
-	}
-	keys, err := admin.Keys(ctx, "cache:tenant-a:*").Result()
-	if err != nil || len(keys) != 0 {
-		t.Fatalf("matching keys remain: %v, %v", keys, err)
-	}
-	keys, err = admin.Keys(ctx, "cache:tenant-b:*").Result()
-	if err != nil || len(keys) != 300 {
-		t.Fatalf("retained keys = %d, %v; want 300", len(keys), err)
-	}
-	checkPatternValues(ctx, t, admin, keys)
-	deleted, err = store.DeleteByPattern(ctx, "cache:tenant-a:*")
-	if err != nil || deleted != 0 {
-		t.Fatalf("repeat deletion = %d, %v; want 0, nil", deleted, err)
-	}
-}
-
-func checkPreservedKeyContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
-	t.Helper()
-	// Own namespace: the pagination fixture asserts exact cache:tenant-b:* counts.
 	const key = "preserved:contract"
 	if err := store.Set(ctx, key, "preserved", time.Hour); err != nil {
 		t.Fatal(err)
@@ -199,10 +112,10 @@ func checkPreservedKeyContracts(ctx context.Context, t *testing.T, admin *goredi
 	}
 }
 
-func checkPatternLogChannel(ctx context.Context, t *testing.T, store *Store) {
+func checkStoreLogChannel(ctx context.Context, t *testing.T, store *Store) {
 	t.Helper()
-	channel := GetJobLogsChannel("pattern-invalidation")
-	if channel != "job_logs:pattern-invalidation" {
+	channel := GetJobLogsChannel("store-contract")
+	if channel != "job_logs:store-contract" {
 		t.Fatalf("channel = %q", channel)
 	}
 	pubsub := store.Subscribe(ctx, channel)
@@ -228,16 +141,6 @@ func checkPatternLogChannel(ctx context.Context, t *testing.T, store *Store) {
 	}
 }
 
-func checkPatternValues(ctx context.Context, t *testing.T, admin *goredis.Client, keys []string) {
-	t.Helper()
-	for _, key := range keys {
-		value, getErr := admin.Get(ctx, key).Result()
-		if getErr != nil || value != "retained" {
-			t.Fatalf("preserved %s = %q, %v", key, value, getErr)
-		}
-	}
-}
-
 func TestStoreOperationsAfterClose(t *testing.T) {
 	client := goredis.NewClient(&goredis.Options{Addr: "127.0.0.1:1"})
 	store := &Store{client: client}
@@ -257,12 +160,6 @@ func TestStoreOperationsAfterClose(t *testing.T) {
 			t.Fatalf("Delete = %v; want Internal with closed client", err)
 		}
 	})
-	t.Run("exists", func(t *testing.T) {
-		exists, err := store.Exists(t.Context(), "closed")
-		if exists || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
-			t.Fatalf("Exists = %v, %v", exists, err)
-		}
-	})
 	t.Run("conditional write", func(t *testing.T) {
 		created, err := store.SetNX(t.Context(), "closed", "value", time.Hour)
 		if created || status.Code(err) != codes.Internal || !strings.Contains(err.Error(), "client is closed") {
@@ -280,11 +177,11 @@ func TestStoreOperationsAfterClose(t *testing.T) {
 func checkConditionalWriteContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
 	t.Helper()
 	const key = "conditional:first-writer"
-	assertStoreExists(ctx, t, store, key, false)
+	assertRedisKeyExists(ctx, t, admin, key, false)
 	if created, err := store.SetNX(ctx, key, "first", time.Hour); err != nil || !created {
 		t.Fatalf("first SetNX = %v, %v", created, err)
 	}
-	assertStoreExists(ctx, t, store, key, true)
+	assertRedisKeyExists(ctx, t, admin, key, true)
 	if created, err := store.SetNX(ctx, key, "replacement", time.Minute); err != nil || created {
 		t.Fatalf("contended SetNX = %v, %v", created, err)
 	}
@@ -295,10 +192,10 @@ func checkConditionalWriteContracts(ctx context.Context, t *testing.T, admin *go
 	if ttl, err := admin.PTTL(ctx, key).Result(); err != nil || ttl <= 59*time.Minute || ttl > time.Hour {
 		t.Fatalf("first writer TTL = %v, %v", ttl, err)
 	}
-	if deleted, err := store.DeleteByPattern(ctx, "conditional:*"); err != nil || deleted != 1 {
-		t.Fatalf("conditional cleanup = %d, %v", deleted, err)
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatalf("conditional cleanup: %v", err)
 	}
-	assertStoreExists(ctx, t, store, key, false)
+	assertRedisKeyExists(ctx, t, admin, key, false)
 }
 
 func checkPipelineContracts(ctx context.Context, t *testing.T, admin *goredis.Client, store *Store) {
@@ -346,9 +243,9 @@ func TestSetNXRejectsUnserializableValue(t *testing.T) {
 	}
 }
 
-func assertStoreExists(ctx context.Context, t *testing.T, store *Store, key string, want bool) {
+func assertRedisKeyExists(ctx context.Context, t *testing.T, admin *goredis.Client, key string, want bool) {
 	t.Helper()
-	if exists, err := store.Exists(ctx, key); err != nil || exists != want {
-		t.Fatalf("Exists(%q) = %v, %v; want %v", key, exists, err, want)
+	if count, err := admin.Exists(ctx, key).Result(); err != nil || (count > 0) != want {
+		t.Fatalf("Exists(%q) = %v, %v; want %v", key, count, err, want)
 	}
 }

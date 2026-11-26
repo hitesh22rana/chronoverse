@@ -192,8 +192,8 @@ func assertSSEHeaders(t *testing.T, res *httptest.ResponseRecorder) {
 	if got := res.Header().Get("Content-Type"); got != "text/event-stream" {
 		t.Fatalf("Content-Type = %q, want text/event-stream", got)
 	}
-	if got := res.Header().Get("Cache-Control"); got != "no-cache" {
-		t.Fatalf("Cache-Control = %q, want no-cache", got)
+	if got := res.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 	if got := res.Header().Get("Connection"); got != "keep-alive" {
 		t.Fatalf("Connection = %q, want keep-alive", got)

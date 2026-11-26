@@ -108,120 +108,7 @@ func TestHandleGetJobTerminalReasonSerialization(t *testing.T) {
 	}
 }
 
-func TestHandleGetJobLogsCacheControl(t *testing.T) {
-	tests := []struct {
-		name           string
-		target         string
-		responseCursor string
-		want           string
-	}{
-		{
-			name:           "first page is not cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs",
-			responseCursor: "next-cursor",
-			want:           "no-store",
-		},
-		{
-			name:           "cursor page with another page is cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs?cursor=current-cursor",
-			responseCursor: "next-cursor",
-			want:           "private, max-age=7200",
-		},
-		{
-			name:           "cursor tail page is not cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs?cursor=tail-cursor",
-			responseCursor: "",
-			want:           "no-store",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := &fakeJobsServiceClient{
-				getJobLogsResponse: &jobspb.GetJobLogsResponse{
-					Cursor: tt.responseCursor,
-				},
-			}
-			s := &Server{jobsClient: client}
-
-			req := newJobLogsHandlerRequest(tt.target)
-			res := httptest.NewRecorder()
-			s.handleGetJobLogs(res, req)
-
-			if res.Code != http.StatusOK {
-				t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
-			}
-			if got := res.Header().Get("Cache-Control"); got != tt.want {
-				t.Fatalf("expected Cache-Control %q, got %q", tt.want, got)
-			}
-			if tt.want != "no-store" {
-				if got := res.Header().Get("Vary"); got != "Cookie" {
-					t.Fatalf("expected Vary %q, got %q", "Cookie", got)
-				}
-			}
-		})
-	}
-}
-
-func TestHandleSearchJobLogsCacheControl(t *testing.T) {
-	tests := []struct {
-		name           string
-		target         string
-		responseCursor string
-		want           string
-	}{
-		{
-			name:           "first search page is not cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs/search?q=message",
-			responseCursor: "next-cursor",
-			want:           "no-store",
-		},
-		{
-			name:           "search cursor page with another page is cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs/search?q=message&cursor=current-cursor",
-			responseCursor: "next-cursor",
-			want:           "private, max-age=7200",
-		},
-		{
-			name:           "search cursor tail page is not cached",
-			target:         "/workflows/workflow_id/jobs/job_id/logs/search?q=message&cursor=tail-cursor",
-			responseCursor: "",
-			want:           "no-store",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := &fakeJobsServiceClient{
-				searchJobLogsResponse: &jobspb.GetJobLogsResponse{
-					Cursor: tt.responseCursor,
-				},
-			}
-			s := &Server{jobsClient: client}
-
-			req := newJobLogsHandlerRequest(tt.target)
-			res := httptest.NewRecorder()
-			s.handleSearchJobLogs(res, req)
-
-			if res.Code != http.StatusOK {
-				t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
-			}
-			if got := res.Header().Get("Cache-Control"); got != tt.want {
-				t.Fatalf("expected Cache-Control %q, got %q", tt.want, got)
-			}
-			if tt.want != "no-store" {
-				if got := res.Header().Get("Vary"); got != "Cookie" {
-					t.Fatalf("expected Vary %q, got %q", "Cookie", got)
-				}
-			}
-			if client.searchJobLogsRequest == nil {
-				t.Fatal("expected SearchJobLogs to be called")
-			}
-		})
-	}
-}
-
-func TestHandleDownloadJobLogsRawTextUsesAscendingGetLogs(t *testing.T) {
+func TestHandleDownloadJobLogsUsesAscendingGetLogs(t *testing.T) {
 	client := &fakeJobsServiceClient{
 		getJobResponse: &jobspb.GetJobResponse{Status: "COMPLETED"},
 		getJobLogsResponse: &jobspb.GetJobLogsResponse{
@@ -245,7 +132,7 @@ func TestHandleDownloadJobLogsRawTextUsesAscendingGetLogs(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
-	if got := res.Body.String(); got != "{\"id\":1}\n" {
+	if got := res.Body.String(); !strings.Contains(got, `"message_raw":"{\"id\":1}"`) || !strings.HasSuffix(got, "{\"type\":\"complete\"}\n") {
 		t.Fatalf("unexpected body: %q", got)
 	}
 	if client.getJobLogsRequest == nil {
@@ -282,12 +169,12 @@ func TestHandleDownloadJobLogsAllowsCanceledJobWithLogs(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
 	}
-	if got := res.Body.String(); got != "canceled job log\n" {
+	if got := res.Body.String(); !strings.Contains(got, `"message_raw":"canceled job log"`) {
 		t.Fatalf("unexpected body: %q", got)
 	}
 }
 
-func TestHandleDownloadJobLogsSearchJSONLUsesAscendingSearchWithoutHighlights(t *testing.T) {
+func TestHandleDownloadJobLogsUsesAscendingSearchWithoutHighlights(t *testing.T) {
 	client := &fakeJobsServiceClient{
 		getJobResponse: &jobspb.GetJobResponse{Status: "FAILED"},
 		searchJobLogsResponse: &jobspb.GetJobLogsResponse{
@@ -304,7 +191,7 @@ func TestHandleDownloadJobLogsSearchJSONLUsesAscendingSearchWithoutHighlights(t 
 	}
 	s := &Server{jobsClient: client}
 
-	req := newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id/logs/raw?format=jsonl&q=error&stream=stderr")
+	req := newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id/logs/raw?q=error&stream=stderr")
 	res := httptest.NewRecorder()
 	s.handleDownloadJobLogs(res, req)
 
@@ -328,61 +215,29 @@ func TestHandleDownloadJobLogsSearchJSONLUsesAscendingSearchWithoutHighlights(t 
 	}
 
 	var line map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(res.Body.String())), &line); err != nil {
+	if err := json.Unmarshal([]byte(strings.Split(res.Body.String(), "\n")[0]), &line); err != nil {
 		t.Fatalf("expected valid JSONL object: %v", err)
 	}
 	if line["message_raw"] != `{"id":1}` {
 		t.Fatalf("unexpected message_raw: %v", line["message_raw"])
 	}
-	if _, ok := line["message_json"]; !ok {
-		t.Fatal("expected message_json for parseable JSON message")
+	if line["type"] != "log" {
+		t.Fatalf("unexpected record type: %v", line["type"])
 	}
 }
 
-func TestHandleDownloadJobLogsJSONEscapesFilterControlCharacters(t *testing.T) {
+func TestHandleDownloadJobLogsCompletesEmptyExport(t *testing.T) {
 	client := &fakeJobsServiceClient{
-		getJobResponse:        &jobspb.GetJobResponse{Status: "COMPLETED"},
-		searchJobLogsResponse: &jobspb.GetJobLogsResponse{},
+		getJobResponse:     &jobspb.GetJobResponse{Status: "COMPLETED"},
+		getJobLogsResponse: &jobspb.GetJobLogsResponse{},
 	}
-	s := &Server{jobsClient: client}
-
-	req := newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id/logs/raw?format=json&q=%1F")
-	res := httptest.NewRecorder()
-	s.handleDownloadJobLogs(res, req)
-
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, res.Code)
+	response := httptest.NewRecorder()
+	(&Server{jobsClient: client}).handleDownloadJobLogs(response, newJobLogsHandlerRequest("/download"))
+	if response.Code != http.StatusOK || response.Body.String() != "{\"type\":\"complete\"}\n" {
+		t.Fatalf("empty export status=%d body=%q", response.Code, response.Body.String())
 	}
-
-	var body struct {
-		Filters struct {
-			Query string `json:"q"`
-		} `json:"filters"`
-		Logs []map[string]any `json:"logs"`
-	}
-	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
-		t.Fatalf("expected valid JSON body, got %q: %v", res.Body.String(), err)
-	}
-	if body.Filters.Query != "\x1f" {
-		t.Fatalf("unexpected query: %q", body.Filters.Query)
-	}
-	if len(body.Logs) != 0 {
-		t.Fatalf("expected no logs, got %d", len(body.Logs))
-	}
-}
-
-func TestHandleDownloadJobLogsRejectsInvalidFormat(t *testing.T) {
-	client := &fakeJobsServiceClient{
-		getJobResponse: &jobspb.GetJobResponse{Status: "COMPLETED"},
-	}
-	s := &Server{jobsClient: client}
-
-	req := newJobLogsHandlerRequest("/workflows/workflow_id/jobs/job_id/logs/raw?format=csv")
-	res := httptest.NewRecorder()
-	s.handleDownloadJobLogs(res, req)
-
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, res.Code)
+	if response.Header().Get("Content-Type") != "application/x-ndjson" {
+		t.Fatal("unexpected wire content type")
 	}
 }
 

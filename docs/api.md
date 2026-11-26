@@ -376,24 +376,26 @@ descending sequence order: latest logs first, older logs on later cursor pages.
 
 Query parameters:
 
-- `format`: `txt`, `json`, or `jsonl`. Defaults to `txt`.
 - `stream`: `stdout` or `stderr`. Omit to include all streams.
-- `q`: message search text. When present, matching retained logs are fetched through Meilisearch without search highlight markers.
+- `q`: message search text. Meilisearch supplies matches without highlight markers.
 
-Streams retained logs for terminal jobs: `COMPLETED`, `FAILED`, and `CANCELED`.
-Non-terminal jobs return `400 Bad Request`. Downloads are streamed in ascending
-sequence order so the file reads oldest to newest, even though the dashboard log
-viewer displays latest logs first.
+The gateway sends `Cache-Control: no-store` on authenticated reads, including
+early errors and supported HEAD requests. Downloads require a terminal job
+(`COMPLETED`, `FAILED`, or `CANCELED`). The first page is authorized before
+success headers, and later pages recheck visibility.
 
-Download formats:
+The endpoint sends newline-terminated UTF-8 `application/x-ndjson` records in
+ascending sequence order. A `log` record carries `timestamp`, `sequence_num`,
+`stream`, `event_id`, and `message_raw`. Exactly one final `complete` record
+and clean EOF certify the cursor traversal, including an empty export.
+A late failure may send an `error` record. Reject that record, missing or
+duplicate completion, trailing records, and incomplete lines.
 
-- `txt`: `text/plain`; writes each raw log message on its own line.
-- `json`: `application/json`; streams one JSON envelope containing job metadata, active filters, and a `logs` array.
-- `jsonl`: `application/x-ndjson`; streams one JSON object per log line.
-
-JSON and JSONL log objects include `timestamp`, `sequence_num`, `stream`,
-`event_id`, and `message_raw`. If the log message is valid JSON, `message_json`
-is also included with the parsed JSON value.
+The dashboard saves TXT, JSON, or JSONL after successful completion. TXT appends
+one newline to each raw message. JSON and JSONL save log data without protocol
+records and embed valid JSON messages without changing numeric tokens. The
+dashboard limits both the received NDJSON and the assembled file to 8 MiB.
+Use stream and text filters to narrow larger dashboard exports.
 
 ### Stream Live Logs
 

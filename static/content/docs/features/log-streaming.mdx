@@ -26,7 +26,44 @@ Opening a line link loads older cursor pages until the selected range is availab
 
 ## Raw downloads
 
-`GET .../logs/raw` downloads plain text. Stream and text filters are applied consistently, and search highlights are not rendered into the download.
+Authenticated GET and supported HEAD requests receive `Cache-Control: no-store`,
+including gateway-generated errors.
+
+`GET .../logs/raw` streams typed `application/x-ndjson` in ascending sequence
+order. It accepts stream and text filters and omits search highlights. A
+successful export ends with exactly one newline-terminated `complete` record
+and clean EOF. An empty export still has a completion record. A later failure
+may send an `error` record. Reject errors, trailing records, and truncation.
+Completion certifies this traversal; late logs or index updates can affect a
+later export.
+
+The dashboard assembles TXT, JSON, or JSONL after verifying completion, with a
+limit of 8 MiB each for the received stream and the saved file. Use the filters
+to narrow larger dashboard exports. Direct API clients receive the same NDJSON
+regardless of how they save it. To reconstruct TXT after a successful HTTP
+transfer to `export.ndjson`, preserve each raw message and append one newline:
+
+```python
+import json
+from pathlib import Path
+
+messages = []
+complete = False
+with open("export.ndjson", "rb") as wire:
+    for line in wire:
+        if complete or not line.endswith(b"\n"):
+            raise ValueError("Invalid export record boundary")
+        record = json.loads(line)
+        if record == {"type": "complete"}:
+            complete = True
+        elif record["type"] == "log" and isinstance(record["message_raw"], str):
+            messages.append(record["message_raw"] + "\n")
+        else:
+            raise ValueError("Invalid or failed export")
+if not complete:
+    raise ValueError("Incomplete export")
+Path("logs.txt").write_bytes("".join(messages).encode("utf-8"))
+```
 
 ## Safe rendering
 

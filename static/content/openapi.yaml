@@ -4,6 +4,8 @@ info:
   version: 1.0.0
   description: |
     Public session-authenticated API exposed by the Chronoverse HTTP gateway.
+    The gateway sends `Cache-Control: no-store` on authenticated GET routes
+    and their supported HEAD requests, including session and request errors.
 
     In production the Nginx ingress applies per-client request-rate and connection limits. Login and registration allow 10 requests per minute (burst 5); other routes including `/api/auth/logout`, `/api/auth/validate`, and the server-sent events handshake allow 20 requests per second (burst 40). The events endpoint additionally allows up to 5 concurrent connections per client. Immutable build assets under `/_next/static/` are exempt from request-rate limiting but are still connection-limited. Limits are enforced per ingress replica. Exceeding a limit returns `429`. Request bodies larger than 4 MiB are rejected with `413`.
 servers:
@@ -304,36 +306,51 @@ paths:
   /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
     get:
       operationId: downloadJobLogs
-      summary: Download raw job logs
+      summary: Stream a retained log export
+      description: |
+        The first page is authorized before the success response; each continuation
+        checks current visibility. Only terminal jobs can be exported. A HEAD request
+        performs only the initial checks and returns headers without records.
+        Each line is a JSON record of type log, complete, or error. Accept the
+        export only after exactly one complete record, as the final newline-terminated
+        record, followed by clean EOF. Empty successful exports have only complete.
+        An error record or a truncated response invalidates the entire export.
+        To reconstruct text, write each log record's message_raw followed by a
+        newline, preserving embedded line breaks. Commit the output only after
+        verifying completion and EOF. The dashboard can also assemble JSON and JSONL.
       tags: [Logs]
       security: [{cookieSession: []}]
       parameters:
         - {$ref: '#/components/parameters/WorkflowId'}
         - {$ref: '#/components/parameters/JobId'}
-        - name: format
-          in: query
-          description: Download encoding. Defaults to plain text.
-          schema: {type: string, enum: [txt, json, jsonl], default: txt}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
         - {name: q, in: query, schema: {type: string}, description: Optional safe text filter}
       responses:
         '200':
-          description: Log download matching the requested filters, streamed in ascending sequence order
+          description: Typed NDJSON in ascending sequence order, without search highlights
+          headers:
+            Content-Disposition:
+              schema: {type: string}
+              description: Attachment filename ending in .ndjson
           content:
-            text/plain:
-              schema:
-                type: string
-                description: Raw log messages separated by newlines
-            application/json:
-              schema: {$ref: '#/components/schemas/JobLogDownload'}
             application/x-ndjson:
-              schema:
-                type: string
-                description: Newline-delimited JSON where each line conforms to JobLogDownloadEntry
+              schema: {type: string, description: Newline-terminated UTF-8 NDJSON records}
+              x-ndjson-record-schema: {$ref: '#/components/schemas/JobLogExportRecord'}
+              example: |
+                {"type":"log","timestamp":"2026-11-26T00:00:00Z","sequence_num":1,"stream":"stdout","event_id":"event-1","message_raw":"hello"}
+                {"type":"complete"}
         '400':
-          description: Invalid filter or format, or the job has not reached a terminal state
+          description: Invalid export request or the job has not reached a terminal state
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+        '500':
+          description: An internal error occurred before streaming began
+        '503':
+          description: A required downstream service was unavailable before streaming began
+        '504':
+          description: A downstream RPC reported deadline expiry before streaming began
   /workflows/{workflow_id}/jobs/{job_id}/events:
     get:
       operationId: streamJobLogs
@@ -562,30 +579,39 @@ components:
         logs: {type: array, items: {$ref: '#/components/schemas/Log'}}
         cursor: {type: string}
         highlight_token: {type: string, description: Marker inserted around search matches in log messages}
-    JobLogDownloadFilter:
+    JobLogExportRecord:
+      oneOf:
+        - $ref: '#/components/schemas/JobLogExportEntry'
+        - $ref: '#/components/schemas/JobLogExportComplete'
+        - $ref: '#/components/schemas/JobLogExportError'
+      discriminator:
+        propertyName: type
+        mapping:
+          log: '#/components/schemas/JobLogExportEntry'
+          complete: '#/components/schemas/JobLogExportComplete'
+          error: '#/components/schemas/JobLogExportError'
+    JobLogExportEntry:
       type: object
-      required: [q, stream]
+      required: [type, timestamp, sequence_num, stream, event_id, message_raw]
       properties:
-        q: {type: string}
-        stream: {type: string, enum: [all, stdout, stderr]}
-    JobLogDownloadEntry:
-      type: object
-      required: [timestamp, sequence_num, stream, event_id, message_raw]
-      properties:
+        type: {const: log}
         timestamp: {type: string, format: date-time}
-        sequence_num: {type: integer, minimum: 0}
+        sequence_num: {type: integer, minimum: 0, maximum: 4294967295}
         stream: {type: string, enum: [stdout, stderr]}
         event_id: {type: string}
         message_raw: {type: string}
-        message_json: {description: Parsed JSON value when message_raw contains valid JSON}
-    JobLogDownload:
+    JobLogExportComplete:
       type: object
-      required: [id, workflow_id, filters, logs]
+      required: [type]
+      additionalProperties: false
       properties:
-        id: {type: string, format: uuid, description: Job ID}
-        workflow_id: {type: string, format: uuid}
-        filters: {$ref: '#/components/schemas/JobLogDownloadFilter'}
-        logs: {type: array, items: {$ref: '#/components/schemas/JobLogDownloadEntry'}}
+        type: {const: complete}
+    JobLogExportError:
+      type: object
+      required: [type, message]
+      properties:
+        type: {const: error}
+        message: {type: string, description: Safe error message. The export is incomplete.}
     Notification:
       type: object
       properties:

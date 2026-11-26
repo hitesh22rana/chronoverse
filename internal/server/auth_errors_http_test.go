@@ -747,3 +747,22 @@ func TestHandleErrorIgnoresUnmappedCodes(t *testing.T) {
 		t.Fatalf("status = %d, want the untouched default 200", res.Code)
 	}
 }
+
+func TestProtectedReadRoutesSendNoStoreBeforeSessionValidation(t *testing.T) {
+	mux := http.NewServeMux()
+	(&Server{}).registerRoutes(mux)
+	job := "/workflows/workflow/jobs/job"
+	for _, path := range []string{
+		"/auth/csrf", "/users", "/workflows", "/workflows/workflow", "/workflows/workflow/jobs",
+		job, job + "/logs", job + "/logs/search", job + "/logs/raw", job + "/events",
+		"/notifications", "/analytics", "/analytics/workflow",
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest(method, path, http.NoBody))
+			if response.Code != http.StatusUnauthorized || response.Header().Get("Cache-Control") != "no-store" {
+				t.Errorf("%s %s = %d, Cache-Control: %q; want 401, no-store", method, path, response.Code, response.Header().Get("Cache-Control"))
+			}
+		}
+	}
+}

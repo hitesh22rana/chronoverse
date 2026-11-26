@@ -386,6 +386,16 @@ func TestBoundaryWorkflowWritesRequireCommandIdentity(t *testing.T) {
 	}
 }
 
+func assertReadNoStore(t *testing.T, method string, response *httptest.ResponseRecorder) {
+	t.Helper()
+	if method != http.MethodGet && method != http.MethodHead {
+		return
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
 func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 	store := newSessionRedisStore(t.Context(), t)
 	authService := authmock.NewMockIAuth(gomock.NewController(t))
@@ -420,6 +430,7 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 	if unauthenticated.Code != http.StatusUnauthorized || calls != 0 {
 		t.Fatalf("missing session status=%d calls=%d", unauthenticated.Code, calls)
 	}
+	assertReadNoStore(t, http.MethodGet, unauthenticated)
 	for _, endpoint := range boundaryEndpoints(testSessionUserID) {
 		t.Run(endpoint.name, func(t *testing.T) {
 			want = proto.Clone(endpoint.request)
@@ -438,6 +449,7 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 			response := httptest.NewRecorder()
 			mux.ServeHTTP(response, req)
 			assertBoundaryResponse(t, response, &endpoint)
+			assertReadNoStore(t, req.Method, response)
 			if calls-before != 1 {
 				t.Fatalf("RPC calls=%d; want 1", calls-before)
 			}

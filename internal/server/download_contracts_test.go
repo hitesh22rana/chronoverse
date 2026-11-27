@@ -80,13 +80,23 @@ func TestDownloadStopsBeforeFetchingUnreadyJobs(t *testing.T) {
 
 func TestDownloadAuthorizesPageOneBeforeSuccess(t *testing.T) {
 	client := &downloadFailureClient{jobStatus: "COMPLETED"}
+	core, entries := observer.New(zap.ErrorLevel)
+	span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
+	request := newJobLogsHandlerRequest("/download")
 	response := httptest.NewRecorder()
-	(&Server{jobsClient: client}).handleDownloadJobLogs(response, newJobLogsHandlerRequest("/download"))
+	(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(
+		response, request.WithContext(trace.ContextWithSpanContext(request.Context(), span)),
+	)
 	require.Equal(t, http.StatusServiceUnavailable, response.Code)
 	require.Equal(t, "failed to fetch logs\n", response.Body.String())
 	require.Empty(t, response.Header().Get("Content-Disposition"))
 	require.False(t, response.Flushed)
 	require.Equal(t, []string{""}, client.cursors)
+	logs := entries.All()
+	require.Len(t, logs, 1)
+	require.Equal(t, "failed to fetch first log download page", logs[0].Message)
+	require.Equal(t, span.TraceID().String(), logs[0].ContextMap()["trace_id"])
+	require.Contains(t, logs[0].ContextMap()["error"], "private backend failure")
 }
 
 func TestDownloadLaterPageFailureHasNoCompletionAndKeepsTrace(t *testing.T) {

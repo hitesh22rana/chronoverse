@@ -991,8 +991,9 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 - `cursor=<opaque cursor>`
 
 When `q` is absent, the route performs retained stream filtering. When present,
-Meilisearch requires all query terms to match, with typo tolerance, and supplies
-highlight ranges. Search results follow sequence order across pages. Continue
+Meilisearch matches all of the first ten terms it identifies and allows typos.
+Terms after the tenth are ignored. Search supplies highlight ranges, and results
+follow sequence order across pages. Continue
 while a cursor is present. A page may end early to stay within the service's
 3 MiB budget for encoded log records. If adding highlights would make one
 log exceed that budget, the response returns that log's original text.
@@ -1009,7 +1010,8 @@ Authenticated GET and supported HEAD requests receive `Cache-Control: no-store`,
 including gateway-generated errors.
 
 `GET .../logs/raw` streams typed `application/x-ndjson` in ascending sequence
-order. It accepts stream and text filters and omits search highlights. A
+order. It accepts stream and text filters, uses the same ten-term limit,
+and omits search highlights. A
 successful export ends with exactly one newline-terminated `complete` record
 and clean EOF. An empty export still has a completion record. A later failure
 may send an `error` record. Reject errors, trailing records, and truncation.
@@ -2144,7 +2146,7 @@ paths:
         - {$ref: '#/components/parameters/JobId'}
         - {$ref: '#/components/parameters/Cursor'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Search query. All terms must match with typo tolerance. Omit for stream-only filtering.}
+        - {name: q, in: query, schema: {type: string}, description: Search query. Meilisearch matches all of the first ten terms it identifies with typo tolerance and ignores later terms. Omit for stream-only filtering.}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -2171,7 +2173,7 @@ paths:
         - {$ref: '#/components/parameters/WorkflowId'}
         - {$ref: '#/components/parameters/JobId'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Optional text filter requiring all terms to match with typo tolerance}
+        - {name: q, in: query, schema: {type: string}, description: Optional text filter. Meilisearch matches all of the first ten terms it identifies with typo tolerance and ignores later terms.}
       responses:
         '200':
           description: Typed NDJSON in ascending sequence order, without search highlights
@@ -2544,6 +2546,10 @@ Scheduling, reads, status updates, lease claim and renewal, container attachment
 even when the caller owns the workflow.
 
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
+
+`SearchJobLogs` applies typo-tolerant matching to all of the first ten terms
+that Meilisearch identifies in `filters.message`. Terms after the tenth are
+ignored.
 
 ### Container cleanup RPCs
 

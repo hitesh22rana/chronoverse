@@ -367,8 +367,9 @@ Query parameters:
 - `q`: message search text.
 
 If `q` is omitted, the route returns filtered retained logs by stream. If `q` is
-present, Meilisearch requires all query terms to match and retains its typo
-tolerance. Results are ordered by descending sequence number. Continue while
+present, Meilisearch matches all of the first ten terms it identifies and
+allows typos. Terms after the tenth are ignored. Results are ordered by
+descending sequence number. Continue while
 a cursor is present. A page can contain fewer rows than the configured limit
 when the response reaches its byte budget. A log whose highlights alone
 would put the encoded record over budget is returned as original text.
@@ -380,7 +381,7 @@ would put the encoded record over budget is returned as original text.
 Query parameters:
 
 - `stream`: `stdout` or `stderr`. Omit to include all streams.
-- `q`: message search text. Meilisearch supplies matches without highlight markers.
+- `q`: message search text. The same ten-term limit applies. The export omits highlight markers.
 
 The gateway sends `Cache-Control: no-store` on authenticated reads, including
 early errors and supported HEAD requests. Downloads require a terminal job

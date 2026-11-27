@@ -268,6 +268,7 @@ func (s *Server) handleDownloadJobLogs(w http.ResponseWriter, r *http.Request) {
 
 	page, err := s.fetchJobLogsDownloadPage(r, &downloadReq, "")
 	if err != nil {
+		s.logStreamError(r.Context(), "failed to fetch first log download page", err)
 		handleError(w, err, "failed to fetch logs")
 		return
 	}

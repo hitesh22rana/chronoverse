@@ -297,7 +297,7 @@ paths:
         - {$ref: '#/components/parameters/JobId'}
         - {$ref: '#/components/parameters/Cursor'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Search query. All terms must match with typo tolerance. Omit for stream-only filtering.}
+        - {name: q, in: query, schema: {type: string}, description: Search query. Meilisearch matches all of the first ten terms it identifies with typo tolerance and ignores later terms. Omit for stream-only filtering.}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -324,7 +324,7 @@ paths:
         - {$ref: '#/components/parameters/WorkflowId'}
         - {$ref: '#/components/parameters/JobId'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Optional text filter requiring all terms to match with typo tolerance}
+        - {name: q, in: query, schema: {type: string}, description: Optional text filter. Meilisearch matches all of the first ten terms it identifies with typo tolerance and ignores later terms.}
       responses:
         '200':
           description: Typed NDJSON in ascending sequence order, without search highlights

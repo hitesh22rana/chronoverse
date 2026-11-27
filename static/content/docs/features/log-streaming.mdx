@@ -17,8 +17,9 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 - `cursor=<opaque cursor>`
 
 When `q` is absent, the route performs retained stream filtering. When present,
-Meilisearch requires all query terms to match, with typo tolerance, and supplies
-highlight ranges. Search results follow sequence order across pages. Continue
+Meilisearch matches all of the first ten terms it identifies and allows typos.
+Terms after the tenth are ignored. Search supplies highlight ranges, and results
+follow sequence order across pages. Continue
 while a cursor is present. A page may end early to stay within the service's
 3 MiB budget for encoded log records. If adding highlights would make one
 log exceed that budget, the response returns that log's original text.
@@ -35,7 +36,8 @@ Authenticated GET and supported HEAD requests receive `Cache-Control: no-store`,
 including gateway-generated errors.
 
 `GET .../logs/raw` streams typed `application/x-ndjson` in ascending sequence
-order. It accepts stream and text filters and omits search highlights. A
+order. It accepts stream and text filters, uses the same ten-term limit,
+and omits search highlights. A
 successful export ends with exactly one newline-terminated `complete` record
 and clean EOF. An empty export still has a completion record. A later failure
 may send an `error` record. Reject errors, trailing records, and truncation.

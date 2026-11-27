@@ -243,10 +243,6 @@ backend connections (20 normal plus 5 reserve), so the pair can consume at most
 50 of PostgreSQL's 100 connections and leaves capacity for bootstrap,
 migrations, administration, and failure handling.
 
-Jobs-service verifies Meilisearch job-log ranking before opening its gRPC
-listener. During bootstrap, a pod can exit and restart until the
-`database-migration` Job finishes configuring the index.
-
 The `database-migration` Job also connects directly to `postgres-primary`.
 `golang-migrate` uses session-level PostgreSQL advisory locks, which are not
 compatible with PgBouncer transaction pooling; normal application traffic must

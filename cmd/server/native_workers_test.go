@@ -3,9 +3,6 @@ package main_test
 import (
 	"context"
 	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strconv"
@@ -67,7 +64,6 @@ func TestIntegrationNativeSearchDependencies(t *testing.T) {
 				}
 			}
 			if name == "jobs-service" {
-				assertJobsRejectsUnreadyRanking(t, bin, dir, cover, dependencies)
 				port := availableCommandPort(t, name, bin, dir, cover, dependencies)
 				changes := append(append([]string{}, dependencies...), "GRPC_PORT="+strconv.Itoa(port))
 				runNativeLifecycle(t, bin, dir, cover, changes, func(ctx context.Context, done <-chan error, output *outputBuffer) {
@@ -77,27 +73,6 @@ func TestIntegrationNativeSearchDependencies(t *testing.T) {
 			assertCoverage(t, cover, name)
 		})
 	}
-}
-
-func assertJobsRejectsUnreadyRanking(t *testing.T, bin, dir, cover string, dependencies []string) {
-	t.Helper()
-	search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/indexes/job_logs/settings/ranking-rules":
-			w.Header().Set("Content-Type", "application/json")
-			if _, err := io.WriteString(w, `["words","typo","proximity","attribute","sort","exactness"]`); err != nil {
-				t.Errorf("write settings: %v", err)
-			}
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer search.Close()
-
-	reject(t, bin, dir, cover, "job-log ranking is not ready",
-		append(append([]string{}, dependencies...), "MEILISEARCH_URI="+search.URL, "GRPC_PORT=0")...)
-	reject(t, bin, dir, cover, "read Meilisearch job-log ranking",
-		append(append([]string{}, dependencies...), "MEILISEARCH_URI=http://127.0.0.1:1", "GRPC_PORT=0")...)
 }
 
 // Broker-confirmed assignment proves the real worker entered its poll loop;

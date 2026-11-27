@@ -1638,10 +1638,6 @@ bootstrap tools.
 
 Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with cancellable PostgreSQL startup retries using a bounded backoff of roughly 30 seconds, readiness/liveness probes, and bootstrap Jobs for the application database role, migrations, Kafka topics, and local certificate material. The setup entrypoint waits for those Jobs, forces the KEDA Kafka scalers to reconcile after the broker is usable, waits for PgBouncer, rolls the Docker proxy DaemonSet, and then restarts and waits for stateless application Deployments. A successful setup return therefore represents post-bootstrap availability; direct Kustomize users must perform equivalent Job and rollout checks. gRPC services handle SIGTERM, drain for up to 20 seconds, then close database pools and telemetry providers with bounded cleanup.
 
-Jobs-service checks the Meilisearch job-log ranking before opening its gRPC
-listener. During bootstrap, a pod can exit and restart until the
-`database-migration` Job finishes configuring the index.
-
 ## Docker execution model
 
 Container workflows execute through runtime ownership. Each labeled Docker-capable node runs one `docker-proxy` DaemonSet pod with a `runtime-agent` sidecar. Official overlays register an IPv4/IPv6-safe node endpoint on `2376` via `hostNetwork`; a load-balanced ClusterIP cannot preserve runtime ownership. Health probes use `tcp://127.0.0.1:2376` while the advertised endpoint uses the node IP. The proxy binds `:2376 ssl crt /certs/docker-proxy/server.pem ca-file /certs/docker-proxy/ca.crt verify required` plus `X-Chronoverse-Docker-Proxy-Token` and exact role/method/path ACLs. Runtime-agent gets ping/version only; workflow-worker gets image operations and container log/stop/delete cleanup; execution-worker additionally gets container execution and network inspect/create. Unknown certificate subjects and cross-role operations are denied, and workload containers have neither token nor certificate.

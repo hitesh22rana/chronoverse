@@ -811,8 +811,7 @@ func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, c
 func trimJobLogPage(logs []*jobsmodel.JobLog, cursors []jobLogsCursor, limit int) ([]*jobsmodel.JobLog, jobLogsCursor, error) {
 	var count, pageBytes int
 	for _, log := range logs[:min(len(logs), limit)] {
-		// A repeated Log adds one tag byte and up to four length bytes.
-		pageBytes += proto.Size(log.ToProto()) + 5
+		pageBytes += jobLogWireSize(log)
 		if pageBytes > jobLogPageBytes {
 			break
 		}
@@ -825,6 +824,11 @@ func trimJobLogPage(logs []*jobsmodel.JobLog, cursors []jobLogsCursor, limit int
 		return logs[:count], cursors[count], nil
 	}
 	return logs, jobLogsCursor{}, nil
+}
+
+func jobLogWireSize(log *jobsmodel.JobLog) int {
+	// Reserve a tag byte and up to four length bytes for each repeated Log.
+	return proto.Size(log.ToProto()) + 5
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -1310,8 +1314,8 @@ func searchHitString(source map[string]any, field string) string {
 	return value
 }
 
-func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
-	source := make(map[string]any)
+func searchHitSource(hit map[string]json.RawMessage) (source map[string]any, highlight *string, err error) {
+	source = make(map[string]any)
 	for k, v := range hit {
 		if k == formattedSearchResultKey {
 			continue
@@ -1319,25 +1323,25 @@ func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 
 		var val any
 		if err := json.Unmarshal(v, &val); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+			return nil, nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 		}
 		source[k] = val
 	}
 
-	formattedRaw, ok := hit["_formatted"]
+	formattedRaw, ok := hit[formattedSearchResultKey]
 	if !ok {
-		return source, nil
+		return source, nil, nil
 	}
 
 	var formatted map[string]any
 	if err := json.Unmarshal(formattedRaw, &formatted); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 	}
 	if msg, ok := formatted[jobLogsMessageField].(string); ok {
-		source[jobLogsMessageField] = msg
+		return source, &msg, nil
 	}
 
-	return source, nil
+	return source, nil, nil
 }
 
 func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
@@ -1356,7 +1360,7 @@ func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 
 // decodeSearchJobLog retains the search document ID for pagination separately from its event ID.
 func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobLogsCursor, error) {
-	source, scanErr := searchHitSource(hit)
+	source, highlighted, scanErr := searchHitSource(hit)
 	if scanErr != nil {
 		return nil, jobLogsCursor{}, scanErr
 	}
@@ -1389,6 +1393,13 @@ func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobL
 
 	if stream, ok := source[jobLogsStreamField].(string); ok {
 		log.Stream = stream
+	}
+	if highlighted != nil {
+		raw := log.Message
+		log.Message = *highlighted
+		if jobLogWireSize(log) > jobLogPageBytes {
+			log.Message = raw
+		}
 	}
 	return log, jobLogsCursor{
 		SequenceNum: log.SequenceNum,

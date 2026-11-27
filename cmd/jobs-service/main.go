@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -81,6 +82,14 @@ func run() int {
 		return ExitError
 	}
 	defer msdb.Close()
+
+	rankingCtx, cancelRanking := context.WithTimeout(ctx, 5*time.Second)
+	err = meilisearch.VerifyJobLogsRanking(rankingCtx, msdb)
+	cancelRanking()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitError
+	}
 
 	workflowsConn, err := grpcclient.NewClient(
 		cfg.WorkflowsService.ClientConfig(cfg.ClientTLS),

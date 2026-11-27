@@ -370,7 +370,8 @@ If `q` is omitted, the route returns filtered retained logs by stream. If `q` is
 present, Meilisearch requires all query terms to match and retains its typo
 tolerance. Results are ordered by descending sequence number. Continue while
 a cursor is present. A page can contain fewer rows than the configured limit
-when the response reaches its byte budget.
+when the response reaches its byte budget. A log whose highlights alone
+would put the encoded record over budget is returned as original text.
 
 ### Download Raw Logs
 

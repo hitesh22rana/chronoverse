@@ -2,7 +2,9 @@ package meilisearch
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -63,6 +65,18 @@ func SetupIndexes(ctx context.Context, client meilisearch.ServiceManager) error 
 	}
 
 	return waitForTasks(ctx, client, updateTaskIDs)
+}
+
+// VerifyJobLogsRanking rejects startup until Meilisearch can honor log cursors.
+func VerifyJobLogsRanking(ctx context.Context, client meilisearch.ServiceManager) error {
+	rules, err := client.Index(IndexJobLogs).GetRankingRulesWithContext(ctx)
+	if err != nil {
+		return fmt.Errorf("read Meilisearch job-log ranking: %w", err)
+	}
+	if !slices.Equal(*rules, Indexes[IndexJobLogs].RankingRules) {
+		return errors.New("job-log ranking is not ready: check the database-migration job")
+	}
+	return nil
 }
 
 // waitForTasks polls the given async tasks until they all succeed.

@@ -20,7 +20,8 @@ When `q` is absent, the route performs retained stream filtering. When present,
 Meilisearch requires all query terms to match, with typo tolerance, and supplies
 highlight ranges. Search results follow sequence order across pages. Continue
 while a cursor is present. A page may end early to stay within the service's
-3 MiB budget for encoded log records.
+3 MiB budget for encoded log records. If adding highlights would make one
+log exceed that budget, the response returns that log's original text.
 
 ## Shareable line selections
 

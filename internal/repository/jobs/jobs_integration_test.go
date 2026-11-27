@@ -552,6 +552,9 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		{"log-5", 2, "stdout", "pagination fatal error"},
 		{"log-6", 3, "stdout", "pagination fatal error"},
 		{"log-7", 4, "stdout", "pagination fatal startup"},
+		{"log-8", 5, "stdout", "up small"},
+		{"log-9", 6, "stdout", strings.Repeat("up ", 40_000)},
+		{"log-a", 7, "stdout", "up last"},
 	}
 	docs := make([]map[string]any, 0, len(fixtures))
 	for _, log := range fixtures {
@@ -592,8 +595,8 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		order       jobsmodel.JobLogsSortOrder
 		want        []string
 	}{
-		{"ascending", "", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6", "log-7"}},
-		{"descending", "", jobsmodel.JobLogsSortOrderDesc, []string{"log-7", "log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+		{"ascending", "", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6", "log-7", "log-8", "log-9", "log-a"}},
+		{"descending", "", jobsmodel.JobLogsSortOrderDesc, []string{"log-a", "log-9", "log-8", "log-7", "log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
 		{"mixed relevance ascending", "fatal error", jobsmodel.JobLogsSortOrderAsc, []string{"log-2", "log-3", "log-4", "log-5", "log-6"}},
 		{"mixed relevance descending", "fatal error", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5"}},
 	} {
@@ -631,6 +634,33 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 			}
 		})
 	}
+	t.Run("oversized highlights preserve the original line and continuation", func(t *testing.T) {
+		limit := repo.cfg.LogsFetchLimit
+		repo.cfg.LogsFetchLimit = 1
+		defer func() { repo.cfg.LogsFetchLimit = limit }()
+		filters := &jobsmodel.SearchJobLogsFilters{Message: "up"}
+		options := jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderAsc}
+		first, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+		require.NoError(t, err)
+		require.Len(t, first.JobLogs, 1)
+		require.NotEmpty(t, first.Cursor)
+		start, _ := jobLogsHighlightTags(first.HighlightToken)
+		require.Contains(t, first.JobLogs[0].Message, start+"up")
+
+		second, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, first.Cursor, filters, options)
+		require.NoError(t, err)
+		require.Len(t, second.JobLogs, 1)
+		require.Equal(t, "log-9", second.JobLogs[0].EventID)
+		require.Equal(t, strings.Repeat("up ", 40_000), second.JobLogs[0].Message)
+		require.NotEmpty(t, second.Cursor)
+
+		last, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, second.Cursor, filters, options)
+		require.NoError(t, err)
+		require.Len(t, last.JobLogs, 1)
+		require.Equal(t, "log-a", last.JobLogs[0].EventID)
+		require.Empty(t, last.Cursor)
+	})
+
 	if retainedCursor == "" {
 		t.Fatal("fixture requires a continuation cursor")
 	}

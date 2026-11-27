@@ -994,7 +994,8 @@ When `q` is absent, the route performs retained stream filtering. When present,
 Meilisearch requires all query terms to match, with typo tolerance, and supplies
 highlight ranges. Search results follow sequence order across pages. Continue
 while a cursor is present. A page may end early to stay within the service's
-3 MiB budget for encoded log records.
+3 MiB budget for encoded log records. If adding highlights would make one
+log exceed that budget, the response returns that log's original text.
 
 ## Shareable line selections
 
@@ -1636,6 +1637,10 @@ bootstrap tools.
 
 
 Kubernetes does not provide deployment startup ordering for long-running pods. Chronoverse handles that with cancellable PostgreSQL startup retries using a bounded backoff of roughly 30 seconds, readiness/liveness probes, and bootstrap Jobs for the application database role, migrations, Kafka topics, and local certificate material. The setup entrypoint waits for those Jobs, forces the KEDA Kafka scalers to reconcile after the broker is usable, waits for PgBouncer, rolls the Docker proxy DaemonSet, and then restarts and waits for stateless application Deployments. A successful setup return therefore represents post-bootstrap availability; direct Kustomize users must perform equivalent Job and rollout checks. gRPC services handle SIGTERM, drain for up to 20 seconds, then close database pools and telemetry providers with bounded cleanup.
+
+Jobs-service checks the Meilisearch job-log ranking before opening its gRPC
+listener. During bootstrap, a pod can exit and restart until the
+`database-migration` Job finishes configuring the index.
 
 ## Docker execution model
 

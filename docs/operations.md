@@ -289,7 +289,10 @@ for ClickHouse), and restart `init-database-migration`.
 Run `database-migration` before starting application services. It applies pending
 PostgreSQL and ClickHouse migrations in dependency order and configures
 Meilisearch indexes. Confirm that the job completes successfully before
-proceeding with the rollout.
+proceeding with the rollout. Jobs-service checks the job-log ranking before
+opening its gRPC listener. If the index or ranking is missing, check the
+database-migration logs and confirm that migration finished before retrying
+jobs-service.
 
 Before schema-changing releases, take and verify database backups and review
 migration compatibility with the running application. Pause traffic and workers

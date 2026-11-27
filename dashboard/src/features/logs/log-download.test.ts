@@ -14,7 +14,9 @@ const download = (body: Response, format: DownloadLogsFormat = "jsonl", limit = 
 
 describe("retained log export", () => {
     it.each(["txt", "json", "jsonl"] as const)("assembles %s across split UTF-8 and NDJSON records", async (format) => {
-        const bytes = new TextEncoder().encode(line + complete)
+        const second = { ...record, sequence_num: 2, event_id: "event-2", message_raw: "still running" }
+        const secondLine = JSON.stringify({ type: "log", ...second }) + "\n"
+        const bytes = new TextEncoder().encode(line + secondLine + complete)
         // Deliberately split every code point and record across network reads.
         let index = 0
         const stream = new ReadableStream<Uint8Array>({
@@ -25,15 +27,17 @@ describe("retained log export", () => {
         })
         const body = await (await download(new Response(stream, { headers }), format)).text()
         if (format === "txt") {
-            expect(body).toBe(raw + "\n")
+            expect(body).toBe(raw + "\nstill running\n")
         } else {
             expect(body).toContain('"id":9007199254740993')
             expect(body).not.toContain('"type"')
             if (format === "jsonl") {
-                expect(body.trimEnd().split("\n")).toHaveLength(1)
-                expect(JSON.parse(body)).toMatchObject({ ...record, message_raw: raw })
+                const records = body.trimEnd().split("\n").map((entry) => JSON.parse(entry))
+                expect(records).toHaveLength(2)
+                expect(records[0]).toMatchObject({ ...record, message_raw: raw })
+                expect(records[1]).toEqual(second)
             } else {
-                expect(JSON.parse(body)).toMatchObject({ ...metadata, logs: [{ ...record, message_raw: raw }] })
+                expect(JSON.parse(body)).toMatchObject({ ...metadata, logs: [{ ...record, message_raw: raw }, second] })
             }
         }
     })
@@ -56,6 +60,11 @@ describe("retained log export", () => {
         ["backend failure", line + '{"type":"error","message":"stream failed"}\n'],
     ])("rejects %s", async (_, wire) => {
         await expect(download(response(wire))).rejects.toThrow()
+    })
+
+    it("rejects an incomplete UTF-8 code point after completion", async () => {
+        const bytes = new Uint8Array([...new TextEncoder().encode(complete), 0xf0, 0x9f])
+        await expect(download(new Response(bytes, { headers }))).rejects.toThrow(TypeError)
     })
 
     it("rejects a transport failure after a completion record", async () => {

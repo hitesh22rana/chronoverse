@@ -68,10 +68,8 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const downloadLogsMutation = useMutation({
         mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
-            const params = new URLSearchParams(getSearchQueryParams)
-
             const response = await fetchApi(
-                withQuery(logsDownloadURL, params),
+                withQuery(logsDownloadURL, getSearchQueryParams),
                 "failed to download logs",
             )
 
@@ -79,7 +77,7 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
                 format,
                 id: jobId,
                 workflow_id: workflowId,
-                filters: { q: params.get("q") ?? "", stream: params.get("stream") || "all" },
+                filters: { q: searchQuery, stream: streamFilter || "all" },
             }, logDownloadLimitBytes)
             const objectUrl = URL.createObjectURL(blob)
             const a = document.createElement("a")
@@ -127,12 +125,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     });
 
     useEffect(() => {
-        if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
+        if (!canFetch || !isRunning || getSearchQueryParams) {
             return
         }
 
         return subscribeToJobLogs(sseURL, setLiveLogs)
-    }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
+    }, [sseURL, isRunning, canFetch, getSearchQueryParams])
 
     useEffect(() => {
         if (jobLogsSearchInfiniteQuery.error instanceof Error) {

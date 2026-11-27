@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,7 +75,6 @@ type logBoundaryClient struct {
 	err     error
 	status  string
 	fetches int
-	logs    []*jobspb.Log
 }
 
 func (c *logBoundaryClient) GetJob(context.Context, *jobspb.GetJobRequest, ...grpc.CallOption) (*jobspb.GetJobResponse, error) {
@@ -86,7 +86,7 @@ func (c *logBoundaryClient) GetJobLogs(context.Context, *jobspb.GetJobLogsReques
 	if c.fetches > 1 {
 		return nil, status.Error(codes.Internal, "unexpected next page")
 	}
-	return &jobspb.GetJobLogsResponse{Logs: c.logs, Cursor: "next"}, c.err
+	return &jobspb.GetJobLogsResponse{}, c.err
 }
 
 func (c *logBoundaryClient) ScheduleJob(
@@ -139,15 +139,31 @@ func TestDownloadStopsOnRecordWriteFailure(t *testing.T) {
 	(&Server{jobsClient: client}).handleDownloadJobLogs(nonStreamingLogResponse{response}, request)
 	require.Equal(t, http.StatusInternalServerError, response.Code)
 	require.Zero(t, client.fetches)
-	client.logs = []*jobspb.Log{{Message: "line"}}
-	writer := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: 1}
-	core, entries := observer.New(zap.ErrorLevel)
-	(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(writer, request)
-	require.Equal(t, 1, client.fetches)
-	require.Empty(t, writer.Body.String())
-	require.Len(t, entries.All(), 1)
-	require.Equal(t, "failed to write log", entries.All()[0].Message)
-	require.Equal(t, io.ErrClosedPipe.Error(), entries.All()[0].ContextMap()["error"])
+	for _, test := range []struct {
+		name   string
+		at     int
+		log    string
+		cursor string
+	}{
+		{name: "log", at: 1, log: "failed to write log", cursor: "next"},
+		{name: "completion", at: 2, log: "failed to write log completion"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			writer := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: test.at}
+			core, entries := observer.New(zap.ErrorLevel)
+			client := &downloadFailureClient{jobStatus: "COMPLETED", firstPage: &jobspb.GetJobLogsResponse{
+				Logs: []*jobspb.Log{{Message: "line"}}, Cursor: test.cursor,
+			}}
+			(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(writer, request)
+			require.Equal(t, []string{""}, client.cursors)
+			require.NotContains(t, writer.Body.String(), `"type":"complete"`)
+			require.Equal(t, test.at-1, strings.Count(writer.Body.String(), "\n"))
+			require.Len(t, entries.All(), 1)
+			require.Equal(t, test.log, entries.All()[0].Message)
+			require.Equal(t, io.ErrClosedPipe.Error(), entries.All()[0].ContextMap()["error"])
+		})
+	}
 }
 
 func TestLogoutWithoutSessionExpiresCookiesAndRejectsRequest(t *testing.T) {

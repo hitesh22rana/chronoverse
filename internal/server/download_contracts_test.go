@@ -27,6 +27,7 @@ type downloadFailureClient struct {
 	firstPage  *jobspb.GetJobLogsResponse
 	lastPage   *jobspb.GetJobLogsResponse
 	cursors    []string
+	onFetch    func(int)
 }
 
 func (c *downloadFailureClient) GetJob(context.Context, *jobspb.GetJobRequest, ...grpc.CallOption) (*jobspb.GetJobResponse, error) {
@@ -43,6 +44,9 @@ func (c *downloadFailureClient) GetJobLogs(
 ) {
 	c.fetchCalls++
 	c.cursors = append(c.cursors, req.GetCursor())
+	if c.onFetch != nil {
+		c.onFetch(c.fetchCalls)
+	}
 	if c.fetchCalls == 1 && c.firstPage != nil {
 		return c.firstPage, nil
 	}
@@ -86,24 +90,69 @@ func TestDownloadAuthorizesPageOneBeforeSuccess(t *testing.T) {
 }
 
 func TestDownloadLaterPageFailureHasNoCompletionAndKeepsTrace(t *testing.T) {
-	client := &downloadFailureClient{jobStatus: "COMPLETED", firstPage: &jobspb.GetJobLogsResponse{
-		Logs: []*jobspb.Log{{Message: "line"}}, Cursor: "next",
-	}}
-	core, entries := observer.New(zap.ErrorLevel)
-	span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
-	request := newJobLogsHandlerRequest("/download")
-	request = request.WithContext(trace.ContextWithSpanContext(request.Context(), span))
-	response := httptest.NewRecorder()
-	(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(response, request)
-	require.Equal(t, http.StatusOK, response.Code)
-	require.Equal(t, []string{"", "next"}, client.cursors)
-	require.True(t, response.Flushed)
-	require.Contains(t, response.Body.String(), `"message_raw":"line"`)
-	require.Contains(t, response.Body.String(), "{\"type\":\"error\",\"message\":\"stream failed\"}\n")
-	require.NotContains(t, response.Body.String(), `"complete"`)
-	require.NotContains(t, response.Body.String(), "private backend failure")
-	require.Len(t, entries.All(), 1)
-	require.Equal(t, span.TraceID().String(), entries.All()[0].ContextMap()["trace_id"])
+	for _, test := range []struct {
+		name         string
+		repeatCursor bool
+		disconnect   bool
+		failedWrite  int
+		wantRecord   string
+		wantLog      string
+		wantCause    string
+	}{
+		{
+			name: "fetch failure", wantRecord: "{\"type\":\"error\",\"message\":\"stream failed\"}\n",
+			wantLog: "failed to fetch logs", wantCause: "private backend failure",
+		},
+		{
+			name: "nonadvancing cursor", repeatCursor: true,
+			wantRecord: "{\"type\":\"error\",\"message\":\"stream failed\"}\n",
+			wantLog:    "failed to fetch logs", wantCause: "log cursor did not advance",
+		},
+		{
+			name: "request canceled while fetching", disconnect: true,
+			wantLog: "failed to fetch logs", wantCause: "private backend failure",
+		},
+		{
+			name: "error record write fails", failedWrite: 2,
+			wantLog: "failed to write log download error", wantCause: "closed pipe",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &downloadFailureClient{jobStatus: "COMPLETED", firstPage: &jobspb.GetJobLogsResponse{
+				Logs: []*jobspb.Log{{Message: "line"}}, Cursor: "next",
+			}}
+			if test.repeatCursor {
+				client.lastPage = &jobspb.GetJobLogsResponse{Cursor: "next"}
+			}
+			core, entries := observer.New(zap.ErrorLevel)
+			span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
+			request := newJobLogsHandlerRequest("/download")
+			ctx, cancel := context.WithCancel(trace.ContextWithSpanContext(request.Context(), span))
+			defer cancel()
+			if test.disconnect {
+				client.onFetch = func(page int) {
+					if page == 2 {
+						cancel()
+					}
+				}
+			}
+
+			response := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: test.failedWrite}
+			(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(response, request.WithContext(ctx))
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Equal(t, []string{"", "next"}, client.cursors)
+			require.True(t, response.Flushed)
+			_, terminal, ok := strings.Cut(response.Body.String(), "\n")
+			require.True(t, ok)
+			require.Contains(t, response.Body.String(), `"message_raw":"line"`)
+			require.Equal(t, test.wantRecord, terminal)
+
+			logs := entries.FilterMessage(test.wantLog).All()
+			require.Len(t, logs, 1)
+			require.Equal(t, span.TraceID().String(), logs[0].ContextMap()["trace_id"])
+			require.Contains(t, logs[0].ContextMap()["error"], test.wantCause)
+		})
+	}
 }
 
 func TestDownloadCompletesAfterAllPages(t *testing.T) {

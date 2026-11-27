@@ -23,7 +23,8 @@ even when the caller owns the workflow.
 
 `SearchJobLogs` applies typo-tolerant matching to all of the first ten terms
 that Meilisearch identifies in `filters.message`. Terms after the tenth are
-ignored.
+ignored. Each search page returns at most 999 rows. Follow the cursor until
+it is empty.
 
 ### Container cleanup RPCs
 

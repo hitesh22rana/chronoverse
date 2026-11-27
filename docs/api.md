@@ -369,9 +369,9 @@ Query parameters:
 If `q` is omitted, the route returns filtered retained logs by stream. If `q` is
 present, Meilisearch matches all of the first ten terms it identifies and
 allows typos. Terms after the tenth are ignored. Results are ordered by
-descending sequence number. Continue while
-a cursor is present. A page can contain fewer rows than the configured limit
-when the response reaches its byte budget. A log whose highlights alone
+descending sequence number. Meilisearch-backed pages contain at most 999 rows.
+Continue while a cursor is present, even when a page is shorter because of the
+encoded response budget. A log whose highlights alone
 would put the encoded record over budget is returned as original text.
 
 ### Download Raw Logs

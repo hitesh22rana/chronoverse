@@ -290,6 +290,7 @@ paths:
     get:
       operationId: searchJobLogs
       summary: Search retained job logs
+      description: Meilisearch-backed pages contain at most 999 rows. Continue while a cursor is present.
       tags: [Logs]
       security: [{cookieSession: []}]
       parameters:

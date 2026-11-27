@@ -49,6 +49,9 @@ const (
 	// Leave room below the default 4 MiB gRPC receive limit for response metadata.
 	jobLogPageBytes = 3 * 1024 * 1024
 
+	// Leave one result for the cursor under Meilisearch's default maxTotalHits of 1000.
+	jobLogSearchPageLimit = 999
+
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
 	jobLogsHighlightEnd        = "__CV_HL_END_"
@@ -1019,11 +1022,12 @@ func (r *Repository) SearchJobLogs(
 		highlightToken = newJobLogsHighlightToken()
 	}
 
+	pageLimit := min(r.cfg.LogsFetchLimit, jobLogSearchPageLimit)
 	eg.Go(func() error {
 		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
 			egCtx,
 			searchJobLogsFilters.Message,
-			newJobLogsSearchRequest(filter, highlightToken, int64(r.cfg.LogsFetchLimit+1), options),
+			newJobLogsSearchRequest(filter, highlightToken, int64(pageLimit+1), options),
 		)
 		if searchErr != nil {
 			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
@@ -1041,7 +1045,7 @@ func (r *Repository) SearchJobLogs(
 		}
 
 		var pageErr error
-		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, r.cfg.LogsFetchLimit)
+		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, pageLimit)
 		return pageErr
 	})
 

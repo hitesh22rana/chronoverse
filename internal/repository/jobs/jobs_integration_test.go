@@ -677,6 +677,48 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	}
 }
 
+func TestIntegrationSearchJobLogsPastMeilisearchHitCeiling(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	repo.cfg.LogsFetchLimit = 1000
+	userID, workflowID := seedUserWorkflow(ctx, t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-search-"+t.Name(), 1)
+	require.NoError(t, err)
+
+	const matchingLogs = 1002
+	docs := make([]map[string]any, 0, matchingLogs)
+	for seq := 1; seq <= matchingLogs; seq++ {
+		eventID := fmt.Sprintf("%s-%04d", jobID, seq)
+		docs = append(docs, map[string]any{
+			"id": eventID, jobLogsEventIDField: eventID,
+			docJobIDField: jobID, docWorkflowIDField: workflowID, docUserIDField: userID,
+			jobLogsMessageField: "ceiling fixture", jobLogsSequenceNumField: seq, jobLogsStreamField: "stdout",
+		})
+	}
+	ms := testkit.Meilisearch(t)
+	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)
+	require.NoError(t, err)
+	testkit.Eventually(t, 20*time.Second, 500*time.Millisecond, func() bool {
+		taskInfo, taskErr := ms.GetTask(task.TaskUID)
+		return taskErr == nil && taskInfo.Status == "succeeded"
+	})
+
+	filters := &jobsmodel.SearchJobLogsFilters{Message: "ceiling fixture"}
+	options := jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderAsc, DisableHighlight: true}
+	first, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Cursor, "search must reserve a lookahead row beyond the first page")
+	require.Len(t, first.JobLogs, 999)
+	last, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, first.Cursor, filters, options)
+	require.NoError(t, err)
+	require.Empty(t, last.Cursor)
+	all := slices.Concat(first.JobLogs, last.JobLogs)
+	require.Len(t, all, matchingLogs)
+	for i, log := range all {
+		require.Equal(t, uint32(i+1), log.SequenceNum)
+	}
+}
+
 // storedWorkflowLogsClient keeps the workflow policy lookup backed by PostgreSQL.
 type storedWorkflowLogsClient struct {
 	fakeWorkflowsService

@@ -2462,11 +2462,13 @@ func (x *StreamJobLogsRequest) GetUserId() string {
 	return ""
 }
 
-// SearchJobLogsFilters are the filters that are to be applied on the search job logs request.
+// SearchJobLogsFilters applies stream and text filters to retained logs.
 type SearchJobLogsFilters struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Stream        LogStream              `protobuf:"varint,1,opt,name=stream,proto3,enum=jobs.LogStream" json:"stream,omitempty"`
-	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Stream LogStream              `protobuf:"varint,1,opt,name=stream,proto3,enum=jobs.LogStream" json:"stream,omitempty"`
+	// Meilisearch matches all of the first ten terms it identifies, with typo
+	// tolerance. Terms after the tenth are ignored.
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

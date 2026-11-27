@@ -19,10 +19,10 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 When `q` is absent, the route performs retained stream filtering. When present,
 Meilisearch matches all of the first ten terms it identifies and allows typos.
 Terms after the tenth are ignored. Search supplies highlight ranges, and results
-follow sequence order across pages. Continue
-while a cursor is present. A page may end early to stay within the service's
-3 MiB budget for encoded log records. If adding highlights would make one
-log exceed that budget, the response returns that log's original text.
+follow sequence order across pages. Meilisearch-backed pages return at most
+999 rows. Continue while a cursor is present. A page may end early to stay
+within the 3 MiB budget for encoded log records. If adding highlights would
+make one log exceed that budget, the response returns that log's original text.
 
 ## Shareable line selections
 

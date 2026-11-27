@@ -367,8 +367,10 @@ Query parameters:
 - `q`: message search text.
 
 If `q` is omitted, the route returns filtered retained logs by stream. If `q` is
-present, it searches retained logs through Meilisearch. Results are returned in
-descending sequence order: latest logs first, older logs on later cursor pages.
+present, Meilisearch requires all query terms to match and retains its typo
+tolerance. Results are ordered by descending sequence number. Continue while
+a cursor is present. A page can contain fewer rows than the configured limit
+when the response reaches its byte budget.
 
 ### Download Raw Logs
 
@@ -382,7 +384,11 @@ Query parameters:
 The gateway sends `Cache-Control: no-store` on authenticated reads, including
 early errors and supported HEAD requests. Downloads require a terminal job
 (`COMPLETED`, `FAILED`, or `CANCELED`). The first page is authorized before
-success headers, and later pages recheck visibility.
+success headers, and later pages recheck visibility. A supported HEAD request
+performs the terminal-job and first-page checks, then returns headers without
+reading further pages or writing a response body. Before streaming, downstream
+cancellation can return `408` if the connection is still open. Both ingress
+limits and downstream resource exhaustion can return `429`.
 
 The endpoint sends newline-terminated UTF-8 `application/x-ndjson` records in
 ascending sequence order. A `log` record carries `timestamp`, `sequence_num`,

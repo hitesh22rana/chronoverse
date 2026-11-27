@@ -16,7 +16,11 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 - `q=<text>`
 - `cursor=<opaque cursor>`
 
-When `q` is absent, the route performs retained stream filtering. When present, Meilisearch supplies matches and highlight ranges.
+When `q` is absent, the route performs retained stream filtering. When present,
+Meilisearch requires all query terms to match, with typo tolerance, and supplies
+highlight ranges. Search results follow sequence order across pages. Continue
+while a cursor is present. A page may end early to stay within the service's
+3 MiB budget for encoded log records.
 
 ## Shareable line selections
 

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -44,6 +45,9 @@ const (
 	formattedSearchResultKey  = "_formatted"
 	authSubject               = "internal/jobs"
 	delimiter                 = '$'
+
+	// Leave room below the default 4 MiB gRPC receive limit for response metadata.
+	jobLogPageBytes = 3 * 1024 * 1024
 
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
@@ -771,7 +775,6 @@ func (r *Repository) GetJobLogs(
 // collectJobLogPage decodes the driver rows and retains the first omitted row as
 // the inclusive pagination cursor. The caller owns closing the result set.
 func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, cursor jobLogsCursor, err error) {
-	var nextCursor jobLogsCursor
 	fetched := make([]*jobsmodel.JobLog, 0, limit+1)
 	fetchedCursors := make([]jobLogsCursor, 0, limit+1)
 	for rows.Next() {
@@ -802,11 +805,26 @@ func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, c
 		return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 	}
 
-	fetched, hasMore := paginate.Trim(fetched, limit)
-	if hasMore {
-		nextCursor = fetchedCursors[limit]
+	return trimJobLogPage(fetched, fetchedCursors, limit)
+}
+
+func trimJobLogPage(logs []*jobsmodel.JobLog, cursors []jobLogsCursor, limit int) ([]*jobsmodel.JobLog, jobLogsCursor, error) {
+	var count, pageBytes int
+	for _, log := range logs[:min(len(logs), limit)] {
+		// A repeated Log adds one tag byte and up to four length bytes.
+		pageBytes += proto.Size(log.ToProto()) + 5
+		if pageBytes > jobLogPageBytes {
+			break
+		}
+		count++
 	}
-	return fetched, nextCursor, nil
+	if count < len(logs) {
+		if count == 0 {
+			return nil, jobLogsCursor{}, status.Error(codes.ResourceExhausted, "retained log exceeds the response size limit")
+		}
+		return logs[:count], cursors[count], nil
+	}
+	return logs, jobLogsCursor{}, nil
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -1018,12 +1036,9 @@ func (r *Repository) SearchJobLogs(
 			fetchedCursors = append(fetchedCursors, logCursor)
 		}
 
-		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
-		if hasMore {
-			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
-		}
-		logs = fetched
-		return nil
+		var pageErr error
+		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, r.cfg.LogsFetchLimit)
+		return pageErr
 	})
 
 	eg.Go(func() error {
@@ -1222,6 +1237,7 @@ func newJobLogsSearchRequest(
 		AttributesToSearchOn: []string{jobLogsMessageField},
 		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
 		Limit:                limit,
+		MatchingStrategy:     meilisearch.All,
 	}
 
 	if !options.DisableHighlight {

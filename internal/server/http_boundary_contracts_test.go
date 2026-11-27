@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
 	authmock "github.com/hitesh22rana/chronoverse/internal/pkg/auth/mock"
+	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 	userspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/users"
 	workflowspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/workflows"
 )
@@ -465,6 +467,44 @@ func TestIntegrationBoundaryRoutesAuthenticateAndForward(t *testing.T) {
 	}
 	if calls != 7 {
 		t.Fatalf("validation made an unexpected RPC: total calls=%d", calls)
+	}
+}
+
+func TestIntegrationProtectedJobReadsDoNotStoreResponses(t *testing.T) {
+	store := newSessionRedisStore(t.Context(), t)
+	authService := authmock.NewMockIAuth(gomock.NewController(t))
+	authService.EXPECT().ValidateToken(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ string) (context.Context, any, error) { return ctx, nil, nil }).AnyTimes()
+	authService.EXPECT().IssueToken(gomock.Any(), testSessionUserID, auth.ServiceNameJobs).Return("jobs-token", nil).AnyTimes()
+	page := &jobspb.GetJobLogsResponse{Cursor: "next"}
+	s := &Server{
+		rdb: store, crypto: newTestCrypto(t), auth: authService,
+		jobsClient: &fakeJobsServiceClient{getJobLogsResponse: page, searchJobLogsResponse: page},
+	}
+	session := mintSession(t.Context(), t, store, s)
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+	base := "/workflows/" + boundaryWorkflowID + "/jobs/550e8400-e29b-41d4-a716-446655440000"
+
+	for _, test := range []struct {
+		name, path string
+		status     int
+	}{
+		{"terminal job", "", http.StatusOK},
+		{"retained continuation", "/logs?cursor=current", http.StatusOK},
+		{"search continuation", "/logs/search?cursor=current&q=error", http.StatusOK},
+		{"raw invalid stream", "/logs/raw?stream=invalid", http.StatusBadRequest},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method+" "+test.name, func(t *testing.T) {
+				req := httptest.NewRequestWithContext(t.Context(), method, base+test.path, http.NoBody)
+				req.AddCookie(secureTestCookie(sessionCookieName, session))
+				response := httptest.NewRecorder()
+				mux.ServeHTTP(response, req)
+				require.Equal(t, test.status, response.Code, response.Body.String())
+				assertReadNoStore(t, method, response)
+			})
+		}
 	}
 }
 

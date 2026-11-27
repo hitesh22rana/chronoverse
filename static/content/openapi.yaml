@@ -285,7 +285,7 @@ paths:
         '200': {$ref: '#/components/responses/LogPage'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
-        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '429': {$ref: '#/components/responses/RetainedLogResourceExhausted'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/search:
     get:
       operationId: searchJobLogs
@@ -297,12 +297,12 @@ paths:
         - {$ref: '#/components/parameters/JobId'}
         - {$ref: '#/components/parameters/Cursor'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Search query. Omit for stream-only filtering.}
+        - {name: q, in: query, schema: {type: string}, description: Search query. All terms must match with typo tolerance. Omit for stream-only filtering.}
       responses:
         '200': {$ref: '#/components/responses/LogPage'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
-        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '429': {$ref: '#/components/responses/RetainedLogResourceExhausted'}
   /workflows/{workflow_id}/jobs/{job_id}/logs/raw:
     get:
       operationId: downloadJobLogs
@@ -324,7 +324,7 @@ paths:
         - {$ref: '#/components/parameters/WorkflowId'}
         - {$ref: '#/components/parameters/JobId'}
         - {name: stream, in: query, schema: {type: string, enum: [stdout, stderr]}}
-        - {name: q, in: query, schema: {type: string}, description: Optional safe text filter}
+        - {name: q, in: query, schema: {type: string}, description: Optional text filter requiring all terms to match with typo tolerance}
       responses:
         '200':
           description: Typed NDJSON in ascending sequence order, without search highlights
@@ -342,9 +342,13 @@ paths:
         '400':
           description: Invalid export request or the job has not reached a terminal state
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '403':
+          description: A downstream service denied access before streaming began
         '404': {$ref: '#/components/responses/NotFound'}
+        '408':
+          description: A downstream RPC was canceled before streaming began and the connection is still open
         '412': {$ref: '#/components/responses/PreconditionFailed'}
-        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '429': {$ref: '#/components/responses/RetainedLogResourceExhausted'}
         '500':
           description: An internal error occurred before streaming began
         '503':
@@ -461,10 +465,12 @@ components:
     PreconditionFailed: {description: Current workflow or job state does not allow the operation}
     TooManyRequests:
       description: Ingress rate or connection limit exceeded for the client address
+    RetainedLogResourceExhausted:
+      description: Ingress rate or connection limits were exceeded, or a downstream service reported resource exhaustion
     PayloadTooLarge:
       description: Request body exceeds the 4 MiB ingress limit
     LogPage:
-      description: Retained logs in descending sequence order
+      description: Retained logs in descending sequence order. Page size can be reduced to fit the encoded log byte budget. Continue while a cursor is present.
       content:
         application/json:
           schema: {$ref: '#/components/schemas/JobLogPage'}

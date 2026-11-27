@@ -546,11 +546,12 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		stream, message string
 	}{
 		{"log-1", 1, "stdout", "authentication succeeded"},
-		{"log-2", 2, "stderr", "database connection refused"},
-		{"log-3", 2, "stdout", "pagination three"},
-		{"log-4", 2, "stdout", "pagination four"},
-		{"log-5", 2, "stdout", "pagination five"},
-		{"log-6", 3, "stdout", "pagination six"},
+		{"log-2", 2, "stderr", "pagination fatal eror"},
+		{"log-3", 2, "stdout", "pagination fatal error"},
+		{"log-4", 2, "stdout", "pagination fatal error"},
+		{"log-5", 2, "stdout", "pagination fatal error"},
+		{"log-6", 3, "stdout", "pagination fatal error"},
+		{"log-7", 4, "stdout", "pagination fatal startup"},
 	}
 	docs := make([]map[string]any, 0, len(fixtures))
 	for _, log := range fixtures {
@@ -587,12 +588,14 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 
 	var retainedCursor string
 	for _, tc := range []struct {
-		name  string
-		order jobsmodel.JobLogsSortOrder
-		want  []string
+		name, query string
+		order       jobsmodel.JobLogsSortOrder
+		want        []string
 	}{
-		{"ascending", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6"}},
-		{"descending", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+		{"ascending", "", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6", "log-7"}},
+		{"descending", "", jobsmodel.JobLogsSortOrderDesc, []string{"log-7", "log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+		{"mixed relevance ascending", "fatal error", jobsmodel.JobLogsSortOrderAsc, []string{"log-2", "log-3", "log-4", "log-5", "log-6"}},
+		{"mixed relevance descending", "fatal error", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
@@ -601,7 +604,11 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if page >= len(docs) {
 					t.Fatal("search pagination did not terminate")
 				}
-				result, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true})
+				result, err := repo.SearchJobLogs(
+					ctx, jobID, workflowID, userID, cursor,
+					&jobsmodel.SearchJobLogsFilters{Message: tc.query},
+					jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true},
+				)
 				if err != nil {
 					t.Fatalf("SearchJobLogs(page %d): %v", page, err)
 				}
@@ -614,7 +621,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if result.Cursor == "" {
 					break
 				}
-				if page == 0 && tc.order == jobsmodel.JobLogsSortOrderDesc {
+				if page == 0 && tc.name == "descending" {
 					retainedCursor = result.Cursor
 				}
 				cursor = result.Cursor

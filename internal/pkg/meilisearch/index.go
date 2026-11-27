@@ -1,6 +1,6 @@
 package meilisearch
 
-// Index configures a MeiliSearch index: name, primary key, and searchable/filterable/sortable attributes.
+// Index configures a MeiliSearch index.
 type Index struct {
 	// Name is the unique name of the MeiliSearch index.
 	Name string
@@ -12,6 +12,8 @@ type Index struct {
 	Filterable []any
 	// Sortable is a list of attributes that can be used for sorting results.
 	Sortable []string
+	// RankingRules defines the order in which the index applies sorting and relevance.
+	RankingRules []string
 }
 
 const (
@@ -34,5 +36,7 @@ var Indexes map[string]*Index = map[string]*Index{
 			"stream",
 		},
 		Sortable: []string{"sequence_num", "id"},
+		// Sort must precede relevance so query results follow the keyset cursor.
+		RankingRules: []string{"sort", "words", "typo", "proximity", "attribute", "exactness"},
 	},
 }

@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("react", () => ({
     useEffect: (effect: () => void | (() => void)) => mocks.effects.push(effect),
+    useLayoutEffect: () => {},
+    useRef: (initial: unknown) => ({ current: initial }),
     useState: (initial: unknown) => [initial, mocks.setLogs],
 }))
 vi.mock("next/navigation", () => ({
@@ -20,6 +22,7 @@ vi.mock("next/navigation", () => ({
     useSearchParams: () => mocks.params,
 }))
 vi.mock("@tanstack/react-query", () => ({
+    useQueryClient: () => ({}),
     useInfiniteQuery: mocks.query,
     useMutation: () => ({ isPending: false }),
 }))

@@ -13,9 +13,11 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { CreateWorkflowPayload, Workflow } from "./types"
+import { useAuth } from "@/features/auth/use-auth"
 import { useUserAnalytics } from "@/features/analytics/use-user-analytics"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useWorkflowDetails } from "./use-workflow-details"
+import { useWorkflowScope } from "./workflow-freshness"
 import { useWorkflows } from "./use-workflows"
 
 const mocks = vi.hoisted(() => ({
@@ -433,4 +435,47 @@ it("does not reset the address after creating from a different route", async () 
     act(() => result.current.createWorkflow(payload))
     await waitFor(() => expect(mocks.toast.success).toHaveBeenCalled())
     expect(mocks.push).not.toHaveBeenCalled()
+})
+
+it("restores a still-existing workflow after an authorization denial and successful sign-in", async () => {
+    const denied = Object.assign(new Error("session expired"), { status: 401 })
+    mocks.fetchApi
+        .mockRejectedValueOnce(denied)
+        .mockRejectedValueOnce(denied)
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    mocks.fetchApiJson.mockImplementation(async (url: string) => url.endsWith("/w1")
+        ? workflow() : { workflows: [workflow()] })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => ({
+        auth: useAuth(),
+        activeWorkflow: useWorkflowScope("w2"),
+        list: useWorkflows(),
+        details: useWorkflowDetails("w1"),
+    }), { wrapper })
+
+    await waitFor(() => expect(result.current.list.workflows).toHaveLength(1))
+    const previousRead = result.current.details.refetch
+    act(() => result.current.details.deleteWorkflow())
+    await waitFor(() => expect(result.current.list.workflows).toEqual([]))
+    expect(result.current.details.isWorkflowAvailable).toBe(false)
+    const previousResource = result.current.activeWorkflow.signal()
+    expect(previousResource.aborted).toBe(false)
+    act(() => result.current.auth.login({ email: "owner@example.test", password: "password" }))
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/"))
+
+    expect(result.current.details.isWorkflowAvailable).toBe(true)
+    expect(previousResource.aborted).toBe(true)
+    expect(result.current.activeWorkflow.signal().aborted).toBe(false)
+    await act(async () => {
+        await result.current.list.refetch()
+        await result.current.details.refetch()
+    })
+    expect(result.current.list.workflows).toHaveLength(1)
+    expect(result.current.details.workflow?.id).toBe("w1")
+    const reads = listRequests().length
+    await act(async () => { await previousRead() })
+    expect(listRequests()).toHaveLength(reads)
 })

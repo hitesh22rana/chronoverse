@@ -7,6 +7,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 
 function createWorkflowState() {
     let retired = new Map<string, boolean>()
+    let generation = 0
     const listeners = new Set<() => void>()
     const resources = new Map<string, AbortController>()
 
@@ -16,8 +17,16 @@ function createWorkflowState() {
             return () => { listeners.delete(listener) }
         },
         snapshot: () => retired,
-        signal(id: string) {
-            if (retired.has(id)) return AbortSignal.abort()
+        generation: () => generation,
+        reset() {
+            generation++
+            retired = new Map()
+            resources.forEach((resource) => resource.abort())
+            resources.clear()
+            listeners.forEach((listener) => listener())
+        },
+        signal(id: string, owner: number) {
+            if (owner !== generation || retired.has(id)) return AbortSignal.abort()
             let resource = resources.get(id)
             if (!resource) {
                 resource = new AbortController()
@@ -36,6 +45,10 @@ function createWorkflowState() {
 
 const states = new WeakMap<QueryClient, ReturnType<typeof createWorkflowState>>()
 
+export function resetWorkflowSession(client: QueryClient) {
+    states.get(client)?.reset()
+}
+
 export function useWorkflowRetirement() {
     const client = useQueryClient()
     let state = states.get(client)
@@ -49,8 +62,9 @@ export function useWorkflowRetirement() {
 
 export function useWorkflowScope(id: string) {
     const { state, retired } = useWorkflowRetirement()
-    const signal = useCallback(() => state.signal(id), [state, id])
-    const isCurrent = () => Boolean(id) && !state.snapshot().has(id)
+    const owner = state.generation()
+    const signal = useCallback(() => state.signal(id, owner), [state, id, owner])
+    const isCurrent = useCallback(() => owner === state.generation() && Boolean(id) && !state.snapshot().has(id), [state, id, owner])
     const available = Boolean(id) && !retired.has(id)
     return {
         available,

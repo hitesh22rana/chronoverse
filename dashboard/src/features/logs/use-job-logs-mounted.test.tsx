@@ -575,26 +575,35 @@ it("closes the live stream and prevents a pending export from saving after workf
     expect(mocks.toast.success).not.toHaveBeenCalledWith("Logs downloaded successfully")
 })
 
-it("keeps the first-page refresh in flight when paging is requested", async () => {
-    const fresh = Promise.withResolvers<{ logs: ReturnType<typeof retainedLog>[] }>()
+it("resumes paging with the fresh cursor without canceling refresh", async () => {
+    const fresh = Promise.withResolvers<{ logs: ReturnType<typeof retainedLog>[], cursor: string }>()
     let refreshSignal: AbortSignal | undefined
     let firstPages = 0
+    const cursors: string[] = []
     mocks.fetchApiJson.mockImplementation((url: string, _message: string, init: RequestInit) => {
         if (!url.includes("/logs")) return Promise.resolve(workflow)
-        if (url.includes("cursor=")) throw new Error("paging must not compete with refresh")
-        if (++firstPages === 1) return Promise.resolve({ logs: [retainedLog(1)], cursor: "next" })
+        const cursor = new URL(url, "http://localhost").searchParams.get("cursor")
+        if (cursor) {
+            cursors.push(cursor)
+            return Promise.resolve({ logs: [retainedLog(1)] })
+        }
+        if (++firstPages === 1) return Promise.resolve({ logs: [retainedLog(2)], cursor: "old" })
         refreshSignal = init.signal ?? undefined
         return fresh.promise
     })
     renderJobLogs("COMPLETED")
-    expect(await screen.findByText("retained line 1")).toBeTruthy()
+    expect(await screen.findByText("retained line 2")).toBeTruthy()
     act(() => screen.getByText("refresh logs").click())
     await waitFor(() => expect(refreshSignal).toBeDefined())
-    act(() => screen.getByText("load more").click())
+    act(() => {
+        screen.getByText("load more").click()
+        screen.getByText("load more").click()
+    })
     expect(refreshSignal?.aborted).toBe(false)
-    expect(mocks.fetchApiJson.mock.calls.some(([url]) => String(url).includes("cursor="))).toBe(false)
-    await act(async () => fresh.resolve({ logs: [retainedLog(2)] }))
-    expect(await screen.findByText("retained line 2")).toBeTruthy()
+    expect(cursors).toEqual([])
+    await act(async () => fresh.resolve({ logs: [retainedLog(2)], cursor: "new" }))
+    expect(await screen.findByText("retained line 1")).toBeTruthy()
+    expect(cursors).toEqual(["new"])
 })
 
 it("drops download feedback and dialog completion after workflow retirement", async () => {
@@ -618,3 +627,37 @@ it("drops download feedback and dialog completion after workflow retirement", as
     expect(mocks.downloadComplete).not.toHaveBeenCalled()
     expect(mocks.downloads).toHaveLength(1)
 })
+
+it.each(["filter change", "no next page", "refresh failure"] as const)(
+    "discards paging after %s instead of reusing the previous cursor",
+    async (ending) => {
+        const refresh = Promise.withResolvers<{ logs: ReturnType<typeof retainedLog>[] }>()
+        let firstPages = 0
+        const cursors: string[] = []
+        mocks.fetchApiJson.mockImplementation((url: string) => {
+            if (!url.includes("/logs")) return Promise.resolve(workflow)
+            if (url.includes("/search")) return Promise.resolve({ logs: [retainedLog(7)] })
+            const cursor = new URL(url, "http://localhost").searchParams.get("cursor")
+            if (cursor) {
+                cursors.push(cursor)
+                return Promise.resolve({ logs: [] })
+            }
+            if (++firstPages === 1) return Promise.resolve({ logs: [retainedLog(2)], cursor: "old" })
+            return refresh.promise
+        })
+        renderJobLogs("COMPLETED")
+        expect(await screen.findByText("retained line 2")).toBeTruthy()
+        act(() => screen.getByText("refresh logs").click())
+        await waitFor(() => expect(firstPages).toBe(2))
+        act(() => screen.getByText("load more").click())
+        if (ending === "filter change") {
+            act(() => screen.getByText("search timeout").click())
+            expect(await screen.findByText("retained line 7")).toBeTruthy()
+        }
+        await act(async () => {
+            if (ending === "refresh failure") refresh.reject(new Error("refresh failed"))
+            else refresh.resolve({ logs: [retainedLog(3)], ...(ending === "filter change" && { cursor: "new" }) })
+        })
+        expect(cursors).toEqual([])
+    },
+)

@@ -2,6 +2,8 @@
 
 import {
     useEffect,
+    useLayoutEffect,
+    useRef,
     useState,
 } from "react"
 import {
@@ -12,6 +14,10 @@ import {
 import {
     useInfiniteQuery,
     useMutation,
+    useQueryClient,
+    type QueryKey,
+    type QueryState,
+    type UseInfiniteQueryResult,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -65,9 +71,12 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
 
     const download = useLogDownload(scope, workflowId, jobId, searchQuery, streamFilter, getSearchQueryParams)
 
+    const retainedKey = scope.queryKey(queryKeys.job.logs(workflowId, jobId, jobStatus))
+    const searchKey = scope.queryKey(queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter))
+
     // Retained logs are newest-first; fetching the next page loads older logs.
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
-        queryKey: scope.queryKey(queryKeys.job.logs(workflowId, jobId, jobStatus)),
+        queryKey: retainedKey,
         queryFn: async ({ pageParam, signal }) => {
             scope.requireCurrent()
             const res = await fetchLogPage(logsURL, pageParam, signal)
@@ -81,7 +90,7 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
     })
 
     const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
-        queryKey: scope.queryKey(queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter)),
+        queryKey: searchKey,
         queryFn: async ({ pageParam, signal }) => {
             scope.requireCurrent()
             const res = await fetchLogPage(searchURL, pageParam, signal, getSearchQueryParams)
@@ -107,11 +116,17 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
     }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, scope.available])
 
     const isSearching = shouldFetch && Boolean(getSearchQueryParams)
-    const query = scope.available && hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : {
+    const activeQuery = isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery
+    const fetchNextPage = useLogPagination(
+        isSearching ? searchKey : retainedKey,
+        activeQuery.fetchNextPage,
+        scope.isCurrent,
+        canFetch,
+    )
+    const query = scope.available && hasLogs ? activeQuery : {
         data: undefined,
         isLoading: false,
         error: null,
-        fetchNextPage: () => Promise.resolve(),
         refetch: undefined,
         isFetchingNextPage: false,
         hasNextPage: false,
@@ -122,7 +137,7 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
         logs: liveLogs.length ? mergeLiveLogs(logs, liveLogs) : logs,
         isLoading: query.isLoading,
         error: query.error,
-        fetchNextPage: () => scope.isCurrent() ? query.fetchNextPage({ cancelRefetch: false }) : Promise.resolve(),
+        fetchNextPage,
         canRefreshLogs: canFetch,
         refreshLogs: () => canFetch && scope.isCurrent() ? query.refetch?.() : undefined,
         isFetchingNextPage: query.isFetchingNextPage,
@@ -137,6 +152,45 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
         isLogsUnsupportedForKind,
         workflowKind,
         isWorkflowLoading,
+    }
+}
+
+type NextLogPage = UseInfiniteQueryResult<unknown, Error>["fetchNextPage"]
+
+function useLogPagination(key: QueryKey, fetchPage: NextLogPage, isCurrent: () => boolean, enabled: boolean) {
+    const client = useQueryClient()
+    const dataset = JSON.stringify(key)
+    const active = useRef<{ dataset: string, pending?: Promise<void> } | null>(null)
+
+    useLayoutEffect(() => {
+        if (enabled) active.current = { dataset }
+        return () => { active.current = null }
+    }, [dataset, enabled, isCurrent])
+
+    return async () => {
+        const view = active.current
+        if (!view || view.dataset !== dataset || !isCurrent()) return
+        if (!view.pending) {
+            view.pending = fetchNextLogPage(
+                () => client.getQueryState(key),
+                fetchPage,
+                () => active.current === view && isCurrent(),
+            ).finally(() => { view.pending = undefined })
+        }
+        await view.pending
+    }
+}
+
+async function fetchNextLogPage(
+    readState: () => QueryState | undefined,
+    fetchPage: NextLogPage,
+    isCurrent: () => boolean,
+) {
+    while (isCurrent()) {
+        const state = readState()
+        const joiningRefresh = state && state.fetchStatus !== "idle" && state.fetchMeta?.fetchMore?.direction !== "forward"
+        const result = await fetchPage({ cancelRefetch: false })
+        if (!joiningRefresh || result.isError || !result.hasNextPage) return
     }
 }
 

@@ -4,7 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/meilisearch/meilisearch-go"
 	"google.golang.org/grpc/codes"
@@ -31,15 +35,40 @@ func New(_ context.Context, cfg *Config) (meilisearch.ServiceManager, error) {
 	if cfg.MasterKey == "" {
 		return nil, status.Error(codes.InvalidArgument, "failed to initialize MeiliSearch client: missing masterkey")
 	}
-	opts := []meilisearch.Option{meilisearch.WithAPIKey(cfg.MasterKey)}
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}
 	if cfg.TLSConfig != nil && cfg.TLSConfig.Enabled {
 		tlsConfig, err := newTLSConfig(cfg.TLSConfig.CertFile, cfg.TLSConfig.KeyFile, cfg.TLSConfig.CAFile)
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, meilisearch.WithCustomClientWithTLS(tlsConfig))
+		transport.TLSClientConfig = tlsConfig
 	}
-	return meilisearch.New(cfg.URI, opts...), nil
+	client := &http.Client{Transport: logSearchTransport{transport}}
+	return meilisearch.New(cfg.URI, meilisearch.WithAPIKey(cfg.MasterKey), meilisearch.WithCustomClient(client)), nil
+}
+
+const jobLogSearchResponseBytes = 8 * 1024 * 1024
+
+type logSearchTransport struct{ *http.Transport }
+
+func (t logSearchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	res, err := t.Transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(req.URL.Path, "/indexes/"+IndexJobLogs+"/search") {
+		// Bound the decoded body before the SDK reads it into memory.
+		res.Body = http.MaxBytesReader(nil, res.Body, jobLogSearchResponseBytes)
+	}
+	return res, nil
 }
 
 // newTLSConfig creates a new TLS config for the MeiliSearch client.

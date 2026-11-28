@@ -23,6 +23,8 @@ follow sequence order across pages. Meilisearch-backed pages return at most
 999 rows. Continue while a cursor is present. A page may end early to stay
 within the 3 MiB budget for encoded log records. If adding highlights would
 make one log exceed that budget, the response returns that log's original text.
+When a Meilisearch response exceeds the 8 MiB decoded body limit, the server
+retries without highlights and reduces page size if needed.
 
 ## Shareable line selections
 

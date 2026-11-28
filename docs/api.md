@@ -372,7 +372,9 @@ allows typos. Terms after the tenth are ignored. Results are ordered by
 descending sequence number. Meilisearch-backed pages contain at most 999 rows.
 Continue while a cursor is present, even when a page is shorter because of the
 encoded response budget. A log whose highlights alone
-would put the encoded record over budget is returned as original text.
+would put the encoded record over budget is returned as original text. If a
+Meilisearch response exceeds the 8 MiB decoded body limit, the service retries
+without highlights and reduces the page size if needed.
 
 ### Download Raw Logs
 

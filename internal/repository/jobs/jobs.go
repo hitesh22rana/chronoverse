@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -1034,13 +1035,13 @@ func (r *Repository) SearchJobLogs(
 
 	pageLimit := min(r.cfg.LogsFetchLimit, jobLogSearchPageLimit)
 	eg.Go(func() error {
-		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
-			egCtx,
-			searchJobLogsFilters.Message,
-			newJobLogsSearchRequest(filter, highlightToken, int64(pageLimit+1), options),
-		)
+		request := newJobLogsSearchRequest(filter, highlightToken, int64(pageLimit+1), options)
+		searchRes, searchErr := r.searchJobLogHits(egCtx, searchJobLogsFilters.Message, request)
 		if searchErr != nil {
-			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
+			return searchErr
+		}
+		if len(request.AttributesToHighlight) == 0 {
+			highlightToken = ""
 		}
 
 		fetched := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
@@ -1055,7 +1056,7 @@ func (r *Repository) SearchJobLogs(
 		}
 
 		var pageErr error
-		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, pageLimit)
+		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, int(request.Limit)-1)
 		return pageErr
 	})
 
@@ -1075,6 +1076,36 @@ func (r *Repository) SearchJobLogs(
 		Cursor:         encodeJobLogsCursor(nextCursor),
 		HighlightToken: highlightToken,
 	}, nil
+}
+
+func (r *Repository) searchJobLogHits(
+	ctx context.Context,
+	query string,
+	request *meilisearch.SearchRequest,
+) (*meilisearch.SearchResponse, error) {
+	index := r.ms.Index(meilisearchpkg.IndexJobLogs)
+	for {
+		result, err := index.SearchWithContext(ctx, query, request)
+		if err == nil {
+			return result, nil
+		}
+		var oversized *http.MaxBytesError
+		if !errors.As(err, &oversized) {
+			return nil, status.Errorf(codes.Internal, "failed to search job logs: %v", err)
+		}
+
+		// Retry from the same cursor. Let the next request keep its lookahead hit.
+		if len(request.AttributesToHighlight) > 0 {
+			request.AttributesToHighlight = nil
+			request.HighlightPreTag = ""
+			request.HighlightPostTag = ""
+			continue
+		}
+		if request.Limit <= 2 {
+			return nil, status.Error(codes.ResourceExhausted, "retained log search response exceeds its byte limit")
+		}
+		request.Limit = (request.Limit-1)/2 + 1
+	}
 }
 
 // ListJobs returns jobs.

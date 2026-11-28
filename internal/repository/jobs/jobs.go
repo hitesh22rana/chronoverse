@@ -728,12 +728,22 @@ func (r *Repository) GetJobLogs(
 	if ascending {
 		sequenceDirection = "ASC"
 	}
-	// Keep the newest unmerged ReplacingMergeTree duplicate before LIMIT BY collapses event IDs.
-	logsQuery += fmt.Sprintf(`
-    ORDER BY sequence_num %s, stream ASC, event_id ASC, timestamp DESC
-    LIMIT 1 BY event_id
-    LIMIT %d;
-    `, sequenceDirection, r.cfg.LogsFetchLimit+1)
+	// Deduplicate before applying either limit. Raw message bytes are a lower
+	// bound on protobuf size. Keep the crossing row so Go can use it as a cursor.
+	logsQuery = fmt.Sprintf(`
+		SELECT timestamp, message, sequence_num, stream, event_id
+		FROM (
+			%s
+			ORDER BY sequence_num %s, stream ASC, event_id ASC, timestamp DESC
+			LIMIT 1 BY event_id
+			LIMIT %d
+		)
+		QUALIFY sum(length(message)) OVER (
+			ORDER BY sequence_num %s, stream ASC, event_id ASC
+			ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+		) <= %d
+		ORDER BY sequence_num %s, stream ASC, event_id ASC
+	`, logsQuery, sequenceDirection, r.cfg.LogsFetchLimit+1, sequenceDirection, jobLogPageBytes, sequenceDirection)
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (

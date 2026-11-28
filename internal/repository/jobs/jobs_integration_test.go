@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -522,6 +523,53 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	var remaining uint64
 	require.NoError(t, rows.Scan(&remaining))
 	require.Equal(t, uint64(logCount), remaining, "retained ClickHouse rows after workflow deletion")
+}
+
+func TestIntegrationClickHouseBoundsLogPageTransfer(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	repo.cfg.LogsFetchLimit = 100
+	ch := testkit.ClickHouse(t)
+	userID, workflowID := seedUserWorkflow(ctx, t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-logs-"+t.Name(), 1)
+	require.NoError(t, err)
+
+	// Each message has the maximum normal ingestion width.
+	require.NoError(t, ch.Exec(ctx, `
+		INSERT INTO job_logs (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
+		SELECT
+			concat(?, '-', toString(number)),
+			toUUID(?), toUUID(?), toUUID(?), now64(3),
+			repeat('x', 256 * 1024), toUInt32(number + 1), 'stdout'
+		FROM numbers(101)
+	`, jobID, userID, workflowID, jobID))
+
+	queryID := "lookahead-" + jobID
+	queryCtx := chdriver.Context(ctx, chdriver.WithQueryID(queryID), chdriver.WithSettings(chdriver.Settings{"log_queries": 1}))
+	filters := &jobsmodel.GetJobLogsFilters{Stream: 1}
+	first, err := repo.GetJobLogs(queryCtx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, filters)
+	require.NoError(t, err)
+	require.Len(t, first.JobLogs, 11)
+	require.NotEmpty(t, first.Cursor)
+	second, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, first.Cursor, jobsmodel.JobLogsSortOrderAsc, filters)
+	require.NoError(t, err)
+	require.Len(t, second.JobLogs, 11)
+	require.Equal(t, uint32(12), second.JobLogs[0].SequenceNum)
+
+	require.NoError(t, ch.Exec(ctx, "SYSTEM FLUSH LOGS query_log"))
+	rows, err := ch.Query(ctx, `
+		SELECT result_rows, result_bytes
+		FROM system.query_log
+		WHERE query_id = ? AND type = 'QueryFinish'
+	`, queryID)
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, rows.Next(), "missing completed query metrics: %v", rows.Err())
+	var resultRows, resultBytes uint64
+	require.NoError(t, rows.Scan(&resultRows, &resultBytes))
+	t.Logf("ClickHouse result: %d rows, %d uncompressed result bytes", resultRows, resultBytes)
+	require.LessOrEqual(t, resultRows, uint64(13), "one crossing row and enough lookahead to preserve the cursor")
+	require.Less(t, resultBytes, uint64(4*1024*1024), "ClickHouse must omit the discarded payload")
 }
 
 //nolint:gocyclo // Verifies filtering and cursor continuity against the same indexed logs.

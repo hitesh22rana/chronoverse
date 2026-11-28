@@ -37,8 +37,7 @@ including gateway-generated errors.
 
 `GET .../logs/raw` streams typed `application/x-ndjson` in ascending sequence
 order. It accepts stream and text filters, uses the same ten-term limit,
-and omits search highlights. A
-successful export ends with exactly one newline-terminated `complete` record
+and omits search highlights. A successful export ends with exactly one newline-terminated `complete` record
 and clean EOF. An empty export still has a completion record. A later failure
 may send an `error` record. Reject errors, trailing records, and truncation.
 Completion certifies this traversal; late logs or index updates can affect a
@@ -48,29 +47,38 @@ The dashboard assembles TXT, JSON, or JSONL after verifying completion, with a
 limit of 8 MiB each for the received stream and the saved file. Use the filters
 to narrow larger dashboard exports. Direct API clients receive the same NDJSON
 regardless of how they save it. To reconstruct TXT after a successful HTTP
-transfer to `export.ndjson`, preserve each raw message and append one newline:
+transfer to `export.ndjson`, write each raw message and one newline to a
+temporary file. The example replaces `logs.txt` only after validating the final
+completion record and reaching EOF.
 
 ```python
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-messages = []
-complete = False
-with open("export.ndjson", "rb") as wire:
-    for line in wire:
-        if complete or not line.endswith(b"\n"):
-            raise ValueError("Invalid export record boundary")
-        record = json.loads(line)
-        if record == {"type": "complete"}:
-            complete = True
-        elif record["type"] == "log" and isinstance(record["message_raw"], str):
-            messages.append(record["message_raw"] + "\n")
-        else:
-            raise ValueError("Invalid or failed export")
-if not complete:
-    raise ValueError("Incomplete export")
-Path("logs.txt").write_bytes("".join(messages).encode("utf-8"))
+output = Path("logs.txt")
+with TemporaryDirectory(dir=output.parent, prefix=".logs-") as workspace:
+    temporary = Path(workspace) / output.name
+    complete = False
+    with open("export.ndjson", "rb") as wire, temporary.open("wb") as text:
+        for line in wire:
+            if complete or not line.endswith(b"\n"):
+                raise ValueError("Invalid export record boundary")
+            record = json.loads(line.decode("utf-8"))
+            if record == {"type": "complete"}:
+                complete = True
+            elif (isinstance(record, dict) and record.get("type") == "log"
+                  and isinstance(record.get("message_raw"), str)):
+                text.write(record["message_raw"].encode("utf-8") + b"\n")
+            else:
+                raise ValueError("Invalid or failed export")
+    if not complete:
+        raise ValueError("Incomplete export")
+    temporary.replace(output)
 ```
+
+The temporary file needs enough disk space for the unwrapped text. Conversion
+holds one NDJSON record at a time.
 
 ## Safe rendering
 

@@ -169,6 +169,7 @@ const blocker = (hold: () => boolean, release: (_resolve: () => void) => void) =
         : Promise.resolve()
 
 beforeEach(() => {
+    window.history.replaceState(null, "", "/workflows/w1")
     mocks.pathname = "/workflows/w1"
     mocks.workflow = containerWorkflow()
     mocks.jobsResponse = jobsPage
@@ -466,7 +467,7 @@ it("deletes a terminated workflow and returns to the workflow list", async () =>
     expect(url).toBe("/workflows/w1")
     expect(init.method).toBe("DELETE")
     expect(mocks.toast.success).toHaveBeenCalledWith("workflow deleted successfully")
-    expect(mocks.push).toHaveBeenCalledWith("/")
+    expect(mocks.replace).toHaveBeenCalledWith("/")
 })
 
 it("reports a rejected termination and leaves the workflow live", async () => {

@@ -12,6 +12,8 @@ import type { CreateWorkflowPayload, WorkflowsResponse } from "@/features/workfl
 
 import { normalizeIntervalFilter } from "@/features/workflows/interval-filter"
 
+import { refreshQueries, useWorkflowRetirement } from "./workflow-freshness"
+
 type UseWorkflowsOptions = {
     poll?: boolean
 }
@@ -112,6 +114,7 @@ function applyWorkflowFilters(params: URLSearchParams, filters: WorkflowFilters)
 
 export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     const queryClient = useQueryClient()
+    const { retired } = useWorkflowRetirement()
     const router = useRouter()
     const path = usePathname()
     const searchParams = useSearchParams()
@@ -129,9 +132,10 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
             intervalMin,
             intervalMax,
         ),
-        queryFn: () => fetchApiJson<WorkflowsResponse>(
+        queryFn: ({ signal }) => fetchApiJson<WorkflowsResponse>(
             withQuery(apiEndpoints.workflows.list, getWorkflowQueryParams),
             "failed to fetch workflows",
+            { signal },
         ),
         refetchInterval: poll
             ? (query) => {
@@ -218,10 +222,15 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
                 body: JSON.stringify(command.payload)
             })
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
-            resetPagination()
+        onSuccess: async () => {
+            const refresh = refreshQueries(queryClient, { queryKey: queryKeys.workflows.all })
+            if (window.location.pathname === "/" && path === "/") {
+                const params = new URLSearchParams(window.location.search)
+                params.delete("cursor")
+                router.push(`?${params.toString()}`)
+            }
             toast.success("workflow created successfully")
+            await refresh
         },
         onError: (error) => {
             toast.error(error.message)
@@ -229,7 +238,7 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
     })
 
     return {
-        workflows: getWorkflowQuery?.data?.workflows || [],
+        workflows: (getWorkflowQuery.data?.workflows ?? []).filter(({ id }) => !retired.has(id.toLowerCase())),
         isLoading: getWorkflowQuery.isLoading,
         error: getWorkflowQuery.error,
         createWorkflow: (payload: CreateWorkflowPayload, onSuccess?: () => void) => createWorkflowMutation.mutate({

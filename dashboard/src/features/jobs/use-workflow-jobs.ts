@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { createIdempotencyKey, fetchApi, fetchApiJson } from "@/lib/api/client"
@@ -9,6 +9,8 @@ import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
 import { queryRefetchIntervals, queryStaleTimes } from "@/lib/api/query-policy"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { JobsResponse } from "@/features/jobs/types"
+
+import { refreshQueries, useWorkflowScope } from "@/features/workflows/workflow-freshness"
 
 type UseWorkflowJobsOptions = {
     enabled?: boolean
@@ -18,7 +20,7 @@ type SearchParams = Pick<URLSearchParams, "get" | "toString">
 type JobFilters = { status?: string; trigger?: string }
 
 function readJobFilters(path: string, workflowId: string, searchParams: SearchParams) {
-    const isJobsPage = path === `/workflows/${workflowId}` && searchParams.get("tab") === "jobs"
+    const isJobsPage = path?.toLowerCase() === `/workflows/${workflowId}` && searchParams.get("tab") === "jobs"
     const params = isJobsPage ? searchParams : new URLSearchParams()
     return {
         currentCursor: params.get("cursor") || "",
@@ -62,9 +64,12 @@ function applyJobFilters(params: URLSearchParams, filters: JobFilters) {
 }
 
 export function useWorkflowJobs(
-    workflowId: string,
+    routeWorkflowId: string,
     { enabled = true }: UseWorkflowJobsOptions = {},
 ) {
+    const workflowId = routeWorkflowId.toLowerCase()
+    const scope = useWorkflowScope(workflowId)
+    const queryClient = useQueryClient()
     const router = useRouter()
     const path = usePathname()
     const searchParams = useSearchParams()
@@ -74,22 +79,26 @@ export function useWorkflowJobs(
     const getJobQueryParams = jobQueryParams(filters)
 
     const getJobQuery = useQuery({
-        queryKey: queryKeys.workflow.jobs(
+        queryKey: scope.queryKey(queryKeys.workflow.jobs(
             workflowId,
             currentCursor,
             statusFilter,
             triggerFilter,
-        ),
-        queryFn: () => fetchApiJson<JobsResponse>(
-            withQuery(apiEndpoints.workflows.jobs.list(workflowId), getJobQueryParams),
-            "Failed to fetch workflow jobs",
-        ),
-        enabled: enabled && !!workflowId,
+        )),
+        queryFn: ({ signal }) => {
+            scope.requireCurrent()
+            return fetchApiJson<JobsResponse>(
+                withQuery(apiEndpoints.workflows.jobs.list(workflowId), getJobQueryParams),
+                "Failed to fetch workflow jobs", { signal },
+            )
+        },
+        enabled: enabled && scope.available,
         refetchInterval: queryRefetchIntervals.workflowJobs,
         staleTime: queryStaleTimes.workflowJobs,
     })
 
     const goToNextPage = () => {
+        if (!scope.isCurrent()) return false
         const nextCursor = getJobQuery.data?.cursor
         if (!nextCursor) return false
 
@@ -100,17 +109,20 @@ export function useWorkflowJobs(
     }
 
     const goToPreviousPage = () => {
+        if (!scope.isCurrent()) return false
         router.back()
         return true
     }
 
     const resetPagination = () => {
+        if (!scope.isCurrent()) return
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor")
         router.push(`?${params.toString()}`)
     }
 
     const applyAllFilters = (filters: unknown) => {
+        if (!scope.isCurrent()) return
         const params = new URLSearchParams(searchParams.toString())
         params.delete("cursor") // Reset pagination when applying filters
 
@@ -120,6 +132,7 @@ export function useWorkflowJobs(
     }
 
     const clearAllFilters = () => {
+        if (!scope.isCurrent()) return
         const oldParams = new URLSearchParams(searchParams.toString())
         const tab = oldParams.get("tab")
 
@@ -131,33 +144,37 @@ export function useWorkflowJobs(
         router.push(`?${params.toString()}`)
     }
 
-    if (getJobQuery.error instanceof Error) {
+    if (scope.available && getJobQuery.error instanceof Error) {
         toast.error(getJobQuery.error.message)
     }
 
     const manualRunJobMutation = useMutation({
         mutationFn: async (idempotencyKey: string) => {
+            scope.requireCurrent()
             await fetchApi(apiEndpoints.workflows.jobs.schedule(workflowId), "Failed to schedule job", {
                 method: "POST",
+                signal: scope.signal(),
                 headers: {
                     "Idempotency-Key": idempotencyKey,
                 },
             })
         },
-        onSuccess: () => {
+        onSuccess: async () => {
+            if (!scope.isCurrent()) return
+            const refresh = refreshQueries(queryClient, { queryKey: ["workflow-jobs", workflowId] }, scope.isCurrent)
             toast.success("Job scheduled successfully")
-            getJobQuery.refetch()
+            await refresh
         },
         onError: (error) => {
-            toast.error(error.message)
+            if (scope.isCurrent()) toast.error(error.message)
         }
     })
 
     return {
-        jobs: getJobQuery?.data?.jobs || [],
+        jobs: scope.available ? getJobQuery.data?.jobs ?? [] : [],
         isLoading: getJobQuery.isLoading,
         error: getJobQuery.error,
-        refetch: getJobQuery.refetch,
+        refetch: () => scope.isCurrent() ? getJobQuery.refetch() : undefined,
         isRefetching: getJobQuery.isRefetching,
         statusFilter,
         triggerFilter,

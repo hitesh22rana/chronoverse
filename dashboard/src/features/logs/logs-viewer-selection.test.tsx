@@ -925,6 +925,7 @@ it("downloads the retained logs from the download popover", async () => {
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith(
         `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}`,
         "failed to download logs",
+        { signal: expect.any(AbortSignal) },
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")
     expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully")

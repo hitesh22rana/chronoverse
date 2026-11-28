@@ -34,6 +34,7 @@ export default function JobDetailsAndLogsPage() {
 
     const {
         job,
+        isWorkflowAvailable,
         isLoading: isJobLoading,
         error: jobError,
         refetch: refetchJob
@@ -42,6 +43,8 @@ export default function JobDetailsAndLogsPage() {
     const handleRefresh = () => {
         refetchJob()
     }
+
+    if (!isWorkflowAvailable) return <Link href="/">Workflow unavailable. Return to workflows</Link>
 
     if (jobError) {
         return (

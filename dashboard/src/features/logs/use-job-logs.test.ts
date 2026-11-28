@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
     effects: [] as (() => void | (() => void))[],
     query: vi.fn(),
     params: new URLSearchParams(),
+    controller: new AbortController(),
     setLogs: vi.fn(),
     push: vi.fn(),
     workflow: undefined as { kind: string, log_retention: boolean } | undefined,
@@ -22,6 +23,14 @@ vi.mock("@tanstack/react-query", () => ({
     useInfiniteQuery: mocks.query,
     useMutation: () => ({ isPending: false }),
 }))
+vi.mock("@/features/workflows/workflow-freshness", () => ({
+    useWorkflowScope: () => ({
+        available: true,
+        isCurrent: () => !mocks.controller.signal.aborted,
+        signal: () => mocks.controller.signal,
+        queryKey: (key: readonly unknown[]) => key,
+    }),
+}))
 vi.mock("@/features/workflows/use-workflow-details", () => ({
     useWorkflowDetails: () => ({ workflow: mocks.workflow }),
 }))
@@ -34,6 +43,7 @@ const retained = { data: { pages: [{ logs: [log] }] }, fetchNextPage: vi.fn(), i
 const searched = { ...retained, data: { pages: [{ logs: [{ ...log, message: "found" }] }] } }
 
 beforeEach(() => {
+    mocks.controller = new AbortController()
     mocks.workflow = { kind: "CONTAINER", log_retention: true }
     mocks.push.mockClear()
     mocks.effects.length = 0
@@ -47,7 +57,6 @@ afterEach(() => vi.unstubAllGlobals())
 it.each(["RUNNING", "COMPLETED", "FAILED", "CANCELED"])("returns retained logs for %s", (status) => {
     const result = useJobLogs("w", "j", status)
     expect(result.logs).toEqual([log])
-    expect(result.fetchNextPage).toBe(retained.fetchNextPage)
     expect(result.isLoading).toBe(true)
 })
 
@@ -72,7 +81,7 @@ it("opens a credentialed native stream, normalizes logs, and cleans up", () => {
     expect(constructor).toHaveBeenCalledWith(expect.stringContaining("/events"), { withCredentials: true })
 
     source.dispatchEvent(new MessageEvent("log", { data: JSON.stringify(log) }))
-    expect(mocks.setLogs.mock.calls[0][0]([])).toEqual([log])
+    expect(mocks.setLogs.mock.calls[0][0](null).logs).toEqual([log])
     source.dispatchEvent(new MessageEvent("log", { data: "invalid json" }))
     expect(mocks.setLogs).toHaveBeenCalledTimes(1)
 

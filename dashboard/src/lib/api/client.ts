@@ -62,7 +62,7 @@ export async function fetchApi(
         } catch {
             // Unreadable body; fall back to the generic message.
         }
-        throw new Error(detail ? `${errorMessage}: ${detail}` : errorMessage)
+        throw Object.assign(new Error(detail ? `${errorMessage}: ${detail}` : errorMessage), { status: response.status })
     }
 
     return response

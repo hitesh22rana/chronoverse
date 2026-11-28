@@ -123,3 +123,46 @@ it.each([
     expect(mocks.back).not.toHaveBeenCalled()
     expect(mocks.replace).not.toHaveBeenCalled()
 })
+
+it.each([false, true])("an acknowledged edit supersedes an outstanding read (cached=%s)", async (cached) => {
+    const old = Promise.withResolvers<Workflow>()
+    const fresh = Promise.withResolvers<Workflow>()
+    let staleSignal: AbortSignal | undefined
+
+    mocks.fetchApi.mockResolvedValue(new Response(null, { status: 204 }))
+    if (cached) mocks.fetchApiJson.mockResolvedValueOnce(workflow())
+    mocks.fetchApiJson.mockImplementationOnce((_url, _msg, { signal }: RequestInit) => {
+        staleSignal = signal ?? undefined
+        return old.promise
+    }).mockReturnValueOnce(fresh.promise)
+    const { result } = renderUseWorkflowDetails()
+    if (cached) {
+        await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
+        act(() => { void result.current.refetch() })
+    }
+    await waitFor(() => expect(staleSignal).toBeDefined())
+
+    act(() => {
+        result.current.updateWorkflow({ name: "Renamed" } as Parameters<WorkflowDetails["updateWorkflow"]>[0])
+    })
+    await waitFor(() => expect(staleSignal?.aborted).toBe(true))
+    await act(async () => {
+        fresh.resolve(workflow({ name: "Renamed" }))
+        old.resolve(workflow({ name: "Superseded response" }))
+    })
+    await waitFor(() => expect(result.current.workflow?.name).toBe("Renamed"))
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(cached ? 3 : 2)
+})
+
+it("retires a workflow after an ambiguous delete and an authoritative missing response", async () => {
+    mocks.fetchApi
+        .mockRejectedValueOnce(Object.assign(new Error("gateway error"), { status: 503 }))
+        .mockRejectedValueOnce(Object.assign(new Error("workflow missing"), { status: 404 }))
+    const { result, queryClient } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
+    act(() => result.current.deleteWorkflow())
+    await waitFor(() => expect(result.current.isWorkflowAvailable).toBe(false))
+    expect(queryClient.getQueryData(queryKeys.workflow.detail("w1"))).toBeUndefined()
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(2)
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+})

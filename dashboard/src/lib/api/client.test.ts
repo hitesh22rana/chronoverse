@@ -88,7 +88,7 @@ describe("fetchApi", () => {
     it("uses the default message when the error body is blank", async () => {
         vi.stubGlobal("fetch", vi.fn(async () => new Response("   ", { status: 500 })))
         try {
-            await expect(fetchApi("http://x/")).rejects.toThrow(new Error("API request failed"))
+            await expect(fetchApi("http://x/")).rejects.toMatchObject({ message: "API request failed", status: 500 })
         } finally {
             vi.unstubAllGlobals()
         }
@@ -201,7 +201,7 @@ describe("fetchApiJson", () => {
     it("rejects with the fetchApi message instead of a parse error", async () => {
         vi.stubGlobal("fetch", vi.fn(async () => new Response("not json", { status: 500 })))
         try {
-            await expect(fetchApiJson("http://x/", "boom")).rejects.toThrow(new Error("boom: not json"))
+            await expect(fetchApiJson("http://x/", "boom")).rejects.toMatchObject({ message: "boom: not json", status: 500 })
         } finally {
             vi.unstubAllGlobals()
         }

@@ -13,6 +13,8 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { CreateWorkflowPayload, Workflow } from "./types"
+import { queryKeys } from "@/lib/api/query-keys"
+import { useWorkflowDetails } from "./use-workflow-details"
 import { useWorkflows } from "./use-workflows"
 
 const mocks = vi.hoisted(() => ({
@@ -354,4 +356,35 @@ it("keeps the caller informed when a create is rejected", async () => {
     expect(onCreated).not.toHaveBeenCalled()
     expect(mocks.push).not.toHaveBeenCalled()
     expect(result.current.isCreating).toBe(false)
+})
+
+it("hides a deleted workflow when opening a cached filter while its fresh read is pending", async () => {
+    const survivor = workflow({ id: "w2", name: "Other workflow" })
+    const fresh = Promise.withResolvers<{ workflows: Workflow[] }>()
+    const filtered = queryKeys.workflows.list("", "nightly", "", "", "", "")
+    const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    })
+    queryClient.setQueryData(filtered, { workflows: [workflow(), survivor] })
+    mocks.fetchApiJson.mockImplementation((url: string) => {
+        if (url === "/workflows/w1") return Promise.resolve(workflow())
+        if (url.includes("query=nightly")) return fresh.promise
+        return Promise.resolve({ workflows: [workflow(), survivor] })
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result, rerender } = renderHook(() => ({
+        list: useWorkflows(),
+        details: useWorkflowDetails("W1"),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.list.workflows).toHaveLength(2))
+    act(() => result.current.details.deleteWorkflow())
+    await waitFor(() => expect(result.current.details.isWorkflowAvailable).toBe(false))
+
+    mocks.search = "query=nightly"
+    rerender()
+    await waitFor(() => expect(lastListRequest()).toContain("query=nightly"))
+    expect(result.current.list.workflows).toEqual([survivor])
+    await act(async () => { fresh.resolve({ workflows: [survivor] }) })
 })

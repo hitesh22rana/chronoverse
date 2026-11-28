@@ -34,7 +34,11 @@ export type OpenApiSchema = {
   [key: string]: unknown;
 };
 
-export type OpenApiContent = Record<string, { schema?: OpenApiSchema }>;
+export type OpenApiContent = Record<string, {
+  schema?: OpenApiSchema;
+  example?: unknown;
+  "x-ndjson-record-schema"?: OpenApiSchema;
+}>;
 
 export type OpenApiRequestBody = {
   required?: boolean;

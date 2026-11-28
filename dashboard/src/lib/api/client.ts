@@ -15,6 +15,7 @@ async function resolveCsrfToken(): Promise<string> {
     try {
         // Configured base keeps edge path prefixes (e.g. /api).
         const res = await fetch(apiEndpoints.auth.csrf, {
+            cache: "no-store",
             credentials: "include",
         })
         if (res.ok) {
@@ -42,6 +43,7 @@ async function fetchWithCredentials(url: string, options: RequestInit = {}) {
 
     return fetch(url, {
         ...options,
+        ...(method === "GET" || method === "HEAD" ? { cache: "no-store" } : {}),
         credentials: "include",
         headers,
     })

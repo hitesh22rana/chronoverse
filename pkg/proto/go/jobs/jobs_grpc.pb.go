@@ -125,7 +125,9 @@ type JobsServiceClient interface {
 	GetJobLogs(ctx context.Context, in *GetJobLogsRequest, opts ...grpc.CallOption) (*GetJobLogsResponse, error)
 	// StreamJobLogs streams the logs of a job.
 	StreamJobLogs(ctx context.Context, in *StreamJobLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Log], error)
-	// SearchJobLogs returns the filtered logs of a job.
+	// SearchJobLogs returns retained logs matching every effective query term.
+	// The text filter uses the first ten terms Meilisearch identifies, with typo
+	// tolerance. Follow the cursor to continue through the matches.
 	SearchJobLogs(ctx context.Context, in *SearchJobLogsRequest, opts ...grpc.CallOption) (*GetJobLogsResponse, error)
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
@@ -549,7 +551,9 @@ type JobsServiceServer interface {
 	GetJobLogs(context.Context, *GetJobLogsRequest) (*GetJobLogsResponse, error)
 	// StreamJobLogs streams the logs of a job.
 	StreamJobLogs(*StreamJobLogsRequest, grpc.ServerStreamingServer[Log]) error
-	// SearchJobLogs returns the filtered logs of a job.
+	// SearchJobLogs returns retained logs matching every effective query term.
+	// The text filter uses the first ten terms Meilisearch identifies, with typo
+	// tolerance. Follow the cursor to continue through the matches.
 	SearchJobLogs(context.Context, *SearchJobLogsRequest) (*GetJobLogsResponse, error)
 	// ListJobs returns a list of all jobs for a workflow_id owned by a user.
 	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/auth"
@@ -44,6 +46,12 @@ const (
 	formattedSearchResultKey  = "_formatted"
 	authSubject               = "internal/jobs"
 	delimiter                 = '$'
+
+	// Leave room below the default 4 MiB gRPC receive limit for response metadata.
+	jobLogPageBytes = 3 * 1024 * 1024
+
+	// Leave one result for the cursor under Meilisearch's default maxTotalHits of 1000.
+	jobLogSearchPageLimit = 999
 
 	jobLogsHighlightTokenBytes = 16
 	jobLogsHighlightStart      = "__CV_HL_START_"
@@ -721,12 +729,22 @@ func (r *Repository) GetJobLogs(
 	if ascending {
 		sequenceDirection = "ASC"
 	}
-	// Keep the newest unmerged ReplacingMergeTree duplicate before LIMIT BY collapses event IDs.
-	logsQuery += fmt.Sprintf(`
-    ORDER BY sequence_num %s, stream ASC, event_id ASC, timestamp DESC
-    LIMIT 1 BY event_id
-    LIMIT %d;
-    `, sequenceDirection, r.cfg.LogsFetchLimit+1)
+	// Deduplicate before applying either limit. Raw message bytes are a lower
+	// bound on protobuf size. Keep the crossing row so Go can use it as a cursor.
+	logsQuery = fmt.Sprintf(`
+		SELECT timestamp, message, sequence_num, stream, event_id
+		FROM (
+			%s
+			ORDER BY sequence_num %s, stream ASC, event_id ASC, timestamp DESC
+			LIMIT 1 BY event_id
+			LIMIT %d
+		)
+		QUALIFY sum(length(message)) OVER (
+			ORDER BY sequence_num %s, stream ASC, event_id ASC
+			ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+		) <= %d
+		ORDER BY sequence_num %s, stream ASC, event_id ASC
+	`, logsQuery, sequenceDirection, r.cfg.LogsFetchLimit+1, sequenceDirection, jobLogPageBytes, sequenceDirection)
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	var (
@@ -771,7 +789,6 @@ func (r *Repository) GetJobLogs(
 // collectJobLogPage decodes the driver rows and retains the first omitted row as
 // the inclusive pagination cursor. The caller owns closing the result set.
 func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, cursor jobLogsCursor, err error) {
-	var nextCursor jobLogsCursor
 	fetched := make([]*jobsmodel.JobLog, 0, limit+1)
 	fetchedCursors := make([]jobLogsCursor, 0, limit+1)
 	for rows.Next() {
@@ -802,11 +819,30 @@ func collectJobLogPage(rows driver.Rows, limit int) (page []*jobsmodel.JobLog, c
 		return nil, jobLogsCursor{}, status.Errorf(codes.Internal, "rows error: %v", rowsErr)
 	}
 
-	fetched, hasMore := paginate.Trim(fetched, limit)
-	if hasMore {
-		nextCursor = fetchedCursors[limit]
+	return trimJobLogPage(fetched, fetchedCursors, limit)
+}
+
+func trimJobLogPage(logs []*jobsmodel.JobLog, cursors []jobLogsCursor, limit int) ([]*jobsmodel.JobLog, jobLogsCursor, error) {
+	var count, pageBytes int
+	for _, log := range logs[:min(len(logs), limit)] {
+		pageBytes += jobLogWireSize(log)
+		if pageBytes > jobLogPageBytes {
+			break
+		}
+		count++
 	}
-	return fetched, nextCursor, nil
+	if count < len(logs) {
+		if count == 0 {
+			return nil, jobLogsCursor{}, status.Error(codes.ResourceExhausted, "retained log exceeds the response size limit")
+		}
+		return logs[:count], cursors[count], nil
+	}
+	return logs, jobLogsCursor{}, nil
+}
+
+func jobLogWireSize(log *jobsmodel.JobLog) int {
+	// Reserve a tag byte and up to four length bytes for each repeated Log.
+	return proto.Size(log.ToProto()) + 5
 }
 
 // StreamJobLogs returns a subscription to stream job logs.
@@ -997,14 +1033,15 @@ func (r *Repository) SearchJobLogs(
 		highlightToken = newJobLogsHighlightToken()
 	}
 
+	pageLimit := min(r.cfg.LogsFetchLimit, jobLogSearchPageLimit)
 	eg.Go(func() error {
-		searchRes, searchErr := r.ms.Index(meilisearchpkg.IndexJobLogs).SearchWithContext(
-			egCtx,
-			searchJobLogsFilters.Message,
-			newJobLogsSearchRequest(filter, highlightToken, int64(r.cfg.LogsFetchLimit+1), options),
-		)
+		request := newJobLogsSearchRequest(filter, highlightToken, int64(pageLimit+1), options)
+		searchRes, searchErr := r.searchJobLogHits(egCtx, searchJobLogsFilters.Message, request)
 		if searchErr != nil {
-			return status.Errorf(codes.Internal, "failed to search job logs: %v", searchErr)
+			return searchErr
+		}
+		if len(request.AttributesToHighlight) == 0 {
+			highlightToken = ""
 		}
 
 		fetched := make([]*jobsmodel.JobLog, 0, len(searchRes.Hits))
@@ -1018,12 +1055,9 @@ func (r *Repository) SearchJobLogs(
 			fetchedCursors = append(fetchedCursors, logCursor)
 		}
 
-		fetched, hasMore := paginate.Trim(fetched, r.cfg.LogsFetchLimit)
-		if hasMore {
-			nextCursor = fetchedCursors[r.cfg.LogsFetchLimit]
-		}
-		logs = fetched
-		return nil
+		var pageErr error
+		logs, nextCursor, pageErr = trimJobLogPage(fetched, fetchedCursors, int(request.Limit)-1)
+		return pageErr
 	})
 
 	eg.Go(func() error {
@@ -1042,6 +1076,36 @@ func (r *Repository) SearchJobLogs(
 		Cursor:         encodeJobLogsCursor(nextCursor),
 		HighlightToken: highlightToken,
 	}, nil
+}
+
+func (r *Repository) searchJobLogHits(
+	ctx context.Context,
+	query string,
+	request *meilisearch.SearchRequest,
+) (*meilisearch.SearchResponse, error) {
+	index := r.ms.Index(meilisearchpkg.IndexJobLogs)
+	for {
+		result, err := index.SearchWithContext(ctx, query, request)
+		if err == nil {
+			return result, nil
+		}
+		var oversized *http.MaxBytesError
+		if !errors.As(err, &oversized) {
+			return nil, status.Errorf(codes.Internal, "failed to search job logs: %v", err)
+		}
+
+		// Retry from the same cursor. Let the next request keep its lookahead hit.
+		if len(request.AttributesToHighlight) > 0 {
+			request.AttributesToHighlight = nil
+			request.HighlightPreTag = ""
+			request.HighlightPostTag = ""
+			continue
+		}
+		if request.Limit <= 2 {
+			return nil, status.Error(codes.ResourceExhausted, "retained log search response exceeds its byte limit")
+		}
+		request.Limit = (request.Limit-1)/2 + 1
+	}
 }
 
 // ListJobs returns jobs.
@@ -1222,6 +1286,7 @@ func newJobLogsSearchRequest(
 		AttributesToSearchOn: []string{jobLogsMessageField},
 		Sort:                 []string{"sequence_num:" + sequenceDirection, "id:asc"},
 		Limit:                limit,
+		MatchingStrategy:     meilisearch.All,
 	}
 
 	if !options.DisableHighlight {
@@ -1294,8 +1359,8 @@ func searchHitString(source map[string]any, field string) string {
 	return value
 }
 
-func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
-	source := make(map[string]any)
+func searchHitSource(hit map[string]json.RawMessage) (source map[string]any, highlight *string, err error) {
+	source = make(map[string]any)
 	for k, v := range hit {
 		if k == formattedSearchResultKey {
 			continue
@@ -1303,25 +1368,25 @@ func searchHitSource(hit map[string]json.RawMessage) (map[string]any, error) {
 
 		var val any
 		if err := json.Unmarshal(v, &val); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+			return nil, nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 		}
 		source[k] = val
 	}
 
-	formattedRaw, ok := hit["_formatted"]
+	formattedRaw, ok := hit[formattedSearchResultKey]
 	if !ok {
-		return source, nil
+		return source, nil, nil
 	}
 
 	var formatted map[string]any
 	if err := json.Unmarshal(formattedRaw, &formatted); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
+		return nil, nil, status.Errorf(codes.Internal, "failed to unmarshal data: %v", err)
 	}
 	if msg, ok := formatted[jobLogsMessageField].(string); ok {
-		source[jobLogsMessageField] = msg
+		return source, &msg, nil
 	}
 
-	return source, nil
+	return source, nil, nil
 }
 
 func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
@@ -1340,7 +1405,7 @@ func extractDataFromListJobsCursor(cursor string) (string, time.Time, error) {
 
 // decodeSearchJobLog retains the search document ID for pagination separately from its event ID.
 func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobLogsCursor, error) {
-	source, scanErr := searchHitSource(hit)
+	source, highlighted, scanErr := searchHitSource(hit)
 	if scanErr != nil {
 		return nil, jobLogsCursor{}, scanErr
 	}
@@ -1373,6 +1438,13 @@ func decodeSearchJobLog(hit map[string]json.RawMessage) (*jobsmodel.JobLog, jobL
 
 	if stream, ok := source[jobLogsStreamField].(string); ok {
 		log.Stream = stream
+	}
+	if highlighted != nil {
+		raw := log.Message
+		log.Message = *highlighted
+		if jobLogWireSize(log) > jobLogPageBytes {
+			log.Message = raw
+		}
 	}
 	return log, jobLogsCursor{
 		SequenceNum: log.SequenceNum,

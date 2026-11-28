@@ -16,7 +16,15 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 - `q=<text>`
 - `cursor=<opaque cursor>`
 
-When `q` is absent, the route performs retained stream filtering. When present, Meilisearch supplies matches and highlight ranges.
+When `q` is absent, the route performs retained stream filtering. When present,
+Meilisearch matches all of the first ten terms it identifies and allows typos.
+Terms after the tenth are ignored. Search supplies highlight ranges, and results
+follow sequence order across pages. Meilisearch-backed pages return at most
+999 rows. Continue while a cursor is present. A page may end early to stay
+within the 3 MiB budget for encoded log records. If adding highlights would
+make one log exceed that budget, the response returns that log's original text.
+When a Meilisearch response exceeds the 8 MiB decoded body limit, the server
+retries without highlights and reduces page size if needed.
 
 ## Shareable line selections
 
@@ -26,7 +34,53 @@ Opening a line link loads older cursor pages until the selected range is availab
 
 ## Raw downloads
 
-`GET .../logs/raw` downloads plain text. Stream and text filters are applied consistently, and search highlights are not rendered into the download.
+Authenticated GET and supported HEAD requests receive `Cache-Control: no-store`,
+including gateway-generated errors.
+
+`GET .../logs/raw` streams typed `application/x-ndjson` in ascending sequence
+order. It accepts stream and text filters, uses the same ten-term limit,
+and omits search highlights. A successful export ends with exactly one newline-terminated `complete` record
+and clean EOF. An empty export still has a completion record. A later failure
+may send an `error` record. Reject errors, trailing records, and truncation.
+Completion certifies this traversal; late logs or index updates can affect a
+later export.
+
+The dashboard assembles TXT, JSON, or JSONL after verifying completion, with a
+limit of 8 MiB each for the received stream and the saved file. Use the filters
+to narrow larger dashboard exports. Direct API clients receive the same NDJSON
+regardless of how they save it. To reconstruct TXT after a successful HTTP
+transfer to `export.ndjson`, write each raw message and one newline to a
+temporary file. The example replaces `logs.txt` only after validating the final
+completion record and reaching EOF.
+
+```python
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+output = Path("logs.txt")
+with TemporaryDirectory(dir=output.parent, prefix=".logs-") as workspace:
+    temporary = Path(workspace) / output.name
+    complete = False
+    with open("export.ndjson", "rb") as wire, temporary.open("wb") as text:
+        for line in wire:
+            if complete or not line.endswith(b"\n"):
+                raise ValueError("Invalid export record boundary")
+            record = json.loads(line.decode("utf-8"))
+            if record == {"type": "complete"}:
+                complete = True
+            elif (isinstance(record, dict) and record.get("type") == "log"
+                  and isinstance(record.get("message_raw"), str)):
+                text.write(record["message_raw"].encode("utf-8") + b"\n")
+            else:
+                raise ValueError("Invalid or failed export")
+    if not complete:
+        raise ValueError("Incomplete export")
+    temporary.replace(output)
+```
+
+The temporary file needs enough disk space for the unwrapped text. Conversion
+holds one NDJSON record at a time.
 
 ## Safe rendering
 

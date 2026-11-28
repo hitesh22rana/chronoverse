@@ -2,6 +2,7 @@
 package meilisearch
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"net/http"
@@ -71,5 +72,9 @@ func TestClientConfigAppliesCredentialsToPlainAndTLSRequests(t *testing.T) {
 	cfg := &Config{URI: "http://search.test", MasterKey: "public-test-key"}
 	client, err := New(t.Context(), cfg)
 	require.NoError(t, err)
-	client.Close()
+	defer client.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = client.HealthWithContext(ctx)
+	require.ErrorContains(t, err, "context canceled")
 }

@@ -198,6 +198,9 @@ func (s *Server) withVerifyCSRFMiddleware(next http.HandlerFunc) http.HandlerFun
 // withVerifySessionMiddleware is a middleware that verifies the attached token.
 func (s *Server) withVerifySessionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			http.Error(w, "session not found", http.StatusUnauthorized)

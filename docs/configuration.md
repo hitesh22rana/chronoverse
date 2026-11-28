@@ -350,7 +350,13 @@ cleanup is delayed.
 ### Jobs Service
 
 - `JOBS_SERVICE_CONFIG_FETCH_LIMIT`
-- `JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT`
+- `JOBS_SERVICE_CONFIG_LOGS_FETCH_LIMIT` sets the maximum rows per retained-log
+  page. Meilisearch-backed pages return at most 999 rows, leaving one result
+  for the continuation cursor under the default 1,000-hit ceiling. The jobs
+  service also caps encoded log records at 3 MiB per page. Meilisearch
+  responses are capped at 8 MiB before decoding JSON. Oversized responses
+  are retried without highlights and with fewer rows if needed.
+  Continue using the cursor even when a page is shorter than the row limit.
 - `JOBS_SERVICE_RUNTIME_HEARTBEAT_TTL`
 - `JOBS_SERVICE_RUNTIME_LOST_AFTER`
 - `COMMAND_IDEMPOTENCY_EVENT_RETENTION`

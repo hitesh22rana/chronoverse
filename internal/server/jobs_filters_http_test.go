@@ -424,8 +424,7 @@ func TestHandleSearchJobLogsRejectsMalformedStream(t *testing.T) {
 }
 
 // TestHandleSearchJobLogsRoutesStreamAndCursor verifies which logs RPC each
-// stream/query/cursor combination selects, what it forwards, and how the
-// resulting Cache-Control depends on the cursor pair.
+// stream/query/cursor combination selects and what it forwards.
 func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 	const opaqueCursor = "eyJvIjoyMH0="
 
@@ -436,28 +435,24 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 		wantStream  jobspb.LogStream
 		wantMessage string
 		wantCursor  string
-		wantCaching string
 	}{
 		{
 			name:        "no query no stream uses get logs with all streams",
 			target:      "/workflows/wf-1/jobs/job-1/logs/search",
 			wantStream:  jobspb.LogStream_LOG_STREAM_ALL,
 			wantMessage: "",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "empty query value behaves like an absent query",
 			target:      "/workflows/wf-1/jobs/job-1/logs/search?q=",
 			wantStream:  jobspb.LogStream_LOG_STREAM_ALL,
 			wantMessage: "",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "stdout filter without query",
 			target:      "/workflows/wf-1/jobs/job-1/logs/search?stream=stdout",
 			wantStream:  jobspb.LogStream_LOG_STREAM_STDOUT,
 			wantMessage: "",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "query switches to the search rpc",
@@ -465,7 +460,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 			wantSearch:  true,
 			wantStream:  jobspb.LogStream_LOG_STREAM_ALL,
 			wantMessage: "panic",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "query and stream combine on the search rpc",
@@ -473,7 +467,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 			wantSearch:  true,
 			wantStream:  jobspb.LogStream_LOG_STREAM_STDERR,
 			wantMessage: "panic",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "whitespace query still searches",
@@ -481,7 +474,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 			wantSearch:  true,
 			wantStream:  jobspb.LogStream_LOG_STREAM_ALL,
 			wantMessage: " ",
-			wantCaching: "no-store",
 		},
 		{
 			name:        "cursor is forwarded on the search rpc",
@@ -490,7 +482,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 			wantStream:  jobspb.LogStream_LOG_STREAM_ALL,
 			wantMessage: "panic",
 			wantCursor:  opaqueCursor,
-			wantCaching: "private, max-age=7200",
 		},
 		{
 			name:        "cursor is forwarded on the get rpc",
@@ -498,7 +489,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 			wantStream:  jobspb.LogStream_LOG_STREAM_STDOUT,
 			wantMessage: "",
 			wantCursor:  opaqueCursor,
-			wantCaching: "private, max-age=7200",
 		},
 	}
 
@@ -526,11 +516,6 @@ func TestHandleSearchJobLogsRoutesStreamAndCursor(t *testing.T) {
 
 			if got := client.logsRequestIDs(); got != "wf-1/job-1/user-1" {
 				t.Fatalf("forwarded ids = %q, want %q", got, "wf-1/job-1/user-1")
-			}
-			// Cacheability depends on both cursors: a first page must never be
-			// cached even when the backend advertises another page.
-			if got := res.Header().Get("Cache-Control"); got != test.wantCaching {
-				t.Fatalf("Cache-Control = %q, want %q", got, test.wantCaching)
 			}
 		})
 	}
@@ -687,9 +672,6 @@ func TestHandleSearchJobLogsBackendErrorHidesDetail(t *testing.T) {
 		}
 		if got := res.Body.String(); got != "failed to get job logs\n" {
 			t.Fatalf("body = %q, want %q", got, "failed to get job logs\n")
-		}
-		if got := res.Header().Get("Cache-Control"); got != "" {
-			t.Fatalf("error responses must not be cached, got Cache-Control %q", got)
 		}
 	})
 

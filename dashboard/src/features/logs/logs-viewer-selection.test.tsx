@@ -902,7 +902,7 @@ it("preserves selection and requests when reselecting the active log filter", as
 })
 
 it("downloads the retained logs from the download popover", async () => {
-    mocks.fetchApi.mockImplementation(async () => ({ blob: async () => new Blob(["logs"]) }))
+    mocks.fetchApi.mockImplementation(async () => (new Response('{"type":"complete"}\n', { headers: { "Content-Type": "application/x-ndjson" } })))
     renderViewer()
     await loadedLines(20)
 
@@ -923,7 +923,7 @@ it("downloads the retained logs from the download popover", async () => {
     })
 
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith(
-        `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}?format=jsonl`,
+        `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}`,
         "failed to download logs",
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")
@@ -933,7 +933,7 @@ it("downloads the retained logs from the download popover", async () => {
 it("reports a download in flight in both the trigger and the action", async () => {
     let releaseDownload: (() => void) | null = null
     mocks.fetchApi.mockImplementation(() => new Promise((resolve) => {
-        releaseDownload = () => resolve({ blob: async () => new Blob(["logs"]) })
+        releaseDownload = () => resolve(new Response('{"type":"complete"}\n', { headers: { "Content-Type": "application/x-ndjson" } }))
     }))
     renderViewer()
     await loadedLines(20)

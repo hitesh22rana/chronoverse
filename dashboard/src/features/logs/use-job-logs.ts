@@ -32,12 +32,15 @@ import {
     normalizeJobLog,
     type JobLogWire,
 } from "@/features/logs/log-data"
+import { readLogDownload } from "@/features/logs/log-download"
 import { buildLogViewerUrl } from "@/features/logs/log-line-selection"
 
 type DownloadLogsOptions = {
     filename: string
     format: DownloadLogsFormat
 }
+
+const logDownloadLimitBytes = 8 * 1024 * 1024
 
 const kindsWithLogs = ['CONTAINER']
 const statusesWithLogs = ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']
@@ -65,15 +68,17 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
 
     const downloadLogsMutation = useMutation({
         mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
-            const params = new URLSearchParams(getSearchQueryParams)
-            params.set("format", format)
-
             const response = await fetchApi(
-                withQuery(logsDownloadURL, params),
+                withQuery(logsDownloadURL, getSearchQueryParams),
                 "failed to download logs",
             )
 
-            const blob = await response.blob()
+            const blob = await readLogDownload(response, {
+                format,
+                id: jobId,
+                workflow_id: workflowId,
+                filters: { q: searchQuery, stream: streamFilter || "all" },
+            }, logDownloadLimitBytes)
             const objectUrl = URL.createObjectURL(blob)
             const a = document.createElement("a")
             a.href = objectUrl
@@ -120,12 +125,12 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     });
 
     useEffect(() => {
-        if (!shouldFetch || !isRunning || Boolean(getSearchQueryParams) || !workflowId || !jobId) {
+        if (!canFetch || !isRunning || getSearchQueryParams) {
             return
         }
 
         return subscribeToJobLogs(sseURL, setLiveLogs)
-    }, [sseURL, isRunning, shouldFetch, getSearchQueryParams, workflowId, jobId])
+    }, [sseURL, isRunning, canFetch, getSearchQueryParams])
 
     useEffect(() => {
         if (jobLogsSearchInfiniteQuery.error instanceof Error) {
@@ -240,7 +245,7 @@ function fetchLogPage(url: string, pageParam: unknown, search = "") {
     return fetchApiJson<JobLogsResponse>(
         withQuery(url, params),
         "failed to fetch job logs",
-        !pageParam ? { cache: "no-store" } : {},
+        { cache: "no-store" },
     )
 }
 

@@ -2,13 +2,10 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,77 +19,15 @@ import (
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
 )
 
-type failingDownloadWriter struct {
-	failAt, calls int
-	err           error
-}
-
-func (w *failingDownloadWriter) Write(data []byte) (int, error) {
-	w.calls++
-	if w.calls == w.failAt {
-		return 0, w.err
-	}
-	return len(data), nil
-}
-
-func TestDownloadWriterPropagatesClientWriteFailures(t *testing.T) {
-	disconnected := errors.New("client disconnected")
-	for _, failAt := range []int{1, 2} {
-		writer := &failingDownloadWriter{failAt: failAt, err: disconnected}
-		require.ErrorIs(t, writeJobLogsDownloadJSONHeader(writer, &jobLogsDownloadRequest{JobID: "job"}), disconnected)
-		require.Equal(t, failAt, writer.calls)
-	}
-	for _, test := range []struct {
-		name, format string
-		first        bool
-		failAt       int
-	}{
-		{"text", jobLogsDownloadFormatText, true, 1},
-		{"jsonl", jobLogsDownloadFormatJSONL, true, 1},
-		{"first JSON record", jobLogsDownloadFormatJSON, true, 1},
-		{"JSON delimiter", jobLogsDownloadFormatJSON, false, 1},
-		{"later JSON record", jobLogsDownloadFormatJSON, false, 2},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			writer := &failingDownloadWriter{failAt: test.failAt, err: disconnected}
-			first := test.first
-			require.ErrorIs(t, writeJobLogsDownloadLog(writer, test.format, &jobspb.Log{Message: "hello"}, &first), disconnected)
-			require.Equal(t, test.failAt, writer.calls)
-		})
-	}
-}
-
-func TestDownloadErrorsHideBackendDetailsAndKeepTraceCorrelation(t *testing.T) {
-	core, entries := observer.New(zap.ErrorLevel)
-	s := &Server{logger: zap.New(core)}
-	span := trace.NewSpanContext(trace.SpanContextConfig{
-		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2},
-	})
-	ctx := trace.ContextWithSpanContext(context.Background(), span)
-	backendError := errors.New("password=private backend address")
-	for _, test := range []struct{ format, expected string }{
-		{jobLogsDownloadFormatJSON, `],"error":{"message":"stream failed"}}`},
-		{jobLogsDownloadFormatJSONL, "{\"message\":\"stream failed\"}\n"},
-		{jobLogsDownloadFormatText, "\n--- ERROR: stream failed ---\n"},
-	} {
-		var response bytes.Buffer
-		s.writeJobLogsDownloadError(ctx, &response, test.format, "failed to fetch logs", backendError)
-		require.Equal(t, test.expected, response.String())
-		require.NotContains(t, response.String(), backendError.Error())
-		entry := entries.All()[entries.Len()-1]
-		require.Equal(t, "failed to fetch logs", entry.Message)
-		require.Equal(t, backendError.Error(), entry.ContextMap()["error"])
-		require.Equal(t, span.TraceID().String(), entry.ContextMap()["trace_id"])
-	}
-	s.writeJobLogsDownloadError(context.Background(), io.Discard, jobLogsDownloadFormatText, "without span", backendError)
-	require.NotContains(t, entries.All()[entries.Len()-1].ContextMap(), "trace_id")
-}
-
 type downloadFailureClient struct {
 	jobspb.JobsServiceClient
 	jobError   error
 	jobStatus  string
 	fetchCalls int
+	firstPage  *jobspb.GetJobLogsResponse
+	lastPage   *jobspb.GetJobLogsResponse
+	cursors    []string
+	onFetch    func(int)
 }
 
 func (c *downloadFailureClient) GetJob(context.Context, *jobspb.GetJobRequest, ...grpc.CallOption) (*jobspb.GetJobResponse, error) {
@@ -100,14 +35,24 @@ func (c *downloadFailureClient) GetJob(context.Context, *jobspb.GetJobRequest, .
 }
 
 func (c *downloadFailureClient) GetJobLogs(
-	context.Context,
-	*jobspb.GetJobLogsRequest,
-	...grpc.CallOption,
+	_ context.Context,
+	req *jobspb.GetJobLogsRequest,
+	_ ...grpc.CallOption,
 ) (
 	*jobspb.GetJobLogsResponse,
 	error,
 ) {
 	c.fetchCalls++
+	c.cursors = append(c.cursors, req.GetCursor())
+	if c.onFetch != nil {
+		c.onFetch(c.fetchCalls)
+	}
+	if c.fetchCalls == 1 && c.firstPage != nil {
+		return c.firstPage, nil
+	}
+	if c.fetchCalls == 2 && c.lastPage != nil {
+		return c.lastPage, nil
+	}
 	return nil, status.Error(codes.Unavailable, "private backend failure")
 }
 
@@ -133,23 +78,118 @@ func TestDownloadStopsBeforeFetchingUnreadyJobs(t *testing.T) {
 	}
 }
 
-func TestDownloadReportsFetchFailureWithoutClosingAsSuccess(t *testing.T) {
+func TestDownloadAuthorizesPageOneBeforeSuccess(t *testing.T) {
 	client := &downloadFailureClient{jobStatus: "COMPLETED"}
-	s := &Server{jobsClient: client, logger: zap.NewNop()}
+	core, entries := observer.New(zap.ErrorLevel)
+	span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
+	request := newJobLogsHandlerRequest("/download")
 	response := httptest.NewRecorder()
-	request := newJobLogsHandlerRequest("/download?format=json")
-	s.handleDownloadJobLogs(response, request)
-	require.Equal(t, 1, client.fetchCalls)
-	require.True(t, response.Flushed)
-	require.Contains(t, response.Body.String(), `"error":{"message":"stream failed"}`)
-	require.NotContains(t, response.Body.String(), "private backend failure")
-	var body struct {
-		Logs  []json.RawMessage `json:"logs"`
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
+	(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(
+		response, request.WithContext(trace.ContextWithSpanContext(request.Context(), span)),
+	)
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	require.Equal(t, "failed to fetch logs\n", response.Body.String())
+	require.Empty(t, response.Header().Get("Content-Disposition"))
+	require.False(t, response.Flushed)
+	require.Equal(t, []string{""}, client.cursors)
+	logs := entries.All()
+	require.Len(t, logs, 1)
+	require.Equal(t, "failed to fetch first log download page", logs[0].Message)
+	require.Equal(t, span.TraceID().String(), logs[0].ContextMap()["trace_id"])
+	require.Contains(t, logs[0].ContextMap()["error"], "private backend failure")
+}
+
+func TestDownloadLaterPageFailureHasNoCompletionAndKeepsTrace(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		repeatCursor bool
+		disconnect   bool
+		failedWrite  int
+		wantRecord   string
+		wantLog      string
+		wantCause    string
+	}{
+		{
+			name: "fetch failure", wantRecord: "{\"type\":\"error\",\"message\":\"stream failed\"}\n",
+			wantLog: "failed to fetch logs", wantCause: "private backend failure",
+		},
+		{
+			name: "nonadvancing cursor", repeatCursor: true,
+			wantRecord: "{\"type\":\"error\",\"message\":\"stream failed\"}\n",
+			wantLog:    "failed to fetch logs", wantCause: "log cursor did not advance",
+		},
+		{
+			name: "request canceled while fetching", disconnect: true,
+			wantLog: "failed to fetch logs", wantCause: "private backend failure",
+		},
+		{
+			name: "error record write fails", failedWrite: 2,
+			wantLog: "failed to write log download error", wantCause: "closed pipe",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &downloadFailureClient{jobStatus: "COMPLETED", firstPage: &jobspb.GetJobLogsResponse{
+				Logs: []*jobspb.Log{{Message: "line"}}, Cursor: "next",
+			}}
+			if test.repeatCursor {
+				client.lastPage = &jobspb.GetJobLogsResponse{Cursor: "next"}
+			}
+			core, entries := observer.New(zap.ErrorLevel)
+			span := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
+			request := newJobLogsHandlerRequest("/download")
+			ctx, cancel := context.WithCancel(trace.ContextWithSpanContext(request.Context(), span))
+			defer cancel()
+			if test.disconnect {
+				client.onFetch = func(page int) {
+					if page == 2 {
+						cancel()
+					}
+				}
+			}
+
+			response := &failedLogResponse{ResponseRecorder: httptest.NewRecorder(), at: test.failedWrite}
+			(&Server{jobsClient: client, logger: zap.New(core)}).handleDownloadJobLogs(response, request.WithContext(ctx))
+			require.Equal(t, http.StatusOK, response.Code)
+			require.Equal(t, []string{"", "next"}, client.cursors)
+			require.True(t, response.Flushed)
+			_, terminal, ok := strings.Cut(response.Body.String(), "\n")
+			require.True(t, ok)
+			require.Contains(t, response.Body.String(), `"message_raw":"line"`)
+			require.Equal(t, test.wantRecord, terminal)
+
+			logs := entries.FilterMessage(test.wantLog).All()
+			require.Len(t, logs, 1)
+			require.Equal(t, span.TraceID().String(), logs[0].ContextMap()["trace_id"])
+			require.Contains(t, logs[0].ContextMap()["error"], test.wantCause)
+		})
 	}
-	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
-	require.Empty(t, body.Logs)
-	require.Equal(t, "stream failed", body.Error.Message)
+}
+
+func TestDownloadCompletesAfterAllPages(t *testing.T) {
+	client := &downloadFailureClient{
+		jobStatus: "COMPLETED",
+		firstPage: &jobspb.GetJobLogsResponse{Logs: []*jobspb.Log{{Message: "first"}}, Cursor: "next"},
+		lastPage:  &jobspb.GetJobLogsResponse{Logs: []*jobspb.Log{{Message: "last"}}},
+	}
+	response := httptest.NewRecorder()
+	(&Server{jobsClient: client}).handleDownloadJobLogs(response, newJobLogsHandlerRequest("/download"))
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, []string{"", "next"}, client.cursors)
+	lines := strings.Split(strings.TrimSuffix(response.Body.String(), "\n"), "\n")
+	require.Len(t, lines, 3)
+	require.Contains(t, lines[0], `"message_raw":"first"`)
+	require.Contains(t, lines[1], `"message_raw":"last"`)
+	require.JSONEq(t, `{"type":"complete"}`, lines[2])
+}
+
+func TestDownloadHeadAuthorizesOnlyFirstPage(t *testing.T) {
+	client := &downloadFailureClient{jobStatus: "COMPLETED", firstPage: &jobspb.GetJobLogsResponse{Cursor: "next"}}
+	request := newJobLogsHandlerRequest("/download")
+	request.Method = http.MethodHead
+	response := httptest.NewRecorder()
+	(&Server{jobsClient: client}).handleDownloadJobLogs(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "application/x-ndjson", response.Header().Get("Content-Type"))
+	require.Empty(t, response.Body.String())
+	require.Equal(t, []string{""}, client.cursors)
 }

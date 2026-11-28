@@ -5,7 +5,7 @@ import { JsonLd } from "@/components/seo/json-ld";
 import { ArchitectureMap, Callout, CardGrid, DocCard, Endpoint, SourceLink, Step, Steps } from "@/components/docs/mdx-blocks";
 import { architectureMapContent } from "@/lib/architecture";
 import { REPOSITORY_URL } from "@/lib/site";
-import type { OpenApiOperation, OpenApiSchema } from "@/lib/openapi";
+import { getOpenApiOperation, type OpenApiOperation, type OpenApiSchema } from "@/lib/openapi";
 
 afterEach(cleanup);
 function operation(overrides: Partial<OpenApiOperation> = {}): OpenApiOperation {
@@ -19,6 +19,20 @@ describe("API operation rendering", () => {
     expect(screen.getByText("This operation has no path, query, header, or cookie parameters.")).toBeTruthy();
     expect(screen.getByText("Response")).toBeTruthy();
     expect(container.querySelector("#request-body")).toBeNull();
+  });
+
+  it("shows the retained-log wire example and resolved record schemas in the reference", () => {
+    const download = getOpenApiOperation("downloadJobLogs")!;
+    render(<ApiOperation operation={download} />);
+    const example = screen.getByRole("region", { name: "Example" }).textContent!;
+    const [log, completion] = example.trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(log).toMatchObject({ type: "log", sequence_num: 1, message_raw: "hello" });
+    expect(completion).toEqual({ type: "complete" });
+    expect(example.endsWith("\n")).toBe(true);
+
+    const schema = JSON.parse(screen.getByRole("region", { name: "Record schema" }).textContent!);
+    expect(schema.oneOf.map((record: OpenApiSchema) => record.properties?.type.const)).toEqual(["log", "complete", "error"]);
+    expect(schema.oneOf[0].required).toContain("message_raw");
   });
 
   it("shows grouped credentials as AND and alternatives as OR with explicit scope/location", () => {

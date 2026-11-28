@@ -21,6 +21,11 @@ even when the caller owns the workflow.
 
 `FailJob` requires a failure-family terminal reason code, while `CancelJob` and `CancelClaimedJob` require a cancellation-family code. Workers must use the dedicated terminal commands so failure kind, diagnostics, status, reason, and replay identity are recorded together. Job list and public detail responses expose only the normalized safe code and message, never the stored raw error.
 
+`SearchJobLogs` applies typo-tolerant matching to all of the first ten terms
+that Meilisearch identifies in `filters.message`. Terms after the tenth are
+ignored. Each search page returns at most 999 rows. Follow the cursor until
+it is empty.
+
 ### Container cleanup RPCs
 
 These are admin-authorized internal gRPC operations, not routes in the public

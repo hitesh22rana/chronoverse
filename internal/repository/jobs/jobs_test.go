@@ -13,13 +13,48 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/idempotency"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 )
+
+func TestRetainedLogPagePreservesFirstOmittedLogAtGRPCBudget(t *testing.T) {
+	const lineSize = 256 * 1024
+	logs := make([]*jobsmodel.JobLog, 17)
+	cursors := make([]jobLogsCursor, len(logs))
+	line := strings.Repeat("x", lineSize)
+	for i := range logs {
+		eventID := fmt.Sprintf("log-%02d", i)
+		logs[i] = &jobsmodel.JobLog{EventID: eventID, Message: line, Stream: "stdout"}
+		cursors[i] = jobLogsCursor{EventID: eventID, Stream: "stdout"}
+	}
+	require.Greater(t, proto.Size((&jobsmodel.GetJobLogsResponse{JobLogs: logs}).ToProto()), 4*1024*1024)
+
+	first, cursor, err := trimJobLogPage(logs, cursors, 100)
+	require.NoError(t, err)
+	require.NotEmpty(t, first)
+	require.Less(t, len(first), len(logs))
+	require.Equal(t, cursors[len(first)], cursor)
+	require.Equal(t, logs[:len(first)], first)
+
+	rest, end, err := trimJobLogPage(logs[len(first):], cursors[len(first):], 100)
+	require.NoError(t, err)
+	require.Equal(t, logs[len(first):], rest)
+	require.Zero(t, end)
+	for _, page := range [][]*jobsmodel.JobLog{first, rest} {
+		res := (&jobsmodel.GetJobLogsResponse{JobLogs: page, Cursor: encodeJobLogsCursor(cursor)}).ToProto()
+		require.Less(t, proto.Size(res), 4*1024*1024)
+	}
+
+	logs[0].Message = strings.Repeat("x", jobLogPageBytes)
+	_, _, err = trimJobLogPage(logs, cursors, 100)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
 
 func TestJobLogsCursorRoundTrip(t *testing.T) {
 	want := jobLogsCursor{

@@ -71,7 +71,7 @@ func TestSearchHitSourceRejectsMalformedJSON(t *testing.T) {
 			if log != nil || cursor != (jobLogsCursor{}) || status.Code(decodeErr) != codes.Internal {
 				t.Fatalf("log=%v cursor=%+v error=%v", log, cursor, decodeErr)
 			}
-			source, err := searchHitSource(hit)
+			source, _, err := searchHitSource(hit)
 			if source != nil || status.Code(err) != codes.Internal {
 				t.Fatalf("source=%v error=%v", source, err)
 			}

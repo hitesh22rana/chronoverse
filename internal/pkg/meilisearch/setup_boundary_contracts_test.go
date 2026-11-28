@@ -78,7 +78,7 @@ func TestTaskPollingTerminalStatesAndBoundedWait(t *testing.T) {
 }
 
 func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
-	for _, stage := range []string{"create", "create task", "searchable", "filterable", "sortable", "update task", "success"} {
+	for _, stage := range []string{"create", "create task", "searchable", "filterable", "sortable", "ranking", "update task", "success"} {
 		t.Run(stage, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				var paths []string
@@ -89,6 +89,7 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					rejected := map[string]string{
 						"create": "/indexes", "searchable": "/indexes/job_logs/settings/searchable-attributes",
 						"filterable": "/indexes/job_logs/settings/filterable-attributes", "sortable": "/indexes/job_logs/settings/sortable-attributes",
+						"ranking": "/indexes/job_logs/settings/ranking-rules",
 					}[stage]
 					match := path == rejected
 					if match {
@@ -98,7 +99,7 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 						polls++
 						ids, limit, failedID := "1", "1", 1
 						if polls > 1 {
-							ids, limit, failedID = "2,3,4", "3", 2
+							ids, limit, failedID = "2,3,4,5", "4", 2
 						}
 						require.Equal(t, ids, r.URL.Query().Get("uids"))
 						require.Equal(t, limit, r.URL.Query().Get("limit"))
@@ -108,11 +109,12 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 						if polls == 1 {
 							return taskResponse(200, `{"results":[{"uid":1,"status":"succeeded"}]}`), nil
 						}
-						return taskResponse(200, `{"results":[{"uid":2,"status":"succeeded"},{"uid":3,"status":"succeeded"},{"uid":4,"status":"succeeded"}]}`), nil
+						return taskResponse(200, `{"results":[{"uid":2,"status":"succeeded"},{"uid":3,"status":"succeeded"},{"uid":4,"status":"succeeded"},{"uid":5,"status":"succeeded"}]}`), nil
 					}
 					uid := map[string]int{
 						"/indexes": 1, "/indexes/job_logs/settings/searchable-attributes": 2,
 						"/indexes/job_logs/settings/filterable-attributes": 3, "/indexes/job_logs/settings/sortable-attributes": 4,
+						"/indexes/job_logs/settings/ranking-rules": 5,
 					}[path]
 					return taskResponse(202, fmt.Sprintf(`{"taskUid":%d}`, uid)), nil
 				})}))
@@ -121,16 +123,16 @@ func TestSetupFailureStagesStopLaterSettings(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, []string{
 						"/indexes", "/tasks", "/indexes/job_logs/settings/searchable-attributes",
-						"/indexes/job_logs/settings/filterable-attributes", "/indexes/job_logs/settings/sortable-attributes", "/tasks",
+						"/indexes/job_logs/settings/filterable-attributes", "/indexes/job_logs/settings/sortable-attributes", "/indexes/job_logs/settings/ranking-rules", "/tasks",
 					}, paths)
 				} else {
 					require.Error(t, err)
 					require.Contains(t, err.Error(), map[string]string{
 						"create": "create index", "create task": "task 1 failed", "searchable": "update searchable",
-						"filterable": "update filterable", "sortable": "update sortable", "update task": "task 2 failed",
+						"filterable": "update filterable", "sortable": "update sortable", "ranking": "update ranking", "update task": "task 2 failed",
 					}[stage])
 				}
-				size := map[string]int{"create": 1, "create task": 2, "searchable": 3, "filterable": 4, "sortable": 5, "update task": 6}[stage]
+				size := map[string]int{"create": 1, "create task": 2, "searchable": 3, "filterable": 4, "sortable": 5, "ranking": 6, "update task": 7}[stage]
 				if size > 0 {
 					require.Len(t, paths, size)
 				}

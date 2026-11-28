@@ -428,7 +428,7 @@ it("reports a failed search read instead of the retained read", async () => {
 })
 
 it("downloads the retained logs under a normalized file name and releases the object URL", async () => {
-    mocks.fetchApi.mockImplementation(async () => ({ blob: async () => new Blob(["logs"]) }))
+    mocks.fetchApi.mockImplementation(async () => (new Response('{"type":"complete"}\n', { headers: { "Content-Type": "application/x-ndjson" } })))
     renderJobLogs("COMPLETED")
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3))
 
@@ -437,7 +437,7 @@ it("downloads the retained logs under a normalized file name and releases the ob
     })
 
     await waitFor(() => expect(mocks.downloads).toHaveLength(1))
-    expect(mocks.fetchApi).toHaveBeenCalledWith("/workflows/w1/jobs/j1/logs/raw?format=json", "failed to download logs")
+    expect(mocks.fetchApi).toHaveBeenCalledWith("/workflows/w1/jobs/j1/logs/raw", "failed to download logs")
     // The requested .txt suffix is replaced by the requested format.
     const anchor = mocks.downloads[0]
     expect(anchor.download).toBe("job-logs.json")
@@ -449,7 +449,7 @@ it("downloads the retained logs under a normalized file name and releases the ob
 })
 
 it("scopes the log download to the active search filter", async () => {
-    mocks.fetchApi.mockImplementation(async () => ({ blob: async () => new Blob(["logs"]) }))
+    mocks.fetchApi.mockImplementation(async () => (new Response('{"type":"complete"}\n', { headers: { "Content-Type": "application/x-ndjson" } })))
     renderJobLogs("COMPLETED")
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3))
 
@@ -463,14 +463,20 @@ it("scopes the log download to the active search filter", async () => {
 
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalled())
     expect(mocks.fetchApi).toHaveBeenCalledWith(
-        "/workflows/w1/jobs/j1/logs/raw?q=timeout&format=json",
+        "/workflows/w1/jobs/j1/logs/raw?q=timeout",
         "failed to download logs",
     )
 })
 
-it("reports a failed download and clears the pending state", async () => {
+it.each([
+    { response: null, message: "failed to download logs: 500" },
+    { response: '{"type":"error","message":"stream failed"}\n', message: "Log download failed before completion" },
+    { response: '{"type":"complete"}', message: "Log download ended before completion" },
+    { response: " ".repeat(8 * 1024 * 1024 + 1), message: "Log download exceeds the 8 MiB limit. Narrow the filters and retry." },
+])("reports a failed download and saves no file: $message", async ({ response, message }) => {
     mocks.fetchApi.mockImplementation(async () => {
-        throw new Error("failed to download logs: 500")
+        if (response === null) throw new Error(message)
+        return new Response(response, { headers: { "Content-Type": "application/x-ndjson" } })
     })
     renderJobLogs("COMPLETED")
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3))
@@ -479,8 +485,9 @@ it("reports a failed download and clears the pending state", async () => {
         screen.getByText("download json").click()
     })
 
-    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith("failed to download logs: 500"))
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(message))
     expect(mocks.downloads).toHaveLength(0)
+    expect(mocks.toast.success).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.getByTestId("downloading").textContent).toBe("false"))
 })
 

@@ -283,10 +283,12 @@ message StreamJobLogsRequest {
   string user_id     = 3; // ID of the user
 }
 
-// SearchJobLogsFilters are the filters that are to be applied on the search job logs request.
+// SearchJobLogsFilters applies stream and text filters to retained logs.
 message SearchJobLogsFilters {
-  LogStream stream  = 1;
-  string    message = 2;
+  LogStream stream = 1;
+  // Meilisearch matches all of the first ten terms it identifies, with typo
+  // tolerance. Terms after the tenth are ignored.
+  string message = 2;
 }
 
 // SearchJobLogsRequest contains the details needed to search the logs of a job.
@@ -525,7 +527,9 @@ service JobsService {
   // StreamJobLogs streams the logs of a job.
   rpc StreamJobLogs(StreamJobLogsRequest) returns (stream Log) {}
 
-  // SearchJobLogs returns the filtered logs of a job.
+  // SearchJobLogs returns retained logs matching every effective query term.
+  // The text filter uses the first ten terms Meilisearch identifies, with typo
+  // tolerance. Follow the cursor to continue through the matches.
   rpc SearchJobLogs(SearchJobLogsRequest) returns (GetJobLogsResponse) {}
 
   // ListJobs returns a list of all jobs for a workflow_id owned by a user.

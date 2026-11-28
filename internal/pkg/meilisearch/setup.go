@@ -14,10 +14,8 @@ const (
 	pollingDuration = 2 * time.Second
 )
 
-// SetupIndexes creates every application index and configures its searchable,
-// filterable and sortable attributes, waiting for each batch of async tasks to
-// complete. It is safe to call repeatedly; indexes that already exist are left
-// untouched.
+// SetupIndexes creates application indexes and reapplies their settings,
+// waiting for each batch of asynchronous tasks to complete.
 func SetupIndexes(ctx context.Context, client meilisearch.ServiceManager) error {
 	createTaskIDs := make([]int64, 0, len(Indexes))
 	for _, index := range Indexes {
@@ -54,6 +52,12 @@ func SetupIndexes(ctx context.Context, client meilisearch.ServiceManager) error 
 		task, err = meiliIndex.UpdateSortableAttributesWithContext(ctx, &index.Sortable)
 		if err != nil {
 			return fmt.Errorf("update sortable attributes of %s: %w", index.Name, err)
+		}
+		updateTaskIDs = append(updateTaskIDs, task.TaskUID)
+
+		task, err = meiliIndex.UpdateRankingRulesWithContext(ctx, &index.RankingRules)
+		if err != nil {
+			return fmt.Errorf("update ranking rules of %s: %w", index.Name, err)
 		}
 		updateTaskIDs = append(updateTaskIDs, task.TaskUID)
 	}

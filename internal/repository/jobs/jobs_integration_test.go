@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -524,6 +525,53 @@ func TestIntegrationGetJobLogsFromClickHouse(t *testing.T) {
 	require.Equal(t, uint64(logCount), remaining, "retained ClickHouse rows after workflow deletion")
 }
 
+func TestIntegrationClickHouseBoundsLogPageTransfer(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	repo.cfg.LogsFetchLimit = 100
+	ch := testkit.ClickHouse(t)
+	userID, workflowID := seedUserWorkflow(ctx, t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-logs-"+t.Name(), 1)
+	require.NoError(t, err)
+
+	// Each message has the maximum normal ingestion width.
+	require.NoError(t, ch.Exec(ctx, `
+		INSERT INTO job_logs (event_id, user_id, workflow_id, job_id, timestamp, message, sequence_num, stream)
+		SELECT
+			concat(?, '-', toString(number)),
+			toUUID(?), toUUID(?), toUUID(?), now64(3),
+			repeat('x', 256 * 1024), toUInt32(number + 1), 'stdout'
+		FROM numbers(101)
+	`, jobID, userID, workflowID, jobID))
+
+	queryID := "lookahead-" + jobID
+	queryCtx := chdriver.Context(ctx, chdriver.WithQueryID(queryID), chdriver.WithSettings(chdriver.Settings{"log_queries": 1}))
+	filters := &jobsmodel.GetJobLogsFilters{Stream: 1}
+	first, err := repo.GetJobLogs(queryCtx, jobID, workflowID, userID, "", jobsmodel.JobLogsSortOrderAsc, filters)
+	require.NoError(t, err)
+	require.Len(t, first.JobLogs, 11)
+	require.NotEmpty(t, first.Cursor)
+	second, err := repo.GetJobLogs(ctx, jobID, workflowID, userID, first.Cursor, jobsmodel.JobLogsSortOrderAsc, filters)
+	require.NoError(t, err)
+	require.Len(t, second.JobLogs, 11)
+	require.Equal(t, uint32(12), second.JobLogs[0].SequenceNum)
+
+	require.NoError(t, ch.Exec(ctx, "SYSTEM FLUSH LOGS query_log"))
+	rows, err := ch.Query(ctx, `
+		SELECT result_rows, result_bytes
+		FROM system.query_log
+		WHERE query_id = ? AND type = 'QueryFinish'
+	`, queryID)
+	require.NoError(t, err)
+	defer rows.Close()
+	require.True(t, rows.Next(), "missing completed query metrics: %v", rows.Err())
+	var resultRows, resultBytes uint64
+	require.NoError(t, rows.Scan(&resultRows, &resultBytes))
+	t.Logf("ClickHouse result: %d rows, %d uncompressed result bytes", resultRows, resultBytes)
+	require.LessOrEqual(t, resultRows, uint64(13), "one crossing row and enough lookahead to preserve the cursor")
+	require.Less(t, resultBytes, uint64(4*1024*1024), "ClickHouse must omit the discarded payload")
+}
+
 //nolint:gocyclo // Verifies filtering and cursor continuity against the same indexed logs.
 func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	ctx := context.Background()
@@ -546,11 +594,15 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 		stream, message string
 	}{
 		{"log-1", 1, "stdout", "authentication succeeded"},
-		{"log-2", 2, "stderr", "database connection refused"},
-		{"log-3", 2, "stdout", "pagination three"},
-		{"log-4", 2, "stdout", "pagination four"},
-		{"log-5", 2, "stdout", "pagination five"},
-		{"log-6", 3, "stdout", "pagination six"},
+		{"log-2", 2, "stderr", "pagination fatal eror"},
+		{"log-3", 2, "stdout", "pagination fatal error"},
+		{"log-4", 2, "stdout", "pagination fatal error"},
+		{"log-5", 2, "stdout", "pagination fatal error"},
+		{"log-6", 3, "stdout", "pagination fatal error"},
+		{"log-7", 4, "stdout", "pagination fatal startup"},
+		{"log-8", 5, "stdout", "up small"},
+		{"log-9", 6, "stdout", strings.Repeat("up ", 40_000)},
+		{"log-a", 7, "stdout", "up last"},
 	}
 	docs := make([]map[string]any, 0, len(fixtures))
 	for _, log := range fixtures {
@@ -587,12 +639,14 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 
 	var retainedCursor string
 	for _, tc := range []struct {
-		name  string
-		order jobsmodel.JobLogsSortOrder
-		want  []string
+		name, query string
+		order       jobsmodel.JobLogsSortOrder
+		want        []string
 	}{
-		{"ascending", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6"}},
-		{"descending", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+		{"ascending", "", jobsmodel.JobLogsSortOrderAsc, []string{"log-1", "log-2", "log-3", "log-4", "log-5", "log-6", "log-7", "log-8", "log-9", "log-a"}},
+		{"descending", "", jobsmodel.JobLogsSortOrderDesc, []string{"log-a", "log-9", "log-8", "log-7", "log-6", "log-2", "log-3", "log-4", "log-5", "log-1"}},
+		{"mixed relevance ascending", "fatal error", jobsmodel.JobLogsSortOrderAsc, []string{"log-2", "log-3", "log-4", "log-5", "log-6"}},
+		{"mixed relevance descending", "fatal error", jobsmodel.JobLogsSortOrderDesc, []string{"log-6", "log-2", "log-3", "log-4", "log-5"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
@@ -601,7 +655,11 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if page >= len(docs) {
 					t.Fatal("search pagination did not terminate")
 				}
-				result, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, cursor, &jobsmodel.SearchJobLogsFilters{}, jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true})
+				result, err := repo.SearchJobLogs(
+					ctx, jobID, workflowID, userID, cursor,
+					&jobsmodel.SearchJobLogsFilters{Message: tc.query},
+					jobsmodel.SearchJobLogsOptions{SortOrder: tc.order, DisableHighlight: true},
+				)
 				if err != nil {
 					t.Fatalf("SearchJobLogs(page %d): %v", page, err)
 				}
@@ -614,7 +672,7 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 				if result.Cursor == "" {
 					break
 				}
-				if page == 0 && tc.order == jobsmodel.JobLogsSortOrderDesc {
+				if page == 0 && tc.name == "descending" {
 					retainedCursor = result.Cursor
 				}
 				cursor = result.Cursor
@@ -624,6 +682,33 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 			}
 		})
 	}
+	t.Run("oversized highlights preserve the original line and continuation", func(t *testing.T) {
+		limit := repo.cfg.LogsFetchLimit
+		repo.cfg.LogsFetchLimit = 1
+		defer func() { repo.cfg.LogsFetchLimit = limit }()
+		filters := &jobsmodel.SearchJobLogsFilters{Message: "up"}
+		options := jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderAsc}
+		first, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+		require.NoError(t, err)
+		require.Len(t, first.JobLogs, 1)
+		require.NotEmpty(t, first.Cursor)
+		start, _ := jobLogsHighlightTags(first.HighlightToken)
+		require.Contains(t, first.JobLogs[0].Message, start+"up")
+
+		second, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, first.Cursor, filters, options)
+		require.NoError(t, err)
+		require.Len(t, second.JobLogs, 1)
+		require.Equal(t, "log-9", second.JobLogs[0].EventID)
+		require.Equal(t, strings.Repeat("up ", 40_000), second.JobLogs[0].Message)
+		require.NotEmpty(t, second.Cursor)
+
+		last, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, second.Cursor, filters, options)
+		require.NoError(t, err)
+		require.Len(t, last.JobLogs, 1)
+		require.Equal(t, "log-a", last.JobLogs[0].EventID)
+		require.Empty(t, last.Cursor)
+	})
+
 	if retainedCursor == "" {
 		t.Fatal("fixture requires a continuation cursor")
 	}
@@ -637,6 +722,48 @@ func TestIntegrationSearchJobLogsViaMeilisearch(t *testing.T) {
 	var document map[string]any
 	if err := ms.Index(meilisearchpkg.IndexJobLogs).GetDocument("doc-"+t.Name()+"-log-3", nil, &document); err != nil || document["job_id"] != jobID {
 		t.Fatalf("retained Meilisearch document unavailable after workflow deletion: %v", err)
+	}
+}
+
+func TestIntegrationSearchJobLogsPastMeilisearchHitCeiling(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	repo.cfg.LogsFetchLimit = 1000
+	userID, workflowID := seedUserWorkflow(ctx, t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "idem-search-"+t.Name(), 1)
+	require.NoError(t, err)
+
+	const matchingLogs = 1002
+	docs := make([]map[string]any, 0, matchingLogs)
+	for seq := 1; seq <= matchingLogs; seq++ {
+		eventID := fmt.Sprintf("%s-%04d", jobID, seq)
+		docs = append(docs, map[string]any{
+			"id": eventID, jobLogsEventIDField: eventID,
+			docJobIDField: jobID, docWorkflowIDField: workflowID, docUserIDField: userID,
+			jobLogsMessageField: "ceiling fixture", jobLogsSequenceNumField: seq, jobLogsStreamField: "stdout",
+		})
+	}
+	ms := testkit.Meilisearch(t)
+	task, err := ms.Index(meilisearchpkg.IndexJobLogs).AddDocuments(docs, nil)
+	require.NoError(t, err)
+	testkit.Eventually(t, 20*time.Second, 500*time.Millisecond, func() bool {
+		taskInfo, taskErr := ms.GetTask(task.TaskUID)
+		return taskErr == nil && taskInfo.Status == "succeeded"
+	})
+
+	filters := &jobsmodel.SearchJobLogsFilters{Message: "ceiling fixture"}
+	options := jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderAsc, DisableHighlight: true}
+	first, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Cursor, "search must reserve a lookahead row beyond the first page")
+	require.Len(t, first.JobLogs, 999)
+	last, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, first.Cursor, filters, options)
+	require.NoError(t, err)
+	require.Empty(t, last.Cursor)
+	all := slices.Concat(first.JobLogs, last.JobLogs)
+	require.Len(t, all, matchingLogs)
+	for i, log := range all {
+		require.Equal(t, uint32(i+1), log.SequenceNum)
 	}
 }
 

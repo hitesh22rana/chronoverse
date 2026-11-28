@@ -33,11 +33,11 @@ describe("fetchApi", () => {
         vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.example.com/edge")
         vi.resetModules()
         vi.stubGlobal("document", { cookie: "" })
-        const calls: Array<{ url: string; headers: Headers }> = []
+        const calls: Array<{ url: string; headers: Headers; cache?: RequestCache }> = []
         vi.stubGlobal(
             "fetch",
             vi.fn(async (url: string, opts: RequestInit = {}) => {
-                calls.push({ url, headers: new Headers(opts.headers) })
+                calls.push({ url, headers: new Headers(opts.headers), cache: opts.cache })
                 if (url.endsWith("/auth/csrf")) {
                     return new Response(JSON.stringify({ csrfToken: "fresh" }), { status: 200 })
                 }
@@ -48,6 +48,7 @@ describe("fetchApi", () => {
             const { fetchApi: configuredFetchApi } = await import("./client")
             await configuredFetchApi("http://api.example.com/workflows", "boom", { method: "POST" })
             expect(calls[0].url).toBe("https://api.example.com/edge/auth/csrf")
+            expect(calls[0].cache).toBe("no-store")
             expect(calls.at(-1)?.headers.get("X-CSRF-Token")).toBe("fresh")
         } finally {
             vi.unstubAllGlobals()
@@ -122,19 +123,14 @@ describe("fetchApi", () => {
         }
     })
 
-    it("sends HEAD without fetching a csrf token", async () => {
+    it.each(["GET", "HEAD"])("sends %s with no-store and without fetching a csrf token", async (method) => {
         vi.stubGlobal("document", { cookie: "" })
-        const urls: string[] = []
-        vi.stubGlobal(
-            "fetch",
-            vi.fn(async (url: string) => {
-                urls.push(url)
-                return new Response(null, { status: 200 })
-            }),
-        )
+        const fetcher = vi.fn(async () => new Response(null, { status: 200 }))
+        vi.stubGlobal("fetch", fetcher)
         try {
-            await fetchApi("http://x/", "boom", { method: "HEAD" })
-            expect(urls).toEqual(["http://x/"])
+            await fetchApi("http://x/", "boom", { method, cache: "force-cache" })
+            expect(fetcher).toHaveBeenCalledTimes(1)
+            expect(fetcher).toHaveBeenCalledWith("http://x/", expect.objectContaining({ method, cache: "no-store" }))
         } finally {
             vi.unstubAllGlobals()
         }

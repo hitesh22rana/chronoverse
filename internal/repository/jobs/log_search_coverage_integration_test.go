@@ -2,6 +2,7 @@
 package jobs
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,10 +16,12 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/meilisearch/meilisearch-go"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	jobsmodel "github.com/hitesh22rana/chronoverse/internal/model/jobs"
+	meilisearchpkg "github.com/hitesh22rana/chronoverse/internal/pkg/meilisearch"
 	"github.com/hitesh22rana/chronoverse/internal/pkg/testkit"
 	jobssvc "github.com/hitesh22rana/chronoverse/internal/service/jobs"
 	jobspb "github.com/hitesh22rana/chronoverse/pkg/proto/go/jobs"
@@ -169,6 +172,89 @@ func TestIntegrationSearchJobLogsPagingAndFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIntegrationRetainedLogSearchBoundsDecodedResponses(t *testing.T) {
+	ctx := t.Context()
+	repo := newTestRepository(t)
+	repo.cfg.LogsFetchLimit = 4
+	userID, workflowID := seedUserWorkflow(ctx, t, testkit.Postgres(t))
+	jobID, err := repo.ScheduleJob(ctx, workflowID, userID, time.Now().UTC().Format(time.RFC3339Nano), "MANUAL", "search-budget-"+t.Name(), 1)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request meilisearch.SearchRequest
+		if decodeErr := json.NewDecoder(r.Body).Decode(&request); decodeErr != nil {
+			t.Error(decodeErr)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		filter, ok := request.Filter.(string)
+		if !ok {
+			t.Error("expected an owned-job search filter")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if request.Query == "oversized" || request.Limit > 3 || len(request.AttributesToHighlight) != 0 {
+			writeOversizedSearchResponse(w)
+			return
+		}
+		hits := `{"hits":[
+		    {"id":"one","event_id":"one","sequence_num":1,"stream":"stdout","message":"first"},
+		    {"id":"two","event_id":"two","sequence_num":2,"stream":"stdout","message":"second"},
+		    {"id":"three","event_id":"three","sequence_num":3,"stream":"stdout","message":"third"}
+		]}`
+		if strings.Contains(filter, `id >= "three"`) {
+			hits = `{"hits":[{"id":"three","event_id":"three","sequence_num":3,"stream":"stdout","message":"third"}]}`
+		}
+		if _, writeErr := io.WriteString(w, hits); writeErr != nil {
+			t.Error(writeErr)
+		}
+	}))
+	defer server.Close()
+	repo.ms, err = meilisearchpkg.New(ctx, &meilisearchpkg.Config{URI: server.URL + "/proxy", MasterKey: "fixture"})
+	require.NoError(t, err)
+	defer repo.ms.Close()
+
+	filters := &jobsmodel.SearchJobLogsFilters{Message: "needle"}
+	options := jobsmodel.SearchJobLogsOptions{SortOrder: jobsmodel.JobLogsSortOrderAsc}
+	first, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+	require.NoError(t, err)
+	require.Len(t, first.JobLogs, 2)
+	require.Equal(t, "first", first.JobLogs[0].Message)
+	require.Equal(t, "second", first.JobLogs[1].Message)
+	require.Empty(t, first.HighlightToken)
+	require.NotEmpty(t, first.Cursor)
+
+	last, err := repo.SearchJobLogs(ctx, jobID, workflowID, userID, first.Cursor, filters, options)
+	require.NoError(t, err)
+	require.Len(t, last.JobLogs, 1)
+	require.Equal(t, "third", last.JobLogs[0].Message)
+	require.Empty(t, last.Cursor)
+
+	filters.Message = "oversized"
+	_, err = repo.SearchJobLogs(ctx, jobID, workflowID, userID, "", filters, options)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
+}
+
+func writeOversizedSearchResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Encoding", "gzip")
+	writer := gzip.NewWriter(w)
+	defer func() {
+		// The client may close the connection when its body limit is reached.
+		_ = writer.Close()
+	}()
+	if _, err := io.WriteString(writer, `{"hits":[{"id":"one","event_id":"one","sequence_num":1,"stream":"stdout","message":"`); err != nil {
+		return
+	}
+	chunk := strings.Repeat("x", 64*1024)
+	for range 9 * 16 {
+		if _, err := io.WriteString(writer, chunk); err != nil {
+			return
+		}
+	}
+	// The client may have closed the connection after reaching its limit.
+	_, _ = io.WriteString(writer, `"}]}`) //nolint:errcheck // An aborted fixture response is expected.
 }
 
 func TestIntegrationRetainedLogSearchPreservesRequestDeadline(t *testing.T) {

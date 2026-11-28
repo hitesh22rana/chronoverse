@@ -7,10 +7,6 @@ import type {
   OpenApiSchema,
 } from "@/lib/openapi";
 
-function formatSchema(schema: OpenApiSchema) {
-  return JSON.stringify(schema, null, 2);
-}
-
 function formatValue(value: unknown) {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
@@ -49,23 +45,33 @@ function ParameterConstraints({ parameter }: { parameter: OpenApiParameter }) {
   );
 }
 
-function SchemaBlock({ schema }: { schema: OpenApiSchema }) {
+function CodeBlock({ label, text }: { label: string; text: string }) {
   return (
-    <div className="code-block schema-block">
-      <pre><code>{formatSchema(schema)}</code></pre>
-    </div>
+    <figure className="code-block schema-block">
+      <figcaption>{label}</figcaption>
+      <pre role="region" aria-label={label} tabIndex={0}><code>{text}</code></pre>
+    </figure>
   );
 }
 
 function ContentSchemas({ content }: { content: OpenApiContent }) {
   return (
     <div className="content-schema-list">
-      {Object.entries(content).map(([mediaType, media]) => (
-        <section className="content-schema" key={mediaType}>
-          <Badge variant="secondary">{mediaType}</Badge>
-          {media.schema ? <SchemaBlock schema={media.schema} /> : <p>No response schema.</p>}
-        </section>
-      ))}
+      {Object.entries(content).map(([mediaType, media]) => {
+        const recordSchema = media["x-ndjson-record-schema"];
+        const schema = recordSchema ?? media.schema;
+        return (
+          <section className="content-schema" key={mediaType}>
+            <Badge variant="secondary">{mediaType}</Badge>
+            {media.example !== undefined && <CodeBlock label="Example" text={formatValue(media.example)} />}
+            {schema ? (
+              <CodeBlock label={recordSchema ? "Record schema" : "Body schema"} text={JSON.stringify(schema, null, 2)} />
+            ) : (
+              <p>No response schema.</p>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

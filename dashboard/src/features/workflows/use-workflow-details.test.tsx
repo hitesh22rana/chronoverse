@@ -123,3 +123,177 @@ it.each([
     expect(mocks.back).not.toHaveBeenCalled()
     expect(mocks.replace).not.toHaveBeenCalled()
 })
+
+it.each([false, true])("an acknowledged edit supersedes an outstanding read (cached=%s)", async (cached) => {
+    const old = Promise.withResolvers<Workflow>()
+    const fresh = Promise.withResolvers<Workflow>()
+    let staleSignal: AbortSignal | undefined
+
+    mocks.fetchApi.mockResolvedValue(new Response(null, { status: 204 }))
+    if (cached) mocks.fetchApiJson.mockResolvedValueOnce(workflow())
+    mocks.fetchApiJson.mockImplementationOnce((_url, _msg, { signal }: RequestInit) => {
+        staleSignal = signal ?? undefined
+        return old.promise
+    }).mockReturnValueOnce(fresh.promise)
+    const { result } = renderUseWorkflowDetails()
+    if (cached) {
+        await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
+        act(() => { void result.current.refetch() })
+    }
+    await waitFor(() => expect(staleSignal).toBeDefined())
+
+    const onSaved = vi.fn()
+    act(() => {
+        result.current.updateWorkflow({ name: "Renamed" } as Parameters<WorkflowDetails["updateWorkflow"]>[0], onSaved)
+    })
+    await waitFor(() => expect(staleSignal?.aborted).toBe(true))
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())
+    expect(result.current.isUpdating).toBe(false)
+    await act(async () => {
+        fresh.resolve(workflow({ name: "Renamed" }))
+        old.resolve(workflow({ name: "Superseded response" }))
+    })
+    await waitFor(() => expect(result.current.workflow?.name).toBe("Renamed"))
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(cached ? 3 : 2)
+})
+
+it("retires a workflow after an ambiguous delete and an authoritative missing response", async () => {
+    mocks.fetchApi
+        .mockRejectedValueOnce(Object.assign(new Error("gateway error"), { status: 503 }))
+        .mockRejectedValueOnce(Object.assign(new Error("workflow missing"), { status: 404 }))
+    const { result, queryClient } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
+    const refetch = result.current.refetch
+    const refetchAnalytics = result.current.refetchAnalytics
+    act(() => result.current.deleteWorkflow())
+    await waitFor(() => expect(result.current.isWorkflowAvailable).toBe(false))
+    act(() => { void refetch(); void refetchAnalytics() })
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(1)
+    expect(queryClient.getQueryData(queryKeys.workflow.detail("w1"))).toBeUndefined()
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(2)
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+})
+
+it.each([
+    [404, null, false, null],
+    [403, 200, true, "Delete request failed. The workflow is still available"],
+    [401, 401, false, null],
+    [503, 500, true, "Could not confirm whether the workflow was deleted"],
+] as const)("reconciles DELETE %s and scoped GET %s", async (deleteStatus, readStatus, visible, message) => {
+    mocks.fetchApi.mockRejectedValueOnce(Object.assign(new Error("delete failed"), { status: deleteStatus }))
+    if (readStatus === 200) mocks.fetchApi.mockResolvedValueOnce(new Response("{}"))
+    else if (readStatus) mocks.fetchApi.mockRejectedValueOnce(Object.assign(new Error("read failed"), { status: readStatus }))
+    const { result } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow?.name).toBe("Nightly container"))
+    act(() => result.current.deleteWorkflow())
+    await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(readStatus ? 2 : 1))
+    await waitFor(() => expect(result.current.deleteError).toBeTruthy())
+    expect(result.current.isWorkflowAvailable).toBe(visible)
+    if (message) expect(mocks.toast.error).toHaveBeenCalledWith(message)
+    else expect(mocks.toast.error).not.toHaveBeenCalled()
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+})
+
+it.each([true, false])("suppresses late edit and terminate feedback after delete (success=%s)", async (success) => {
+    const edit = Promise.withResolvers<Response>()
+    const terminate = Promise.withResolvers<Response>()
+    const ok = new Response(null, { status: 204 })
+    mocks.fetchApi.mockReturnValueOnce(edit.promise).mockReturnValueOnce(terminate.promise).mockResolvedValueOnce(ok)
+    const { result } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow).toBeTruthy())
+    const onSaved = vi.fn()
+    act(() => {
+        result.current.updateWorkflow({ name: "Renamed" } as Parameters<WorkflowDetails["updateWorkflow"]>[0], onSaved)
+        result.current.terminateWorkflow()
+    })
+    await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(2))
+    act(() => result.current.deleteWorkflow())
+    await waitFor(() => expect(result.current.isWorkflowAvailable).toBe(false))
+    await act(async () => {
+        if (success) {
+            edit.resolve(ok)
+            terminate.resolve(ok)
+        } else {
+            edit.reject(new Error("late edit error"))
+            terminate.reject(new Error("late terminate error"))
+        }
+    })
+    await waitFor(() => expect(result.current.isUpdating || result.current.isTerminating).toBe(false))
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(mocks.toast.success.mock.calls).toEqual([["workflow deleted successfully"]])
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(1)
+})
+
+it("refreshes only the workflow and job families affected by editing", async () => {
+    mocks.fetchApi.mockResolvedValue(new Response(null, { status: 204 }))
+    const { result, queryClient } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow).toBeTruthy())
+    const affected = [queryKeys.userAnalytics, queryKeys.workflow.jobs("w1", "", "", ""), queryKeys.job.detail("w1", "pending")]
+    const preserved = [queryKeys.workflow.analytics("w1"), queryKeys.workflow.detail("w2"), queryKeys.job.detail("w1", "terminal")]
+    for (const key of affected) {
+        queryClient.setQueryDefaults(key, { gcTime: Infinity })
+        queryClient.setQueryData(key, { status: "PENDING" })
+    }
+    for (const key of preserved) {
+        queryClient.setQueryDefaults(key, { gcTime: Infinity })
+        queryClient.setQueryData(key, { status: "COMPLETED" })
+    }
+    act(() => result.current.updateWorkflow({ name: "Renamed" } as Parameters<WorkflowDetails["updateWorkflow"]>[0]))
+    await waitFor(() => {
+        expect(affected.map((key) => queryClient.getQueryState(key)?.isInvalidated)).toEqual([true, true, true])
+    })
+    expect(preserved.map((key) => queryClient.getQueryState(key)?.isInvalidated)).toEqual([false, false, false])
+})
+
+it("does not start a queued edit refresh after retirement intervenes during cancellation", async () => {
+    mocks.fetchApi.mockResolvedValue(new Response(null, { status: 204 }))
+    const { result, queryClient } = renderUseWorkflowDetails()
+    await waitFor(() => expect(result.current.workflow).toBeTruthy())
+    const cancelDone = Promise.withResolvers<void>()
+    const cancel = queryClient.cancelQueries.bind(queryClient)
+    vi.spyOn(queryClient, "cancelQueries").mockImplementationOnce(async (...args) => {
+        await cancel(...args)
+        await cancelDone.promise
+    })
+    act(() => result.current.updateWorkflow({ name: "Renamed" } as Parameters<WorkflowDetails["updateWorkflow"]>[0]))
+    await waitFor(() => expect(result.current.isUpdating).toBe(false))
+    act(() => result.current.deleteWorkflow())
+    await waitFor(() => expect(result.current.isWorkflowAvailable).toBe(false))
+    await act(async () => { cancelDone.resolve() })
+    expect(mocks.fetchApiJson).toHaveBeenCalledTimes(1)
+})
+
+it.each(["success", "rejected", "verifying"])("ignores a competing DELETE that is %s after retirement", async (settlement) => {
+    const delayed = Promise.withResolvers<Response>()
+    const verification = Promise.withResolvers<Response>()
+    const ok = new Response(null, { status: 204 })
+    mocks.fetchApi.mockReturnValueOnce(delayed.promise)
+    if (settlement === "verifying") mocks.fetchApi.mockReturnValueOnce(verification.promise)
+    mocks.fetchApi.mockResolvedValueOnce(ok)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => ({
+        delayed: useWorkflowDetails("w1"),
+        winning: useWorkflowDetails("w1"),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.delayed.workflow).toBeTruthy())
+    act(() => result.current.delayed.deleteWorkflow())
+    await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(1))
+    if (settlement === "verifying") {
+        await act(async () => { delayed.reject(new TypeError("lost DELETE response")) })
+        await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(2))
+    }
+    act(() => result.current.winning.deleteWorkflow())
+    await waitFor(() => expect(result.current.winning.isWorkflowAvailable).toBe(false))
+    await act(async () => {
+        if (settlement === "success") delayed.resolve(ok)
+        else if (settlement === "rejected") delayed.reject(new Error("late DELETE rejection"))
+        else verification.resolve(new Response("{}"))
+    })
+    await waitFor(() => expect(result.current.delayed.isDeleting).toBe(false))
+    expect(mocks.toast.success.mock.calls).toEqual([["workflow deleted successfully"]])
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+})

@@ -10,11 +10,15 @@
  * helpers run for real, so every assertion is an observable rendering or
  * callback outcome instead of an implementation call-order mock.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { useEffect, useState } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import type { MockInstance } from "vitest"
+
+import { useWorkflowScope } from "@/features/workflows/workflow-freshness"
+import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
+import { queryKeys } from "@/lib/api/query-keys"
 
 import type { JobLog } from "./types"
 import { useJobLogs } from "./use-job-logs"
@@ -30,6 +34,8 @@ const mocks = vi.hoisted(() => ({
     sources: [] as unknown[],
     notify: null as null | (() => void),
     downloads: [] as HTMLAnchorElement[],
+    downloadComplete: vi.fn(),
+    lateSignal: null as AbortSignal | null,
     anchorClick: null as unknown as MockInstance<() => void>,
     objectUrls: [] as string[],
     revoked: [] as string[],
@@ -134,7 +140,7 @@ const sequences = () =>
     [...screen.getAllByRole("listitem")].map((row) => row.getAttribute("data-sequence"))
 
 function JobLogsHarness({ jobStatus }: { jobStatus: string }) {
-    const { logs, isLoading, error, updateSearchQuery, downloadLogsMutation, isDownloadLogsMutationLoading, fetchNextPage } =
+    const { logs, isLoading, error, updateSearchQuery, applyStreamFilter, downloadLogsMutation, isDownloadLogsMutationLoading, fetchNextPage, refreshLogs } =
         useJobLogs("w1", "j1", jobStatus)
     return (
         <div>
@@ -142,9 +148,11 @@ function JobLogsHarness({ jobStatus }: { jobStatus: string }) {
             <p data-testid="error">{error ? error.message : "none"}</p>
             <p data-testid="downloading">{String(isDownloadLogsMutationLoading)}</p>
             <button type="button" onClick={() => { void fetchNextPage() }}>load more</button>
+            <button type="button" onClick={() => { void refreshLogs() }}>refresh logs</button>
             <button type="button" onClick={() => updateSearchQuery("timeout")}>search timeout</button>
             <button type="button" onClick={() => updateSearchQuery("")}>clear search</button>
-            <button type="button" onClick={() => downloadLogsMutation.mutate({ filename: "job-logs.txt", format: "json" })}>
+            <button type="button" onClick={() => applyStreamFilter("stderr")}>filter stderr</button>
+            <button type="button" onClick={() => downloadLogsMutation.mutate({ filename: "job-logs.txt", format: "json" }, { onSuccess: mocks.downloadComplete })}>
                 download json
             </button>
             <ul>
@@ -158,8 +166,9 @@ function JobLogsHarness({ jobStatus }: { jobStatus: string }) {
     )
 }
 
-function renderJobLogs(jobStatus: string) {
+function renderJobLogs(jobStatus: string, mutationCache?: MutationCache) {
     const queryClient = new QueryClient({
+        mutationCache,
         defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
     })
 
@@ -167,13 +176,19 @@ function renderJobLogs(jobStatus: string) {
     // push, the way the Next.js router would after a real navigation.
     function Harness({ status }: { status: string }) {
         const [, setTick] = useState(0)
+        const { deleteWorkflow } = useWorkflowDetails("w1")
+        const scope = useWorkflowScope("w1")
         useEffect(() => {
             mocks.notify = () => setTick((tick) => tick + 1)
             return () => {
                 mocks.notify = null
             }
         }, [])
-        return <JobLogsHarness jobStatus={status} />
+        return <>
+            <JobLogsHarness jobStatus={status} />
+            <button onClick={() => deleteWorkflow()}>delete workflow</button>
+            <button onClick={() => { mocks.lateSignal = scope.signal() }}>start stream signal</button>
+        </>
     }
 
     const view = render(
@@ -183,6 +198,7 @@ function renderJobLogs(jobStatus: string) {
     )
     return {
         ...view,
+        queryClient,
         setJobStatus: (next: string) => view.rerender(
             <QueryClientProvider client={queryClient}>
                 <Harness status={next} />
@@ -220,6 +236,8 @@ beforeEach(() => {
     mocks.toast.success.mockClear()
     mocks.toast.warning.mockClear()
     mocks.downloads.length = 0
+    mocks.downloadComplete.mockClear()
+    mocks.lateSignal = null
     mocks.objectUrls.length = 0
     mocks.revoked.length = 0
     // jsdom implements neither object URLs nor anchor downloads; stand in for
@@ -268,7 +286,7 @@ it.each([
     await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalledWith(
         `/workflows/w1/jobs/j1/logs${search ? `/search?${search}` : ""}`,
         "failed to fetch job logs",
-        { cache: "no-store" },
+        { signal: expect.any(AbortSignal) },
     ))
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"))
     expect(screen.getByTestId("error").textContent).toBe("none")
@@ -437,7 +455,7 @@ it("downloads the retained logs under a normalized file name and releases the ob
     })
 
     await waitFor(() => expect(mocks.downloads).toHaveLength(1))
-    expect(mocks.fetchApi).toHaveBeenCalledWith("/workflows/w1/jobs/j1/logs/raw", "failed to download logs")
+    expect(mocks.fetchApi).toHaveBeenCalledWith("/workflows/w1/jobs/j1/logs/raw", "failed to download logs", { signal: expect.any(AbortSignal) })
     // The requested .txt suffix is replaced by the requested format.
     const anchor = mocks.downloads[0]
     expect(anchor.download).toBe("job-logs.json")
@@ -465,6 +483,7 @@ it("scopes the log download to the active search filter", async () => {
     expect(mocks.fetchApi).toHaveBeenCalledWith(
         "/workflows/w1/jobs/j1/logs/raw?q=timeout",
         "failed to download logs",
+        { signal: expect.any(AbortSignal) },
     )
 })
 
@@ -495,7 +514,7 @@ it.each([
 
 it("keeps pagination inert before the job has any logs", async () => {
     renderJobLogs("PENDING")
-    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalledWith("/workflows/w1", "failed to fetch workflow details"))
+    await waitFor(() => expect(mocks.fetchApiJson).toHaveBeenCalledWith("/workflows/w1", "failed to fetch workflow details", { signal: expect.any(AbortSignal) }))
     expect(mocks.fetchApiJson.mock.calls.some(([url]) => String(url).includes("/logs"))).toBe(false)
     mocks.fetchApiJson.mockClear()
     await act(async () => { screen.getByText("load more").click() })
@@ -504,3 +523,141 @@ it("keeps pagination inert before the job has any logs", async () => {
     expect(screen.queryAllByRole("listitem")).toHaveLength(0)
     expect(screen.getByTestId("error").textContent).toBe("none")
 })
+
+it("closes the live stream and prevents a pending export from saving after workflow deletion", async () => {
+    const exportReply = Promise.withResolvers<Response>()
+    mocks.fetchApi.mockImplementation((url: string) => url.endsWith("/raw")
+        ? exportReply.promise
+        : Promise.resolve(new Response(null, { status: 204 })))
+    const { queryClient } = renderJobLogs("RUNNING")
+    await waitFor(() => expect(mocks.sources).toHaveLength(1))
+    const source = mocks.sources[0] as FakeEventSource
+    const searchKey = queryKeys.job.logSearch("w1", "j1", "timeout", "stderr")
+    const unaffectedKey = queryKeys.job.logs("w2", "j2", "COMPLETED")
+    queryClient.setQueryDefaults(searchKey, { gcTime: Infinity })
+    queryClient.setQueryDefaults(unaffectedKey, { gcTime: Infinity })
+    queryClient.setQueryData(searchKey, { pages: [], pageParams: [] })
+    queryClient.setQueryData(unaffectedKey, { pages: [], pageParams: [] })
+    const queuedError = [...(source.registered.get("error") ?? [])][0]
+    const queuedLog = [...(source.registered.get("log") ?? [])][0]
+    expect(queuedError).toBeDefined()
+    expect(queuedLog).toBeDefined()
+
+    await act(async () => { screen.getByText("download json").click() })
+    const signal = (mocks.fetchApi.mock.calls[0]?.[2] as RequestInit).signal
+    expect(signal?.aborted).toBe(false)
+    await act(async () => { screen.getByText("delete workflow").click() })
+
+    await waitFor(() => expect(source.readyState).toBe(FakeEventSource.CLOSED))
+    expect(signal?.aborted).toBe(true)
+    await act(async () => {
+        queuedLog(new MessageEvent("log", { data: JSON.stringify(liveWire(50)) }))
+        queuedError(new Event("error"))
+        for (const label of ["load more", "refresh logs", "search timeout", "filter stderr", "download json", "start stream signal"]) {
+            screen.getByText(label).click()
+        }
+    })
+    expect(screen.queryByText("live line 50")).toBeNull()
+    expect(mocks.lateSignal?.aborted).toBe(true)
+    expect(mocks.fetchApi).toHaveBeenCalledTimes(2)
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    expect(queryClient.getQueryData(queryKeys.job.logs("w1", "j1", "RUNNING"))).toBeUndefined()
+    expect(queryClient.getQueryData(searchKey)).toBeUndefined()
+    expect(queryClient.getQueryData(unaffectedKey)).toEqual({ pages: [], pageParams: [] })
+    await act(async () => {
+        exportReply.resolve(new Response('{"type":"complete"}\n', {
+            headers: { "Content-Type": "application/x-ndjson" },
+        }))
+    })
+    expect(mocks.downloads).toHaveLength(0)
+    expect(mocks.objectUrls).toHaveLength(0)
+    expect(mocks.toast.success).not.toHaveBeenCalledWith("Logs downloaded successfully")
+})
+
+it("resumes paging with the fresh cursor without canceling refresh", async () => {
+    const fresh = Promise.withResolvers<{ logs: ReturnType<typeof retainedLog>[], cursor: string }>()
+    let refreshSignal: AbortSignal | undefined
+    let firstPages = 0
+    const cursors: string[] = []
+    mocks.fetchApiJson.mockImplementation((url: string, _message: string, init: RequestInit) => {
+        if (!url.includes("/logs")) return Promise.resolve(workflow)
+        const cursor = new URL(url, "http://localhost").searchParams.get("cursor")
+        if (cursor) {
+            cursors.push(cursor)
+            return Promise.resolve({ logs: [retainedLog(1)] })
+        }
+        if (++firstPages === 1) return Promise.resolve({ logs: [retainedLog(2)], cursor: "old" })
+        refreshSignal = init.signal ?? undefined
+        return fresh.promise
+    })
+    renderJobLogs("COMPLETED")
+    expect(await screen.findByText("retained line 2")).toBeTruthy()
+    act(() => screen.getByText("refresh logs").click())
+    await waitFor(() => expect(refreshSignal).toBeDefined())
+    act(() => {
+        screen.getByText("load more").click()
+        screen.getByText("load more").click()
+    })
+    expect(refreshSignal?.aborted).toBe(false)
+    expect(cursors).toEqual([])
+    await act(async () => fresh.resolve({ logs: [retainedLog(2)], cursor: "new" }))
+    expect(await screen.findByText("retained line 1")).toBeTruthy()
+    expect(cursors).toEqual(["new"])
+})
+
+it("drops download feedback and dialog completion after workflow retirement", async () => {
+    const feedback = Promise.withResolvers<void>()
+    mocks.fetchApi.mockImplementation(async (url: string) => url.endsWith("/raw")
+        ? new Response('{"type":"complete"}\n', { headers: { "Content-Type": "application/x-ndjson" } })
+        : new Response(null, { status: 204 }))
+    const mutationCache = new MutationCache({
+        onSuccess: (_reply, submitted) => submitted && typeof submitted === "object" && "filename" in submitted
+            ? feedback.promise
+            : undefined,
+    })
+    renderJobLogs("COMPLETED", mutationCache)
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(3))
+    act(() => screen.getByText("download json").click())
+    await waitFor(() => expect(mocks.downloads).toHaveLength(1))
+    act(() => screen.getByText("delete workflow").click())
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith("workflow deleted successfully"))
+    await act(async () => { feedback.resolve() })
+    expect(mocks.toast.success).not.toHaveBeenCalledWith("Logs downloaded successfully")
+    expect(mocks.downloadComplete).not.toHaveBeenCalled()
+    expect(mocks.downloads).toHaveLength(1)
+})
+
+it.each(["filter change", "no next page", "refresh failure"] as const)(
+    "discards paging after %s instead of reusing the previous cursor",
+    async (ending) => {
+        const refresh = Promise.withResolvers<{ logs: ReturnType<typeof retainedLog>[] }>()
+        let firstPages = 0
+        const cursors: string[] = []
+        mocks.fetchApiJson.mockImplementation((url: string) => {
+            if (!url.includes("/logs")) return Promise.resolve(workflow)
+            if (url.includes("/search")) return Promise.resolve({ logs: [retainedLog(7)] })
+            const cursor = new URL(url, "http://localhost").searchParams.get("cursor")
+            if (cursor) {
+                cursors.push(cursor)
+                return Promise.resolve({ logs: [] })
+            }
+            if (++firstPages === 1) return Promise.resolve({ logs: [retainedLog(2)], cursor: "old" })
+            return refresh.promise
+        })
+        renderJobLogs("COMPLETED")
+        expect(await screen.findByText("retained line 2")).toBeTruthy()
+        act(() => screen.getByText("refresh logs").click())
+        await waitFor(() => expect(firstPages).toBe(2))
+        act(() => screen.getByText("load more").click())
+        if (ending === "filter change") {
+            act(() => screen.getByText("search timeout").click())
+            expect(await screen.findByText("retained line 7")).toBeTruthy()
+        }
+        await act(async () => {
+            if (ending === "refresh failure") refresh.reject(new Error("refresh failed"))
+            else refresh.resolve({ logs: [retainedLog(3)], ...(ending === "filter change" && { cursor: "new" }) })
+        })
+        expect(cursors).toEqual([])
+    },
+)

@@ -925,6 +925,7 @@ it("downloads the retained logs from the download popover", async () => {
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledWith(
         `${apiEndpoints.workflows.jobs.rawLogs("w1", "j1")}`,
         "failed to download logs",
+        { signal: expect.any(AbortSignal) },
     ))
     expect((mocks.anchorClick.mock.instances.at(-1) as HTMLAnchorElement).download).toBe("run-42.jsonl")
     expect(mocks.toast.success).toHaveBeenCalledWith("Logs downloaded successfully")
@@ -1257,4 +1258,19 @@ it("preserves a pending search while an older navigation settles", async () => {
         mocks.notify?.()
     })
     expect(input.value).toBe("external")
+})
+
+it("refreshes the active search from the log viewer control", async () => {
+    mocks.search = "q=timeout&stream=stderr"
+    renderViewer()
+    expect(await screen.findByText("hit 40")).toBeTruthy()
+    mocks.fetchApiJson.mockResolvedValueOnce({
+        ...searchPage,
+        logs: [log(41, "late match")],
+    })
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh logs" }))
+    expect(await screen.findByText("late match 41")).toBeTruthy()
+    expect(screen.queryByText("hit 40")).toBeNull()
+    expect(mocks.fetchApiJson.mock.calls.at(-1)?.[0]).toBe("/workflows/w1/jobs/j1/logs/search?q=timeout&stream=stderr")
 })

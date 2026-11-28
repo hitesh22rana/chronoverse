@@ -82,13 +82,18 @@ export function CreateWorkflowDialog(props: CreateWorkflowDialogProps) {
     return props.open ? <CreateWorkflowForm {...props} /> : null
 }
 
+const stepResolvers = createWorkflowStepSchemas.map(
+    (schema) => zodResolver(schema) as Resolver<WorkflowFormValues>,
+)
+
 function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const [step, setStep] = useState(0)
     const stepHeading = useRef<HTMLHeadingElement>(null)
     const previousStep = useRef(step)
+    const validationStep = useRef(step)
     const { createWorkflow, isCreating } = useWorkflows()
     const form = useForm<WorkflowFormValues>({
-        resolver: zodResolver(createWorkflowStepSchemas[step]) as Resolver<WorkflowFormValues>,
+        resolver: (...args) => stepResolvers[validationStep.current](...args),
         defaultValues: {
             name: "",
             kind: "HEARTBEAT",
@@ -103,7 +108,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
             },
             containerPayload: { image: "", cmd: [], cmdIds: [], env: [], envIds: [], timeout: "" },
         },
-        mode: "onChange",
+        mode: "all",
     })
 
     useEffect(() => {
@@ -116,11 +121,12 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
 
     const { trigger, formState: { touchedFields } } = form
 
-    // Revalidate after the new step's resolver is installed, independently of animation frames.
-    useEffect(() => {
+    function goToStep(nextStep: number) {
+        validationStep.current = nextStep
+        setStep(nextStep)
         const names = touchedFieldNames(touchedFields)
         if (names.length) void trigger(names as Parameters<typeof trigger>[0])
-    }, [step, touchedFields, trigger])
+    }
 
     const handleKindChange = (nextKind: KindType) => {
         form.setValue("kind", nextKind, { shouldDirty: true, shouldValidate: true })
@@ -130,7 +136,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
     const handleSubmit = (data: WorkflowFormValues) => {
         if (isCreating) return
         if (step < 2) {
-            setStep(step + 1)
+            goToStep(step + 1)
             return
         }
 
@@ -163,7 +169,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                 <WorkflowProgress step={step} />
 
                 <Form {...form}>
-                    <form noValidate onSubmit={form.handleSubmit(handleSubmit)} className="flex min-h-0 flex-col overflow-clip">
+                    <form noValidate onSubmit={(event) => { void form.handleSubmit(handleSubmit)(event) }} className="flex min-h-0 flex-col overflow-clip">
                         <div className="min-h-0 overflow-y-auto px-6 pb-6">
                             <fieldset disabled={isCreating} className="min-w-0">
                                 <legend className="sr-only">Workflow settings</legend>
@@ -278,7 +284,7 @@ function CreateWorkflowForm({ open, onOpenChange }: CreateWorkflowDialogProps) {
                                     Cancel
                                 </Button>
                             ) : (
-                                <Button type="button" variant="outline" className="w-full" onClick={() => setStep(step - 1)} disabled={isCreating}>
+                                <Button type="button" variant="outline" className="w-full" onClick={() => goToStep(step - 1)} disabled={isCreating}>
                                     <ArrowLeft data-icon="inline-start" /> Previous
                                 </Button>
                             )}

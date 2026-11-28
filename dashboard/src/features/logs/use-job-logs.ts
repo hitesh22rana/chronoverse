@@ -2,6 +2,8 @@
 
 import {
     useEffect,
+    useLayoutEffect,
+    useRef,
     useState,
 } from "react"
 import {
@@ -12,10 +14,16 @@ import {
 import {
     useInfiniteQuery,
     useMutation,
+    useQueryClient,
+    type QueryKey,
+    type QueryState,
+    type UseInfiniteQueryResult,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { useWorkflowScope } from "@/features/workflows/workflow-freshness"
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
+import type { Workflow } from "@/features/workflows/types"
 
 import { fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
@@ -45,63 +53,33 @@ const logDownloadLimitBytes = 8 * 1024 * 1024
 const kindsWithLogs = ['CONTAINER']
 const statusesWithLogs = ['RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']
 
-export function useJobLogs(workflowId: string, jobId: string, jobStatus: string) {
+export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatus: string) {
+    const workflowId = routeWorkflowId.toLowerCase()
+    const jobId = routeJobId.toLowerCase()
+    const scope = useWorkflowScope(workflowId)
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
     const { searchQuery, streamFilter, updateSearchQuery, applyStreamFilter, getSearchQueryParams } = useLogFilters()
 
-    const [liveLogs, setLiveLogs] = useState<JobLog[]>([])
-
     const logsURL = apiEndpoints.workflows.jobs.logs(workflowId, jobId)
     const sseURL = apiEndpoints.workflows.jobs.logEvents(workflowId, jobId)
-    const logsDownloadURL = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
     const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
     const isRunning = jobStatus === "RUNNING"
-    const hasLogs = statusesWithLogs.includes(jobStatus)
-    const workflowKind = workflow?.kind || ""
-    const supportsLogs = kindsWithLogs.includes(workflowKind)
-    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
-    const isRetentionDisabled = supportsLogs && !workflow.log_retention
-    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
+    const { hasLogs, workflowKind, isRetentionDisabled, isLogsUnsupportedForKind, shouldFetch } =
+        logAvailability(workflow, jobStatus)
+    const canFetch = scope.available && shouldFetch && Boolean(jobId)
 
-    const canFetch = shouldFetch && Boolean(workflowId) && Boolean(jobId)
+    const download = useLogDownload(scope, workflowId, jobId, searchQuery, streamFilter, getSearchQueryParams)
 
-    const downloadLogsMutation = useMutation({
-        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
-            const response = await fetchApi(
-                withQuery(logsDownloadURL, getSearchQueryParams),
-                "failed to download logs",
-            )
-
-            const blob = await readLogDownload(response, {
-                format,
-                id: jobId,
-                workflow_id: workflowId,
-                filters: { q: searchQuery, stream: streamFilter || "all" },
-            }, logDownloadLimitBytes)
-            const objectUrl = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.href = objectUrl
-            a.download = getDownloadFilename(filename, format)
-            document.body.appendChild(a)
-            a.click()
-            a.remove()
-            URL.revokeObjectURL(objectUrl)
-
-        },
-        onSuccess: () => {
-            toast.success("Logs downloaded successfully")
-        },
-        onError: (error) => {
-            toast.error(error.message)
-        }
-    })
+    const retainedKey = scope.queryKey(queryKeys.job.logs(workflowId, jobId, jobStatus))
+    const searchKey = scope.queryKey(queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter))
 
     // Retained logs are newest-first; fetching the next page loads older logs.
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
-        queryKey: queryKeys.job.logs(workflowId, jobId, jobStatus),
-        queryFn: async ({ pageParam }) => {
-            const res = await fetchLogPage(logsURL, pageParam)
+        queryKey: retainedKey,
+        queryFn: async ({ pageParam, signal }) => {
+            scope.requireCurrent()
+            const res = await fetchLogPage(logsURL, pageParam, signal)
 
             return retainedLogPage(res)
         },
@@ -112,9 +90,10 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
     })
 
     const jobLogsSearchInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
-        queryKey: queryKeys.job.logSearch(workflowId, jobId, searchQuery, streamFilter),
-        queryFn: async ({ pageParam }) => {
-            const res = await fetchLogPage(searchURL, pageParam, getSearchQueryParams)
+        queryKey: searchKey,
+        queryFn: async ({ pageParam, signal }) => {
+            scope.requireCurrent()
+            const res = await fetchLogPage(searchURL, pageParam, signal, getSearchQueryParams)
 
             return searchedLogPage(res, workflowId, jobId)
         },
@@ -124,51 +103,195 @@ export function useJobLogs(workflowId: string, jobId: string, jobStatus: string)
         enabled: canFetch && Boolean(getSearchQueryParams),
     });
 
-    useEffect(() => {
-        if (!canFetch || !isRunning || getSearchQueryParams) {
-            return
-        }
-
-        return subscribeToJobLogs(sseURL, setLiveLogs)
-    }, [sseURL, isRunning, canFetch, getSearchQueryParams])
+    const liveLogs = useLiveJobLogs(sseURL, scope.signal, canFetch && isRunning && !getSearchQueryParams)
 
     useEffect(() => {
+        if (!scope.available) return
         if (jobLogsSearchInfiniteQuery.error instanceof Error) {
             toast.error(jobLogsSearchInfiniteQuery.error.message)
         }
         if (jobLogsInfiniteQuery.error instanceof Error) {
             toast.error(jobLogsInfiniteQuery.error.message)
         }
-    }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error])
+    }, [jobLogsSearchInfiniteQuery.error, jobLogsInfiniteQuery.error, scope.available])
 
     const isSearching = shouldFetch && Boolean(getSearchQueryParams)
-    const query = hasLogs ? (isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery) : {
+    const activeQuery = isSearching ? jobLogsSearchInfiniteQuery : jobLogsInfiniteQuery
+    const fetchNextPage = useLogPagination(
+        isSearching ? searchKey : retainedKey,
+        activeQuery.fetchNextPage,
+        scope.isCurrent,
+        canFetch,
+    )
+    const query = scope.available && hasLogs ? activeQuery : {
         data: undefined,
         isLoading: false,
         error: null,
-        fetchNextPage: () => Promise.resolve(),
+        refetch: undefined,
         isFetchingNextPage: false,
         hasNextPage: false,
     }
     const logs = logsFromPages(query.data?.pages)
 
     return {
-        logs: isRunning && !isSearching ? mergeLiveLogs(logs, liveLogs) : logs,
+        logs: liveLogs.length ? mergeLiveLogs(logs, liveLogs) : logs,
         isLoading: query.isLoading,
         error: query.error,
-        fetchNextPage: query.fetchNextPage,
+        fetchNextPage,
+        canRefreshLogs: canFetch,
+        refreshLogs: () => canFetch && scope.isCurrent() ? query.refetch?.() : undefined,
         isFetchingNextPage: query.isFetchingNextPage,
         hasNextPage: query.hasNextPage,
         searchQuery,
-        updateSearchQuery,
+        updateSearchQuery: (value: string) => { if (scope.isCurrent()) updateSearchQuery(value) },
         streamFilter,
-        applyStreamFilter,
-        downloadLogsMutation,
-        isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+        applyStreamFilter: (value: string) => { if (scope.isCurrent()) applyStreamFilter(value) },
+        downloadLogsMutation: { mutate: download.mutate },
+        isDownloadLogsMutationLoading: download.isPending,
         isRetentionDisabled,
         isLogsUnsupportedForKind,
         workflowKind,
         isWorkflowLoading,
+    }
+}
+
+type NextLogPage = UseInfiniteQueryResult<unknown, Error>["fetchNextPage"]
+
+function useLogPagination(key: QueryKey, fetchPage: NextLogPage, isCurrent: () => boolean, enabled: boolean) {
+    const client = useQueryClient()
+    const dataset = JSON.stringify(key)
+    const active = useRef<{ dataset: string, pending?: Promise<void> } | null>(null)
+
+    useLayoutEffect(() => {
+        if (enabled) active.current = { dataset }
+        return () => { active.current = null }
+    }, [dataset, enabled, isCurrent])
+
+    return async () => {
+        const view = active.current
+        if (!view || view.dataset !== dataset || !isCurrent()) return
+        if (!view.pending) {
+            view.pending = fetchNextLogPage(
+                () => client.getQueryState(key),
+                fetchPage,
+                () => active.current === view && isCurrent(),
+            ).finally(() => { view.pending = undefined })
+        }
+        await view.pending
+    }
+}
+
+async function fetchNextLogPage(
+    readState: () => QueryState | undefined,
+    fetchPage: NextLogPage,
+    isCurrent: () => boolean,
+) {
+    while (isCurrent()) {
+        const state = readState()
+        const joiningRefresh = state && state.fetchStatus !== "idle" && state.fetchMeta?.fetchMore?.direction !== "forward"
+        const result = await fetchPage({ cancelRefetch: false })
+        if (!joiningRefresh || result.isError || !result.hasNextPage) return
+    }
+}
+
+function logAvailability(workflow: Workflow | undefined, jobStatus: string) {
+    const hasLogs = statusesWithLogs.includes(jobStatus)
+    const workflowKind = workflow?.kind ?? ""
+    const supportsLogs = kindsWithLogs.includes(workflowKind)
+    const isRetentionDisabled = supportsLogs && !workflow?.log_retention
+    return {
+        hasLogs,
+        workflowKind,
+        isRetentionDisabled,
+        isLogsUnsupportedForKind: Boolean(workflow) && !supportsLogs,
+        shouldFetch: supportsLogs && Boolean(workflow?.log_retention) && hasLogs,
+    }
+}
+
+function useLiveJobLogs(sseURL: string, resourceSignal: () => AbortSignal, enabled: boolean) {
+    const [live, setLive] = useState<{ url: string, logs: JobLog[] } | null>(null)
+
+    useEffect(() => {
+        if (!enabled) {
+            return
+        }
+
+        const signal = resourceSignal()
+        if (signal.aborted) return
+        const close = subscribeToJobLogs(sseURL, (log) => {
+            setLive((existing) => ({
+                url: sseURL,
+                logs: mergeLiveLogs(existing?.url === sseURL ? existing.logs : [], [log]),
+            }))
+        })
+        const retire = () => {
+            close()
+            setLive(null)
+        }
+        signal.addEventListener("abort", retire, { once: true })
+        return () => {
+            signal.removeEventListener("abort", retire)
+            close()
+        }
+    }, [sseURL, enabled, resourceSignal])
+
+    return enabled && live?.url === sseURL ? live.logs : []
+}
+
+function useLogDownload(
+    scope: ReturnType<typeof useWorkflowScope>,
+    workflowId: string,
+    jobId: string,
+    searchQuery: string,
+    streamFilter: string,
+    searchParams: string,
+) {
+    const download = useMutation({
+        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
+            scope.requireCurrent()
+            const url = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
+            const response = await fetchApi(withQuery(url, searchParams), "failed to download logs", {
+                signal: scope.signal(),
+            })
+            const blob = await readLogDownload(response, {
+                format,
+                id: jobId,
+                workflow_id: workflowId,
+                filters: { q: searchQuery, stream: streamFilter || "all" },
+            }, logDownloadLimitBytes)
+            scope.requireCurrent()
+            saveLogDownload(blob, getDownloadFilename(filename, format))
+        },
+        onSuccess: () => {
+            if (scope.isCurrent()) toast.success("Logs downloaded successfully")
+        },
+        onError: (error) => {
+            if (scope.isCurrent()) toast.error(error.message)
+        },
+    })
+
+    return {
+        isPending: download.isPending,
+        mutate: (options: DownloadLogsOptions, callbacks?: { onSuccess?: () => void }) => {
+            if (!scope.isCurrent()) return
+            download.mutate(options, {
+                onSuccess: () => { if (scope.isCurrent()) callbacks?.onSuccess?.() },
+            })
+        },
+    }
+}
+
+function saveLogDownload(blob: Blob, filename: string) {
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    try {
+        link.href = url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+    } finally {
+        link.remove()
+        URL.revokeObjectURL(url)
     }
 }
 
@@ -203,23 +326,25 @@ function useLogFilters() {
     }
 }
 
-function subscribeToJobLogs(sseURL: string, setLiveLogs: React.Dispatch<React.SetStateAction<JobLog[]>>) {
+function subscribeToJobLogs(sseURL: string, append: (_log: JobLog) => void) {
+    let closed = false
     const eventSource = new EventSource(sseURL, {
         withCredentials: true,
     })
 
     const handleLog = (event: MessageEvent<string>) => {
+        if (closed) return
         try {
             const logData = normalizeJobLog(JSON.parse(event.data) as JobLogWire)
 
-            setLiveLogs((existingLogs) => mergeLiveLogs(existingLogs, [logData]))
+            append(logData)
         } catch {
             /* ignore parsing errors */
         }
     }
 
     const handleError = () => {
-        toast.error("Log streaming error occurred")
+        if (!closed) toast.error("Log streaming error occurred")
     }
 
     eventSource.addEventListener("log", handleLog)
@@ -227,25 +352,28 @@ function subscribeToJobLogs(sseURL: string, setLiveLogs: React.Dispatch<React.Se
 
     eventSource.onerror = () => {
         // Silent on normal disconnects.
-        if (eventSource.readyState !== EventSource.CLOSED) {
+        if (!closed && eventSource.readyState !== EventSource.CLOSED) {
             toast.error("Lost connection to log stream")
         }
     }
 
     return () => {
+        if (closed) return
+        closed = true
+        eventSource.onerror = null
         eventSource.removeEventListener("log", handleLog)
         eventSource.removeEventListener("error", handleError)
         eventSource.close()
     }
 }
 
-function fetchLogPage(url: string, pageParam: unknown, search = "") {
+function fetchLogPage(url: string, pageParam: unknown, signal: AbortSignal, search = "") {
     const params = new URLSearchParams(search)
     if (pageParam) params.set("cursor", String(pageParam))
     return fetchApiJson<JobLogsResponse>(
         withQuery(url, params),
         "failed to fetch job logs",
-        { cache: "no-store" },
+        { signal },
     )
 }
 

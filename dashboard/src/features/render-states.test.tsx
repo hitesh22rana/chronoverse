@@ -50,7 +50,7 @@ it.each([
 })
 
 it("renders unfinished and completed job timelines", () => {
-    mocks.job = { job: { created_at: "2026-01-01T00:00:00Z", scheduled_at: "2026-01-01T00:00:00Z", status: "QUEUED" } }
+    mocks.job = { isWorkflowAvailable: true, job: { created_at: "2026-01-01T00:00:00Z", scheduled_at: "2026-01-01T00:00:00Z", status: "QUEUED" } }
     let html = renderToStaticMarkup(<JobDetailsAndLogsPage />)
     expect(html).toContain("Not started yet")
     expect(html).toContain("Not completed yet")

@@ -14,6 +14,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { Job } from "@/features/jobs/types"
 import { queryRefetchIntervals } from "@/lib/api/query-policy"
+import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
+import { useJobDetails } from "./use-job-details"
 import JobDetailsAndLogsPage from "./job-details-page"
 
 const mocks = vi.hoisted(() => ({
@@ -374,4 +376,31 @@ it("says plainly when a failure arrives without an error to quote", async () => 
     expect(await screen.findByRole("heading", { name: "Error Loading Job" })).toBeTruthy()
     expect(screen.getByText("Failed to load job data")).toBeTruthy()
     expect(screen.queryByText("gateway timeout")).toBeNull()
+})
+
+it("hides the job after confirmed workflow deletion and ignores a saved retry", async () => {
+    mocks.job = finishedJob(5)
+    failJobDetailTimes(0, null)
+    mocks.fetchApi.mockResolvedValue(new Response(null, { status: 204 }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let savedRetry: ReturnType<typeof useJobDetails>["refetch"] | undefined
+    let deletion: ReturnType<typeof useWorkflowDetails>["deleteWorkflow"] | undefined
+
+    function Actions() {
+        const { refetch } = useJobDetails("w1", "j1")
+        const { deleteWorkflow } = useWorkflowDetails("w1")
+        return <button onClick={() => { savedRetry = refetch; deletion = deleteWorkflow }}>capture actions</button>
+    }
+
+    render(<QueryClientProvider client={queryClient}>
+        <Actions />
+        <JobDetailsAndLogsPage />
+    </QueryClientProvider>)
+    await waitFor(() => expect(renderedDuration()).toBe("5 seconds"))
+    fireEvent.click(screen.getByText("capture actions"))
+    act(() => { deletion?.() })
+    expect(await screen.findByRole("link", { name: /Workflow unavailable/ })).toBeTruthy()
+    const requests = jobDetailRequests()
+    act(() => { void savedRetry?.() })
+    expect(jobDetailRequests()).toBe(requests)
 })

@@ -1,6 +1,5 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -13,6 +12,8 @@ import {
     normalizeWorkflowAnalytics,
     type WorkflowAnalyticsPayload,
 } from "@/features/analytics/analytics-data"
+import { refreshWorkflowEdit, useWorkflowScope } from "./workflow-freshness"
+import { useDeleteWorkflow } from "./use-delete-workflow"
 import type { UpdateWorkflowDetails, Workflow } from "@/features/workflows/types"
 
 type UseWorkflowDetailsOptions = {
@@ -20,19 +21,20 @@ type UseWorkflowDetailsOptions = {
 }
 
 export function useWorkflowDetails(
-    workflowId: string,
+    routeWorkflowId: string,
     { analytics = false }: UseWorkflowDetailsOptions = {},
 ) {
-    const router = useRouter()
+    const workflowId = routeWorkflowId.toLowerCase()
     const queryClient = useQueryClient()
+    const scope = useWorkflowScope(workflowId)
 
     const getWorkflowQuery = useQuery<Workflow, Error>({
-        queryKey: queryKeys.workflow.detail(workflowId),
-        queryFn: () => fetchApiJson<Workflow>(
-            apiEndpoints.workflows.detail(workflowId),
-            "failed to fetch workflow details",
-        ),
-        enabled: !!workflowId,
+        queryKey: scope.queryKey(queryKeys.workflow.detail(workflowId)),
+        queryFn: ({ signal }) => {
+            scope.requireCurrent()
+            return fetchApiJson<Workflow>(apiEndpoints.workflows.detail(workflowId), "failed to fetch workflow details", { signal })
+        },
+        enabled: scope.available,
         refetchInterval: (query) => {
             const buildStatus = query.state.data?.build_status
             return buildStatus === "QUEUED" || buildStatus === "STARTED"
@@ -42,14 +44,16 @@ export function useWorkflowDetails(
         staleTime: queryStaleTimes.workflowDetails,
     })
 
-    if (getWorkflowQuery.error instanceof Error) {
+    if (scope.available && getWorkflowQuery.error instanceof Error) {
         toast.error(getWorkflowQuery.error.message)
     }
 
     const updateWorkflowMutation = useMutation({
         mutationFn: async (command: { payload: UpdateWorkflowDetails; idempotencyKey: string }) => {
+            scope.requireCurrent()
             await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to update workflow", {
                 method: "PUT",
+                signal: scope.signal(),
                 headers: {
                     "Idempotency-Key": command.idempotencyKey,
                 },
@@ -57,76 +61,61 @@ export function useWorkflowDetails(
             })
         },
         onSuccess: () => {
+            if (!scope.isCurrent()) return
+            void refreshWorkflowEdit(queryClient, workflowId, true, scope.isCurrent)
             toast.success("workflow updated successfully")
-            queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
-            getWorkflowQuery.refetch()
         },
         onError: (error) => {
-            toast.error(error.message)
+            if (scope.isCurrent()) toast.error(error.message)
         }
     })
 
     const terminateWorkflowMutation = useMutation({
         mutationFn: async () => {
+            scope.requireCurrent()
             await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to terminate workflow", {
                 method: "PATCH",
+                signal: scope.signal(),
             })
 
             return workflowId
         },
         onSuccess: () => {
+            if (!scope.isCurrent()) return
+            void refreshWorkflowEdit(queryClient, workflowId, false, scope.isCurrent)
             toast.success("workflow terminated successfully")
-            queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
-            getWorkflowQuery.refetch()
         },
         onError: (error) => {
-            toast.error(error.message)
+            if (scope.isCurrent()) toast.error(error.message)
         }
     })
 
-    const deleteWorkflowMutation = useMutation({
-        mutationFn: async () => {
-            await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to delete workflow", {
-                method: "DELETE",
-            })
-
-            return workflowId
-        },
-        onSuccess: () => {
-            toast.success("workflow deleted successfully")
-            queryClient.invalidateQueries({ queryKey: queryKeys.workflows.all })
-            queryClient.removeQueries({ queryKey: queryKeys.workflow.detail(workflowId) })
-            router.push("/")
-        },
-        onError: (error) => {
-            toast.error(error.message)
-        }
-    })
+    const deleteWorkflowMutation = useDeleteWorkflow(workflowId, scope)
 
     const getWorkflowAnalyticsQuery = useQuery<WorkflowAnalytics, Error>({
-        queryKey: queryKeys.workflow.analytics(workflowId),
-        queryFn: async () => normalizeWorkflowAnalytics(
-            await fetchApiJson<WorkflowAnalyticsPayload>(
-                apiEndpoints.analytics.workflow(workflowId),
-                "failed to fetch workflow analytics",
-            ),
-            workflowId,
-        ),
-        enabled: analytics && !!workflowId,
+        queryKey: scope.queryKey(queryKeys.workflow.analytics(workflowId)),
+        queryFn: async ({ signal }) => {
+            scope.requireCurrent()
+            return normalizeWorkflowAnalytics(await fetchApiJson<WorkflowAnalyticsPayload>(
+                apiEndpoints.analytics.workflow(workflowId), "failed to fetch workflow analytics", { signal },
+            ), workflowId)
+        },
+        enabled: analytics && scope.available,
         staleTime: queryStaleTimes.analytics,
         refetchOnWindowFocus: false,
     })
 
     return {
-        workflow: getWorkflowQuery.data as Workflow,
+        workflow: (scope.available ? getWorkflowQuery.data : undefined) as Workflow,
+        isWorkflowAvailable: scope.available,
         isLoading: getWorkflowQuery.isLoading,
         fetchStatus: getWorkflowQuery.fetchStatus,
         error: getWorkflowQuery.error,
-        refetch: getWorkflowQuery.refetch,
+        refetch: () => scope.isCurrent() ? getWorkflowQuery.refetch() : undefined,
         updateWorkflow: (payload: UpdateWorkflowDetails, onSuccess?: () => void) => updateWorkflowMutation.mutate({
             payload,
             idempotencyKey: createIdempotencyKey(),
-        }, { onSuccess }),
+        }, { onSuccess: () => { if (scope.isCurrent()) onSuccess?.() } }),
         isUpdating: updateWorkflowMutation.isPending,
         updateError: updateWorkflowMutation.error,
         terminateWorkflow: terminateWorkflowMutation.mutate,
@@ -135,10 +124,10 @@ export function useWorkflowDetails(
         deleteWorkflow: deleteWorkflowMutation.mutate,
         isDeleting: deleteWorkflowMutation.isPending,
         deleteError: deleteWorkflowMutation.error,
-        workflowAnalytics: getWorkflowAnalyticsQuery.data,
+        workflowAnalytics: scope.available ? getWorkflowAnalyticsQuery.data : undefined,
         isAnalyticsLoading: getWorkflowAnalyticsQuery.isLoading,
         isAnalyticsFetching: getWorkflowAnalyticsQuery.isFetching,
         analyticsError: getWorkflowAnalyticsQuery.error,
-        refetchAnalytics: getWorkflowAnalyticsQuery.refetch,
+        refetchAnalytics: () => scope.isCurrent() ? getWorkflowAnalyticsQuery.refetch() : undefined,
     }
 }

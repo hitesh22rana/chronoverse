@@ -12,17 +12,32 @@ import {
     type UserAnalyticsPayload,
 } from "@/features/analytics/analytics-data"
 
+import { useWorkflowRetirement } from "@/features/workflows/workflow-freshness"
+
 export function useUserAnalytics(enabled: boolean) {
-    return useQuery<UserAnalytics, Error>({
+    const { retired } = useWorkflowRetirement()
+    const query = useQuery<UserAnalytics, Error>({
         queryKey: queryKeys.userAnalytics,
-        queryFn: async () => normalizeUserAnalytics(
+        queryFn: async ({ signal }) => normalizeUserAnalytics(
             await fetchApiJson<UserAnalyticsPayload>(
                 apiEndpoints.analytics.user,
                 "failed to fetch analytics",
+                { signal },
             ),
         ),
         enabled,
         staleTime: queryStaleTimes.analytics,
         refetchOnWindowFocus: false,
     })
+    const data = query.data
+    if (!data || !retired.size) return query
+    return {
+        ...query,
+        data: {
+            ...data,
+            top_workflows: data.top_workflows.map((item) => retired.get(item.workflow_id.toLowerCase())
+                ? { ...item, workflow_name: "Deleted workflow" }
+                : item),
+        },
+    }
 }

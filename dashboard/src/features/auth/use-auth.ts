@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { createIdempotencyKey, fetchApi } from "@/lib/api/client"
 import { apiEndpoints } from "@/lib/api/endpoints"
+import { resetWorkflowSession } from "@/features/workflows/workflow-freshness"
 import {
   fingerprintSignupCredentials,
   selectSignupAttempt,
@@ -30,6 +31,11 @@ export function useAuth() {
   const queryClient = useQueryClient()
   const signupAttemptRef = useRef<SignupAttempt | null>(null)
 
+  function clearSessionState() {
+    resetWorkflowSession(queryClient)
+    queryClient.clear()
+  }
+
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginCredentials) => {
       await fetchApi(apiEndpoints.auth.login, "failed to login", {
@@ -38,7 +44,7 @@ export function useAuth() {
       })
     },
     onSuccess: () => {
-      queryClient.clear()
+      clearSessionState()
       router.push("/")
     },
     onError: (error: Error) => {
@@ -58,7 +64,7 @@ export function useAuth() {
       if (signupAttemptRef.current?.idempotencyKey === command.idempotencyKey) {
         signupAttemptRef.current = null
       }
-      queryClient.clear()
+      clearSessionState()
       router.push("/")
     },
     onError: (error: Error) => {
@@ -73,7 +79,7 @@ export function useAuth() {
       })
     },
     onSuccess: () => {
-      queryClient.clear()
+      clearSessionState()
       router.replace("/login")
       router.refresh()
     },

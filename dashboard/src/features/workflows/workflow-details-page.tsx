@@ -68,6 +68,7 @@ function useWorkflowDetailsAndJobsModel() {
 
     const {
         workflow,
+        isWorkflowAvailable,
         isLoading: isWorkflowLoading,
         error: workflowError,
         refetch: refetchWorkflow,
@@ -165,6 +166,7 @@ function useWorkflowDetailsAndJobsModel() {
         urlTabFilter,
         workflow,
         isWorkflowLoading,
+        isWorkflowAvailable,
         hasLoadedWorkflow,
         workflowError,
         workflowAnalytics,
@@ -199,6 +201,8 @@ function useWorkflowDetailsAndJobsModel() {
 
 function renderWorkflowDetailsAndJobsView(model: ReturnType<typeof useWorkflowDetailsAndJobsModel>) {
     const { urlTabFilter, handleTabsChange } = model
+
+    if (!model.isWorkflowAvailable) return <Link href="/">Workflow unavailable. Return to workflows</Link>
 
     return (
         <div className="flex flex-1 flex-col gap-6 h-full">

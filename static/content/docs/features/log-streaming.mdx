@@ -6,7 +6,11 @@ Running container jobs expose `GET /workflows/{workflow_id}/jobs/{job_id}/events
 
 ## Retained listing
 
-`GET .../logs` reads ClickHouse in descending sequence order. It is available only when the workflow supports retained logs.
+`GET .../logs` reads ClickHouse in descending sequence order. It is available only when the workflow supports retained logs. After a job
+settles, select **Refresh logs** to reread the current retained or filtered
+results as log replay and indexing finish. Deleting a workflow clears its
+dashboard views, closes its log streams and cancels pending exports in the
+tab that performed the deletion.
 
 ## Search and filtering
 

@@ -15,7 +15,7 @@ import {
     useRouter,
     useSearchParams,
 } from "next/navigation"
-import { Download, Filter, Loader2, Search } from "lucide-react"
+import { Download, Filter, Loader2, RefreshCw, Search } from "lucide-react"
 import { toast } from "sonner"
 import { Virtuoso } from "react-virtuoso"
 import type { ListRange, VirtuosoHandle } from "react-virtuoso"
@@ -321,6 +321,8 @@ export function LogsViewer({
         isLoading: isLogsLoading,
         error: logsError,
         fetchNextPage,
+        canRefreshLogs,
+        refreshLogs,
         searchQuery,
         updateSearchQuery,
         streamFilter,
@@ -423,6 +425,8 @@ export function LogsViewer({
         logs,
         isLogsLoading,
         isWorkflowLoading,
+        canRefreshLogs,
+        refreshLogs,
         logsError,
         isLogsUnsupportedForKind,
         workflowKind,
@@ -493,7 +497,14 @@ function LogsViewerView({ model }: { model: any }) {
     return (
         <Card className="flex flex-col flex-1 w-full min-h-dvh h-full">
             <CardHeader className="sticky top-0 z-30 bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/60 border-b space-y-4 p-6 rounded-t-2xl">
-                <CardTitle>Logs</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                    <CardTitle>Logs</CardTitle>
+                    <Button variant="outline" size="icon" aria-label="Refresh logs"
+                        disabled={!model.canRefreshLogs || model.isLogsLoading}
+                        onClick={model.refreshLogs}>
+                        <RefreshCw className="size-4" />
+                    </Button>
+                </div>
 
                 <div className="flex lg:flex-row flex-col items-center justify-between gap-4">
                     <div className="relative w-full flex items-center gap-2">

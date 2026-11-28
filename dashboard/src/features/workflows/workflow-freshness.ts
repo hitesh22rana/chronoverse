@@ -6,7 +6,7 @@ import { useQueryClient, type QueryClient, type QueryFilters } from "@tanstack/r
 import { queryKeys } from "@/lib/api/query-keys"
 
 function createWorkflowState() {
-    let retired = new Set<string>()
+    let retired = new Map<string, boolean>()
     const listeners = new Set<() => void>()
     const resources = new Map<string, AbortController>()
 
@@ -25,9 +25,8 @@ function createWorkflowState() {
             }
             return resource.signal
         },
-        retire(id: string) {
-            if (retired.has(id)) return
-            retired = new Set(retired).add(id)
+        retire(id: string, deleted: boolean) {
+            retired = new Map(retired).set(id, deleted)
             resources.get(id)?.abort()
             resources.delete(id)
             listeners.forEach((listener) => listener())
@@ -57,7 +56,7 @@ export function useWorkflowScope(id: string) {
         available,
         isCurrent,
         signal,
-        retire: () => state.retire(id),
+        retire: (deleted: boolean) => state.retire(id, deleted),
         requireCurrent() {
             if (!isCurrent()) throw new DOMException("Workflow is unavailable", "AbortError")
         },

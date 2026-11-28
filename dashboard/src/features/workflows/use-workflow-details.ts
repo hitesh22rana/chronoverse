@@ -1,6 +1,5 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -13,7 +12,8 @@ import {
     normalizeWorkflowAnalytics,
     type WorkflowAnalyticsPayload,
 } from "@/features/analytics/analytics-data"
-import { refreshQueries, refreshWorkflowEdit, useWorkflowScope, workflowDescendants } from "./workflow-freshness"
+import { refreshWorkflowEdit, useWorkflowScope } from "./workflow-freshness"
+import { useDeleteWorkflow } from "./use-delete-workflow"
 import type { UpdateWorkflowDetails, Workflow } from "@/features/workflows/types"
 
 type UseWorkflowDetailsOptions = {
@@ -25,7 +25,6 @@ export function useWorkflowDetails(
     { analytics = false }: UseWorkflowDetailsOptions = {},
 ) {
     const workflowId = routeWorkflowId.toLowerCase()
-    const router = useRouter()
     const queryClient = useQueryClient()
     const scope = useWorkflowScope(workflowId)
 
@@ -61,11 +60,10 @@ export function useWorkflowDetails(
                 body: JSON.stringify(command.payload),
             })
         },
-        onSuccess: async () => {
+        onSuccess: () => {
             if (!scope.isCurrent()) return
-            const refresh = refreshWorkflowEdit(queryClient, workflowId, true, scope.isCurrent)
+            void refreshWorkflowEdit(queryClient, workflowId, true, scope.isCurrent)
             toast.success("workflow updated successfully")
-            await refresh
         },
         onError: (error) => {
             if (scope.isCurrent()) toast.error(error.message)
@@ -82,69 +80,17 @@ export function useWorkflowDetails(
 
             return workflowId
         },
-        onSuccess: async () => {
+        onSuccess: () => {
             if (!scope.isCurrent()) return
-            const refresh = refreshWorkflowEdit(queryClient, workflowId, false, scope.isCurrent)
+            void refreshWorkflowEdit(queryClient, workflowId, false, scope.isCurrent)
             toast.success("workflow terminated successfully")
-            await refresh
         },
         onError: (error) => {
             if (scope.isCurrent()) toast.error(error.message)
         }
     })
 
-    const retireWorkflow = async () => {
-        if (!scope.isCurrent()) return
-        scope.retire()
-        const filters = workflowDescendants(workflowId)
-        const cancel = queryClient.cancelQueries(filters)
-        const refresh = refreshQueries(queryClient, { predicate: ({ queryKey: [family] }) =>
-            family === queryKeys.workflows.all[0] || family === queryKeys.userAnalytics[0] })
-        if (window.location.pathname.split("/")[1] === "workflows" &&
-            window.location.pathname.split("/")[2]?.toLowerCase() === workflowId) {
-            router.replace("/")
-        }
-        await cancel
-        queryClient.removeQueries(filters)
-        await refresh
-    }
-
-    const deleteWorkflowMutation = useMutation({
-        mutationFn: async () => {
-            scope.requireCurrent()
-            await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to delete workflow", {
-                method: "DELETE",
-                signal: scope.signal(),
-            })
-
-            return workflowId
-        },
-        onSuccess: async () => {
-            if (!scope.isCurrent()) return
-            const cleanup = retireWorkflow()
-            toast.success("workflow deleted successfully")
-            await cleanup
-        },
-        onError: async (error) => {
-            if (!scope.isCurrent()) return
-            const status = "status" in error ? Number(error.status) : undefined
-            if (error instanceof TypeError || status === 408 || (status !== undefined && status >= 500)) {
-                try {
-                    await fetchApi(apiEndpoints.workflows.detail(workflowId), "failed to verify workflow", {
-                        signal: AbortSignal.any([scope.signal(), AbortSignal.timeout(10_000)]),
-                    })
-                } catch (verification) {
-                    if (verification instanceof Error && "status" in verification && verification.status === 404) {
-                        await retireWorkflow()
-                        return
-                    }
-                }
-                if (scope.isCurrent()) toast.error("Could not confirm whether the workflow was deleted")
-                return
-            }
-            toast.error(error.message)
-        }
-    })
+    const deleteWorkflowMutation = useDeleteWorkflow(workflowId, scope)
 
     const getWorkflowAnalyticsQuery = useQuery<WorkflowAnalytics, Error>({
         queryKey: scope.queryKey(queryKeys.workflow.analytics(workflowId)),

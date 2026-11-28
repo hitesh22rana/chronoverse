@@ -159,11 +159,10 @@ export function useWorkflowJobs(
                 },
             })
         },
-        onSuccess: async () => {
+        onSuccess: () => {
             if (!scope.isCurrent()) return
-            const refresh = refreshQueries(queryClient, { queryKey: ["workflow-jobs", workflowId] }, scope.isCurrent)
+            void refreshQueries(queryClient, { queryKey: ["workflow-jobs", workflowId] }, scope.isCurrent)
             toast.success("Job scheduled successfully")
-            await refresh
         },
         onError: (error) => {
             if (scope.isCurrent()) toast.error(error.message)

@@ -222,15 +222,14 @@ export function useWorkflows({ poll = false }: UseWorkflowsOptions = {}) {
                 body: JSON.stringify(command.payload)
             })
         },
-        onSuccess: async () => {
-            const refresh = refreshQueries(queryClient, { queryKey: queryKeys.workflows.all })
+        onSuccess: () => {
+            void refreshQueries(queryClient, { queryKey: queryKeys.workflows.all })
             if (window.location.pathname === "/" && path === "/") {
                 const params = new URLSearchParams(window.location.search)
                 params.delete("cursor")
                 router.push(`?${params.toString()}`)
             }
             toast.success("workflow created successfully")
-            await refresh
         },
         onError: (error) => {
             toast.error(error.message)

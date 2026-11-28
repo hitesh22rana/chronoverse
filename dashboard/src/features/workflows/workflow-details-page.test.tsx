@@ -27,6 +27,8 @@ import type { Job } from "@/features/jobs/types"
 import type { Workflow } from "./types"
 import WorkflowDetailsAndJobsPage from "./workflow-details-page"
 
+const routeWorkflowId = "ab000000-0000-0000-0000-000000000001"
+
 const mocks = vi.hoisted(() => {
     const searchStore = {
         value: "",
@@ -47,6 +49,7 @@ const mocks = vi.hoisted(() => {
     return {
         searchStore,
         pathname: "/workflows/w1",
+        workflowId: "w1",
         push: vi.fn(),
         back: vi.fn(),
         replace: vi.fn(),
@@ -67,7 +70,7 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock("next/navigation", () => ({
-    useParams: () => ({ workflowId: "w1" }),
+    useParams: () => ({ workflowId: mocks.workflowId }),
     usePathname: () => mocks.pathname,
     useRouter: () => ({ push: mocks.push, back: mocks.back, replace: mocks.replace }),
     useSearchParams: () => {
@@ -171,6 +174,7 @@ const blocker = (hold: () => boolean, release: (_resolve: () => void) => void) =
 beforeEach(() => {
     window.history.replaceState(null, "", "/workflows/w1")
     mocks.pathname = "/workflows/w1"
+    mocks.workflowId = "w1"
     mocks.workflow = containerWorkflow()
     mocks.jobsResponse = jobsPage
     mocks.analytics = { workflow_id: "w1", total_jobs: 3, total_joblogs: 9, total_job_execution_duration: 125 }
@@ -211,14 +215,14 @@ beforeEach(() => {
             if (url.includes("status=") || url.includes("trigger=")) return { jobs: [] }
             return mocks.jobsResponse
         }
-        if (url.startsWith("/workflows/w1") && !url.includes("/jobs")) {
+        if (url === `/workflows/${mocks.workflowId.toLowerCase()}`) {
             await blocker(() => mocks.holdDetail, (resolve) => {
                 mocks.releaseDetail = resolve
             })
             if (mocks.workflow instanceof Error) throw mocks.workflow
             return mocks.workflow
         }
-        if (url.startsWith("/analytics/w1")) {
+        if (url === `/analytics/${mocks.workflowId.toLowerCase()}`) {
             if (mocks.analyticsError) throw new Error(mocks.analyticsError)
             return mocks.analytics
         }
@@ -450,7 +454,9 @@ it("terminates a running workflow only after its name is confirmed", async () =>
 })
 
 it("deletes a terminated workflow and returns to the workflow list", async () => {
-    mocks.workflow = containerWorkflow({ terminated_at: "2026-01-03T00:00:00Z" })
+    mocks.workflowId = routeWorkflowId.toUpperCase()
+    window.history.replaceState(null, "", `/workflows/%41${mocks.workflowId.slice(1)}`)
+    mocks.workflow = containerWorkflow({ id: routeWorkflowId, terminated_at: "2026-01-03T00:00:00Z" })
     const { user } = renderPage()
     expect(await screen.findByRole("button", { name: /Delete workflow/ })).toBeTruthy()
 
@@ -464,7 +470,7 @@ it("deletes a terminated workflow and returns to the workflow list", async () =>
 
     await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(1))
     const [url, , init] = recordedWrite()
-    expect(url).toBe("/workflows/w1")
+    expect(url).toBe(`/workflows/${routeWorkflowId}`)
     expect(init.method).toBe("DELETE")
     expect(mocks.toast.success).toHaveBeenCalledWith("workflow deleted successfully")
     expect(mocks.replace).toHaveBeenCalledWith("/")

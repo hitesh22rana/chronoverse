@@ -6,6 +6,7 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { Job } from "@/features/jobs/types"
+import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
 import { useWorkflowJobs } from "./use-workflow-jobs"
 
 const mocks = vi.hoisted(() => ({
@@ -167,4 +168,46 @@ it("clears filters and pagination while keeping the open jobs tab", async () => 
 
     expect(mocks.push).toHaveBeenCalledTimes(1)
     expect(lastPush()).toBe("?tab=jobs")
+})
+
+it.each([true, false])("ignores late scheduling and saved list actions after deletion (success=%s)", async (success) => {
+    const schedule = Promise.withResolvers<Response>()
+    mocks.fetchApi.mockImplementation((_url, _message, init: RequestInit) => init.method === "POST"
+        ? schedule.promise
+        : Promise.resolve(new Response(null, { status: 204 })))
+    mocks.fetchApiJson.mockImplementation(async (url: string) => url.includes("/jobs")
+        ? { jobs: [job()], cursor: "next" }
+        : { id: "w1", name: "Workflow" })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => ({
+        jobs: useWorkflowJobs("w1"),
+        workflow: useWorkflowDetails("w1"),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.jobs.jobs).toHaveLength(1))
+    const old = result.current.jobs
+    act(() => old.manualRunJob())
+    await waitFor(() => expect(mocks.fetchApi).toHaveBeenCalledTimes(1))
+    act(() => result.current.workflow.deleteWorkflow())
+    await waitFor(() => expect(result.current.jobs.jobs).toEqual([]))
+
+    const requests = listRequests().length
+    await act(async () => {
+        if (success) schedule.resolve(new Response(null, { status: 204 }))
+        else schedule.reject(new Error("late schedule failure"))
+        void old.refetch()
+        expect(old.pagination.goToNextPage()).toBe(false)
+        expect(old.pagination.goToPreviousPage()).toBe(false)
+        old.pagination.resetPagination()
+        old.applyAllFilters({ status: "RUNNING" })
+        old.clearAllFilters()
+    })
+    await waitFor(() => expect(result.current.jobs.isManualRunJobPending).toBe(false))
+    expect(listRequests()).toHaveLength(requests)
+    expect(mocks.toast.success).not.toHaveBeenCalledWith("Job scheduled successfully")
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.back).not.toHaveBeenCalled()
 })

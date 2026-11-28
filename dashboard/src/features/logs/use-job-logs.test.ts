@@ -92,11 +92,13 @@ it("opens a credentialed native stream, normalizes logs, and cleans up", () => {
     expect(mocks.setLogs).toHaveBeenCalledTimes(1)
 })
 
-it.each(["COMPLETED", "QUEUED", "filtered"])("does not open a stream for %s", (state) => {
+it.each(["COMPLETED", "QUEUED", "filtered", "retired before effect"])("does not open a stream for %s", (state) => {
     const constructor = vi.fn()
     vi.stubGlobal("EventSource", constructor)
     if (state === "filtered") mocks.params.set("q", "error")
-    useJobLogs("w", "j", state === "filtered" ? "RUNNING" : state)
+    const running = state === "filtered" || state === "retired before effect"
+    useJobLogs("w", "j", running ? "RUNNING" : state)
+    if (state === "retired before effect") mocks.controller.abort()
     expect(mocks.effects[0]()).toBeUndefined()
     expect(constructor).not.toHaveBeenCalled()
 })

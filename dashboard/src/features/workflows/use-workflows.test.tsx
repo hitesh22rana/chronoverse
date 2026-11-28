@@ -13,6 +13,7 @@ import type { ReactNode } from "react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import type { CreateWorkflowPayload, Workflow } from "./types"
+import { useUserAnalytics } from "@/features/analytics/use-user-analytics"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useWorkflowDetails } from "./use-workflow-details"
 import { useWorkflows } from "./use-workflows"
@@ -314,6 +315,8 @@ it("creates a workflow, refreshes the list and reports it", async () => {
     await waitFor(() => expect(result.current.workflows).toHaveLength(1))
     const requestsBeforeCreate = listRequests().length
 
+    const refresh = Promise.withResolvers<{ workflows: Workflow[] }>()
+    mocks.fetchApiJson.mockReturnValueOnce(refresh.promise)
     const onCreated = vi.fn()
     act(() => {
         result.current.createWorkflow(payload, onCreated)
@@ -338,6 +341,7 @@ it("creates a workflow, refreshes the list and reports it", async () => {
     // A new workflow belongs on the first page, so the cursor is dropped.
     expect(lastPush()).toBe("?")
     await waitFor(() => expect(listRequests().length).toBe(requestsBeforeCreate + 1))
+    await act(async () => { refresh.resolve({ workflows: [workflow()] }) })
 })
 
 it("keeps the caller informed when a create is rejected", async () => {
@@ -387,4 +391,46 @@ it("hides a deleted workflow when opening a cached filter while its fresh read i
     await waitFor(() => expect(lastListRequest()).toContain("query=nightly"))
     expect(result.current.list.workflows).toEqual([survivor])
     await act(async () => { fresh.resolve({ workflows: [survivor] }) })
+})
+
+it("refreshes owner analytics while masking the deleted name and keeping historical counts", async () => {
+    const analytics = Promise.withResolvers<unknown>()
+    const ownerData = {
+        total_workflows: 2,
+        total_jobs: 12,
+        top_workflows: [
+            { workflow_id: "w1", workflow_name: "Nightly", total_jobs: 8 },
+            { workflow_id: "w2", workflow_name: "Other", total_jobs: 4 },
+        ],
+    }
+    let ownerReads = 0
+    mocks.fetchApiJson.mockImplementation((url: string) => {
+        if (url === "/analytics") return ++ownerReads === 1 ? Promise.resolve(ownerData) : analytics.promise
+        return Promise.resolve(workflow())
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => ({
+        owner: useUserAnalytics(true),
+        workflow: useWorkflowDetails("w1"),
+    }), { wrapper })
+    await waitFor(() => expect(result.current.owner.data?.top_workflows[0].workflow_name).toBe("Nightly"))
+    act(() => result.current.workflow.deleteWorkflow())
+    await waitFor(() => expect(ownerReads).toBe(2))
+    const data = result.current.owner.data
+    expect(data?.total_jobs).toBe(12)
+    expect(data?.top_workflows.map(({ workflow_name, total_jobs }) => [workflow_name, total_jobs]))
+        .toEqual([["Deleted workflow", 8], ["Other", 4]])
+    await act(async () => { analytics.resolve(ownerData) })
+})
+
+it("does not reset the address after creating from a different route", async () => {
+    mocks.pathname = "/workflows/w1"
+    const { result } = renderUseWorkflows()
+    await waitFor(() => expect(result.current.workflows).toHaveLength(1))
+    act(() => result.current.createWorkflow(payload))
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalled())
+    expect(mocks.push).not.toHaveBeenCalled()
 })

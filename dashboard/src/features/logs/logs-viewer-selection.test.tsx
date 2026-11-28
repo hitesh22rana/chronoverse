@@ -1259,3 +1259,18 @@ it("preserves a pending search while an older navigation settles", async () => {
     })
     expect(input.value).toBe("external")
 })
+
+it("refreshes the active search from the log viewer control", async () => {
+    mocks.search = "q=timeout&stream=stderr"
+    renderViewer()
+    expect(await screen.findByText("hit 40")).toBeTruthy()
+    mocks.fetchApiJson.mockResolvedValueOnce({
+        ...searchPage,
+        logs: [log(41, "late match")],
+    })
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh logs" }))
+    expect(await screen.findByText("late match 41")).toBeTruthy()
+    expect(screen.queryByText("hit 40")).toBeNull()
+    expect(mocks.fetchApiJson.mock.calls.at(-1)?.[0]).toBe("/workflows/w1/jobs/j1/logs/search?q=timeout&stream=stderr")
+})

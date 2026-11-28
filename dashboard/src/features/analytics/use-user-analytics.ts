@@ -35,7 +35,7 @@ export function useUserAnalytics(enabled: boolean) {
         ...query,
         data: {
             ...data,
-            top_workflows: data.top_workflows.map((item) => retired.has(item.workflow_id.toLowerCase())
+            top_workflows: data.top_workflows.map((item) => retired.get(item.workflow_id.toLowerCase())
                 ? { ...item, workflow_name: "Deleted workflow" }
                 : item),
         },

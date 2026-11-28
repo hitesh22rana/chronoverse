@@ -17,6 +17,7 @@ import { toast } from "sonner"
 
 import { useWorkflowScope } from "@/features/workflows/workflow-freshness"
 import { useWorkflowDetails } from "@/features/workflows/use-workflow-details"
+import type { Workflow } from "@/features/workflows/types"
 
 import { fetchApi, fetchApiJson } from "@/lib/api/client"
 import { apiEndpoints, withQuery } from "@/lib/api/endpoints"
@@ -53,60 +54,16 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
     const { workflow, isLoading: isWorkflowLoading } = useWorkflowDetails(workflowId)
     const { searchQuery, streamFilter, updateSearchQuery, applyStreamFilter, getSearchQueryParams } = useLogFilters()
 
-    const [live, setLive] = useState<{ url: string, logs: JobLog[] } | null>(null)
-
     const logsURL = apiEndpoints.workflows.jobs.logs(workflowId, jobId)
     const sseURL = apiEndpoints.workflows.jobs.logEvents(workflowId, jobId)
-    const logsDownloadURL = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
     const searchURL = apiEndpoints.workflows.jobs.searchLogs(workflowId, jobId)
 
     const isRunning = jobStatus === "RUNNING"
-    const hasLogs = statusesWithLogs.includes(jobStatus)
-    const workflowKind = workflow?.kind || ""
-    const supportsLogs = kindsWithLogs.includes(workflowKind)
-    const isLogsUnsupportedForKind = Boolean(workflow) && !supportsLogs
-    const isRetentionDisabled = supportsLogs && !workflow.log_retention
-    const shouldFetch = supportsLogs && !isRetentionDisabled && hasLogs
+    const { hasLogs, workflowKind, isRetentionDisabled, isLogsUnsupportedForKind, shouldFetch } =
+        logAvailability(workflow, jobStatus)
+    const canFetch = scope.available && shouldFetch && Boolean(jobId)
 
-    const canFetch = scope.available && shouldFetch && Boolean(workflowId) && Boolean(jobId)
-
-    const downloadLogsMutation = useMutation({
-        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
-            scope.requireCurrent()
-            const signal = scope.signal()
-            const response = await fetchApi(
-                withQuery(logsDownloadURL, getSearchQueryParams),
-                "failed to download logs",
-                { signal },
-            )
-
-            const blob = await readLogDownload(response, {
-                format,
-                id: jobId,
-                workflow_id: workflowId,
-                filters: { q: searchQuery, stream: streamFilter || "all" },
-            }, logDownloadLimitBytes)
-            scope.requireCurrent()
-            const objectUrl = URL.createObjectURL(blob)
-            const a = document.createElement("a")
-            a.href = objectUrl
-            a.download = getDownloadFilename(filename, format)
-            try {
-                document.body.appendChild(a)
-                a.click()
-            } finally {
-                a.remove()
-                URL.revokeObjectURL(objectUrl)
-            }
-
-        },
-        onSuccess: () => {
-            if (scope.isCurrent()) toast.success("Logs downloaded successfully")
-        },
-        onError: (error) => {
-            if (scope.isCurrent()) toast.error(error.message)
-        }
-    })
+    const download = useLogDownload(scope, workflowId, jobId, searchQuery, streamFilter, getSearchQueryParams)
 
     // Retained logs are newest-first; fetching the next page loads older logs.
     const jobLogsInfiniteQuery = useInfiniteQuery<JobLogsResponse, Error>({
@@ -137,30 +94,7 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
         enabled: canFetch && Boolean(getSearchQueryParams),
     });
 
-    const resourceSignal = scope.signal
-    useEffect(() => {
-        if (!canFetch || !isRunning || getSearchQueryParams) {
-            return
-        }
-
-        const signal = resourceSignal()
-        if (signal.aborted) return
-        const close = subscribeToJobLogs(sseURL, (log) => {
-            setLive((existing) => ({
-                url: sseURL,
-                logs: mergeLiveLogs(existing?.url === sseURL ? existing.logs : [], [log]),
-            }))
-        })
-        const retire = () => {
-            close()
-            setLive(null)
-        }
-        signal.addEventListener("abort", retire, { once: true })
-        return () => {
-            signal.removeEventListener("abort", retire)
-            close()
-        }
-    }, [sseURL, isRunning, canFetch, getSearchQueryParams, resourceSignal])
+    const liveLogs = useLiveJobLogs(sseURL, scope.signal, canFetch && isRunning && !getSearchQueryParams)
 
     useEffect(() => {
         if (!scope.available) return
@@ -185,7 +119,7 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
     const logs = logsFromPages(query.data?.pages)
 
     return {
-        logs: isRunning && !isSearching && live?.url === sseURL && scope.available ? mergeLiveLogs(logs, live.logs) : logs,
+        logs: liveLogs.length ? mergeLiveLogs(logs, liveLogs) : logs,
         isLoading: query.isLoading,
         error: query.error,
         fetchNextPage: () => scope.isCurrent() ? query.fetchNextPage() : Promise.resolve(),
@@ -197,20 +131,113 @@ export function useJobLogs(routeWorkflowId: string, routeJobId: string, jobStatu
         updateSearchQuery: (value: string) => { if (scope.isCurrent()) updateSearchQuery(value) },
         streamFilter,
         applyStreamFilter: (value: string) => { if (scope.isCurrent()) applyStreamFilter(value) },
-        downloadLogsMutation: {
-            ...downloadLogsMutation,
-            mutate: (options: DownloadLogsOptions, callbacks?: { onSuccess?: () => void }) => {
-                if (!scope.isCurrent()) return
-                downloadLogsMutation.mutate(options, {
-                    onSuccess: () => { if (scope.isCurrent()) callbacks?.onSuccess?.() },
-                })
-            },
-        },
-        isDownloadLogsMutationLoading: downloadLogsMutation.isPending,
+        downloadLogsMutation: { mutate: download.mutate },
+        isDownloadLogsMutationLoading: download.isPending,
         isRetentionDisabled,
         isLogsUnsupportedForKind,
         workflowKind,
         isWorkflowLoading,
+    }
+}
+
+function logAvailability(workflow: Workflow | undefined, jobStatus: string) {
+    const hasLogs = statusesWithLogs.includes(jobStatus)
+    const workflowKind = workflow?.kind ?? ""
+    const supportsLogs = kindsWithLogs.includes(workflowKind)
+    const isRetentionDisabled = supportsLogs && !workflow?.log_retention
+    return {
+        hasLogs,
+        workflowKind,
+        isRetentionDisabled,
+        isLogsUnsupportedForKind: Boolean(workflow) && !supportsLogs,
+        shouldFetch: supportsLogs && Boolean(workflow?.log_retention) && hasLogs,
+    }
+}
+
+function useLiveJobLogs(sseURL: string, resourceSignal: () => AbortSignal, enabled: boolean) {
+    const [live, setLive] = useState<{ url: string, logs: JobLog[] } | null>(null)
+
+    useEffect(() => {
+        if (!enabled) {
+            return
+        }
+
+        const signal = resourceSignal()
+        if (signal.aborted) return
+        const close = subscribeToJobLogs(sseURL, (log) => {
+            setLive((existing) => ({
+                url: sseURL,
+                logs: mergeLiveLogs(existing?.url === sseURL ? existing.logs : [], [log]),
+            }))
+        })
+        const retire = () => {
+            close()
+            setLive(null)
+        }
+        signal.addEventListener("abort", retire, { once: true })
+        return () => {
+            signal.removeEventListener("abort", retire)
+            close()
+        }
+    }, [sseURL, enabled, resourceSignal])
+
+    return enabled && live?.url === sseURL ? live.logs : []
+}
+
+function useLogDownload(
+    scope: ReturnType<typeof useWorkflowScope>,
+    workflowId: string,
+    jobId: string,
+    searchQuery: string,
+    streamFilter: string,
+    searchParams: string,
+) {
+    const download = useMutation({
+        mutationFn: async ({ filename, format }: DownloadLogsOptions) => {
+            scope.requireCurrent()
+            const url = apiEndpoints.workflows.jobs.rawLogs(workflowId, jobId)
+            const response = await fetchApi(withQuery(url, searchParams), "failed to download logs", {
+                signal: scope.signal(),
+            })
+            const blob = await readLogDownload(response, {
+                format,
+                id: jobId,
+                workflow_id: workflowId,
+                filters: { q: searchQuery, stream: streamFilter || "all" },
+            }, logDownloadLimitBytes)
+            scope.requireCurrent()
+            saveLogDownload(blob, getDownloadFilename(filename, format))
+        },
+        onSuccess: () => {
+            if (scope.isCurrent()) toast.success("Logs downloaded successfully")
+        },
+        onError: (error) => {
+            if (scope.isCurrent()) toast.error(error.message)
+        },
+    })
+
+    return {
+        isPending: download.isPending,
+        mutate: (options: DownloadLogsOptions, callbacks?: { onSuccess?: () => void }) => {
+            if (!scope.isCurrent()) return
+            download.mutate(options, {
+                onSuccess: () => { if (scope.isCurrent()) callbacks?.onSuccess?.() },
+            })
+        },
+    }
+}
+
+function saveLogDownload(blob: Blob, filename: string) {
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    try {
+        link.href = url
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+    } finally {
+        link.remove()
+        URL.revokeObjectURL(url)
     }
 }
 
